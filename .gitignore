@@ -1,17 +1,31 @@
+# Secrets and credentials
+.env
+.env.local
+.env.*.local
+auth.json
+credentials.json
+*.key
+*.pem
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Build artifacts
 node_modules/
 dist/
 ts-dist/
 .build/
 .sst/
-.env
-.env.local
-*.db
-*.db-wal
-*.db-shm
 .turbo/
 *.bun-build
 tsconfig.tsbuildinfo
+
+# OS
 .DS_Store
+
+# Other tools
 .opencode/
 .codex/
 .serena/
