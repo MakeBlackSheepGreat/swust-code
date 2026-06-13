@@ -1,5 +1,6 @@
 import type { Argv } from "yargs"
 import { Auth } from "../../auth"
+import { importAll, mergeImportedCredentials } from "../../auth/import"
 import { cmd } from "./cmd"
 import { CliError, effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
@@ -241,7 +242,12 @@ export const ProvidersCommand = cmd({
   aliases: ["auth"],
   describe: "manage AI providers and credentials",
   builder: (yargs) =>
-    yargs.command(ProvidersListCommand).command(ProvidersLoginCommand).command(ProvidersLogoutCommand).demandCommand(),
+    yargs
+      .command(ProvidersListCommand)
+      .command(ProvidersLoginCommand)
+      .command(ProvidersLogoutCommand)
+      .command(ProvidersImportCommand)
+      .demandCommand(),
   async handler() {},
 })
 
@@ -549,5 +555,59 @@ export const ProvidersLogoutCommand = effectCmd({
     if (!provider) return yield* fail(`Unknown configured provider "${args.provider}"`)
     yield* Effect.orDie(authSvc.remove(provider))
     yield* Prompt.outro("Logout successful")
+  }),
+})
+
+const ProvidersImportCommand = effectCmd({
+  command: "import",
+  describe: "import credentials from MiMo-Code, Claude Code, or environment variables",
+  handler: Effect.fn("Cli.providers.import")(function* () {
+    UI.empty()
+    const auth = yield* Auth.Service
+
+    // Scan all sources
+    const results = importAll()
+
+    // Display results
+    for (const result of results) {
+      if (result.imported.length > 0) {
+        for (const item of result.imported) {
+          console.log(`  ${UI.Style.TEXT_SUCCESS}✓${UI.Style.TEXT_NORMAL} ${result.source}: ${item.provider} (${item.type})`)
+        }
+      }
+      if (result.skipped.length > 0 && result.source !== "Environment Variables") {
+        for (const item of result.skipped) {
+          console.log(`  ${UI.Style.TEXT_DIM}○${UI.Style.TEXT_NORMAL} ${result.source}: ${item.provider} — ${item.reason}`)
+        }
+      }
+      if (result.errors.length > 0) {
+        for (const err of result.errors) {
+          console.log(`  ${UI.Style.TEXT_WARNING}⚠${UI.Style.TEXT_NORMAL} ${result.source}: ${err}`)
+        }
+      }
+    }
+
+    // Merge and write
+    const merged = mergeImportedCredentials()
+    const providers = Object.keys(merged)
+
+    if (providers.length === 0) {
+      console.log(`\n${UI.Style.TEXT_DIM}No credentials found to import.${UI.Style.TEXT_NORMAL}`)
+      console.log(`\nSet an API key via environment variable:`)
+      console.log(`  export ANTHROPIC_API_KEY="your-key"`)
+      console.log(`  export OPENAI_API_KEY="your-key"`)
+      console.log(`  export DEEPSEEK_API_KEY="your-key"`)
+      return
+    }
+
+    console.log(`\n${UI.Style.TEXT_SUCCESS}Found ${providers.length} provider(s)${UI.Style.TEXT_NORMAL}: ${providers.join(", ")}`)
+
+    // Write to auth.json
+    for (const [provider, entry] of Object.entries(merged)) {
+      yield* Effect.orDie(auth.set(provider, entry as Auth.Info))
+    }
+
+    console.log(`\n${UI.Style.TEXT_SUCCESS}Credentials imported successfully.${UI.Style.TEXT_NORMAL}`)
+    console.log(`Run 'swust-code providers list' to verify.`)
   }),
 })
