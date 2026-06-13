@@ -8,6 +8,7 @@ import { Database } from "../database/database"
 import { Global } from "../global"
 import { SystemContext } from "../system-context/index"
 import { memoryRoot, ensureDirs } from "./paths"
+import { resolveImports } from "./import-resolver"
 
 const MAX_INJECT_BYTES = 4096
 
@@ -57,14 +58,15 @@ export const layer = Layer.effect(
           const rows = Effect.runSync(rowsEffect.pipe(Effect.catch(() => Effect.succeed([{ count: 0 }]))))
           const fileCount = rows[0]?.count ?? 0
 
-          // Read MEMORY.md synchronously for injection
+          // Read MEMORY.md and resolve @path imports
           let memoryMdContent = ""
           try {
             const memoryMdPath = path.join(root, "global", "MEMORY.md")
-            const content = fs.readFileSync(memoryMdPath, "utf-8")
-            memoryMdContent = content.length <= MAX_INJECT_BYTES
-              ? content
-              : content.slice(0, MAX_INJECT_BYTES) + "\n... (truncated)"
+            const raw = fs.readFileSync(memoryMdPath, "utf-8")
+            const resolved = resolveImports(raw, path.dirname(memoryMdPath))
+            memoryMdContent = resolved.length <= MAX_INJECT_BYTES
+              ? resolved
+              : resolved.slice(0, MAX_INJECT_BYTES) + "\n... (truncated)"
           } catch {
             // No MEMORY.md yet
           }

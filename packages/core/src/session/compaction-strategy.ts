@@ -9,19 +9,14 @@
  * Ported from MiMo-Code's checkpoint.ts patterns.
  */
 
+import { roughTokenCount as estimateTokens } from "./token-estimation"
+
 import {
   TAIL_MIN_TOKENS,
   TAIL_MAX_TOKENS,
   TAIL_MIN_TEXT_BLOCK_MESSAGES,
   COMPACTABLE_TOOL_NAMES,
 } from "./checkpoint-templates"
-
-/**
- * Rough token estimation: ~4 chars per token.
- */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
-}
 
 export interface Message {
   readonly role: "user" | "assistant" | "tool" | "system"

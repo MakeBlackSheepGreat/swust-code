@@ -29,14 +29,8 @@ import {
   REBUILD_CONTEXT_MAX_TOKENS,
 } from "./checkpoint-templates"
 import { readBudgeted, readBudgetedSectionAware } from "./budgeted-read"
+import { roughTokenCount } from "./token-estimation"
 import type { LastMessageInfo } from "./compaction-strategy"
-
-/**
- * Rough token estimation: ~4 chars per token.
- */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
-}
 
 export interface RebuildContextInput {
   readonly dataDir: string
@@ -112,12 +106,12 @@ export async function assembleRebuildContext(
     "",
   ].join("\n")
   parts.push(header)
-  usedTokens += estimateTokens(header)
+  usedTokens += roughTokenCount(header)
 
   // Section 2: Session checkpoint
   if (checkpoint) {
     const section = `\n### Session Checkpoint\n${checkpoint.text}\n`
-    const tokens = estimateTokens(section)
+    const tokens = roughTokenCount(section)
     if (usedTokens + tokens <= REBUILD_CONTEXT_MAX_TOKENS) {
       parts.push(section)
       usedTokens += tokens
@@ -127,7 +121,7 @@ export async function assembleRebuildContext(
   // Section 3: Project memory
   if (projectMemory) {
     const section = `\n### Project Memory\n${projectMemory.text}\n`
-    const tokens = estimateTokens(section)
+    const tokens = roughTokenCount(section)
     if (usedTokens + tokens <= REBUILD_CONTEXT_MAX_TOKENS) {
       parts.push(section)
       usedTokens += tokens
@@ -137,7 +131,7 @@ export async function assembleRebuildContext(
   // Section 4: Global memory
   if (globalMemory) {
     const section = `\n### Global Preferences\n${globalMemory.text}\n`
-    const tokens = estimateTokens(section)
+    const tokens = roughTokenCount(section)
     if (usedTokens + tokens <= REBUILD_CONTEXT_MAX_TOKENS) {
       parts.push(section)
       usedTokens += tokens
@@ -147,7 +141,7 @@ export async function assembleRebuildContext(
   // Section 5: Session notes
   if (notes) {
     const section = `\n### Session Notes\n${notes.text}\n`
-    const tokens = estimateTokens(section)
+    const tokens = roughTokenCount(section)
     if (usedTokens + tokens <= REBUILD_CONTEXT_MAX_TOKENS) {
       parts.push(section)
       usedTokens += tokens
