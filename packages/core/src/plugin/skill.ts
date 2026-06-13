@@ -23,7 +23,7 @@ export const Plugin = PluginV2.define({
           skill: new SkillV2.Info({
             name: "customize-swust-code",
             description:
-              "Use ONLY when the user is editing or creating opencode's own configuration: swust-code.json, swust-code.jsonc, files under .swust-code/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself.",
+              "Use ONLY when the user is editing or creating swust-code's own configuration: swust-code.json, swust-code.jsonc, files under .swust-code/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring swust-code itself.",
             location: AbsolutePath.make("/builtin/customize-swust-code.md"),
             content: CustomizeOpencodeContent,
           }),

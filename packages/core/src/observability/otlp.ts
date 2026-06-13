@@ -35,13 +35,13 @@ function resourceAttributes() {
 
 export function resource(): { serviceName: string; serviceVersion: string; attributes: Record<string, string> } {
   return {
-    serviceName: "opencode",
+    serviceName: "swust-code",
     serviceVersion: InstallationVersion,
     attributes: {
       ...resourceAttributes(),
       "deployment.environment.name": InstallationChannel,
-      "opencode.client": Flag.SWUST_CODE_CLIENT,
-      "opencode.run": runID,
+      "swust-code.client": Flag.SWUST_CODE_CLIENT,
+      "swust-code.run": runID,
       "service.instance.id": runID,
     },
   }
