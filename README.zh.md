@@ -8,9 +8,11 @@
 
 ---
 
-SWUST Code 是一个终端原生的 AI 编程助手。它能读写代码、执行命令、管理 Git，通过持久化记忆系统，在多次会话间保持对项目的深度理解，并持续自我进化。
+SWUST Code 基于 Anomaly Co. 的 [OpenCode](https://github.com/anomalyco/opencode) 构建，核心能力移植自小米的 [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) 和 nicognaW 的 [DevEco Code](https://github.com/nicognaW/deveco-code)。保留了 OpenCode 的全部核心能力（多 Provider、TUI、LSP、MCP、插件），并在此基础上增加了持久化记忆、目标驱动自治、自我进化、多智能体编排、工作流引擎和分层安全。
 
-SWUST Code 通过 Vercel AI SDK 支持接入各家主流 LLM 厂商 API。
+从 MiMo-Code 移植：持久化记忆（FTS5）、Dream/Distill 自我进化、Actor/Spawn 子智能体编排、检查点系统、上下文压缩、工作流引擎。
+
+从 DevEco Code 移植：NAPI 原生工具桥接、Workspace 适配器模式、文档验证系统。
 
 ---
 
@@ -29,6 +31,7 @@ bun run --cwd packages/opencode src/index.ts
 首次启动自动引导配置。支持：
 - **Anthropic** — 通过 API Key 接入 Claude 模型
 - **OpenAI** — 通过 API Key 接入 GPT 模型
+- **Google** — 通过 API Key 接入 Gemini 模型
 - **自定义 Provider** — TUI 内添加任意 OpenAI 兼容 API
 
 ---
@@ -66,7 +69,7 @@ bun run --cwd packages/opencode src/index.ts
 swust-code run --goal "修复所有 TypeScript 错误" "开始工作"
 ```
 
-当 agent 尝试停止时，独立的 judge 模型会评估对话，判断条件是否真正满足——防止自治工作中的过早停止。每个目标最多重入 12 次。
+当 agent 尝试停止时，独立的 judge 模型会评估对话，判断条件是否真正满足——防止自治工作中的过早停止。每个目标最多重入 12 次。二级 task gate 在允许 agent 停止前检查未完成的任务。
 
 ### Dream & Distill
 
@@ -79,9 +82,16 @@ swust-code run --goal "修复所有 TypeScript 错误" "开始工作"
 - **peer** — 创建新子会话（完全隔离）
 - **subagent** — 共享父会话上下文（不同 actorID）
 
+子智能体复用父智能体的 prompt cache 前缀（Fork Cache 对齐），降低 token 成本。
+
 ### 工作流引擎
 
-可脚本化的多智能体编排运行时，支持崩溃恢复。工作流是运行在沙箱环境中的 JavaScript 脚本，可以派生智能体、并行执行任务、组合结果。内置工作流：Deep Research（6 阶段流水线，带对抗性事实核查）。
+可脚本化的多智能体编排运行时，支持崩溃恢复。工作流是运行在沙箱环境中的 JavaScript 脚本，可以派生智能体、并行执行任务、组合结果。
+
+- **Journal 持久化** — JSONL 日志，确定性 key 去重
+- **崩溃恢复** — 从最后检查点恢复执行
+- **并发控制** — 信号量限制为 `min(16, 2*cores)`
+- **内置工作流** — Deep Research（6 阶段流水线，带对抗性陪审团投票）
 
 ### 安全防护
 
@@ -92,7 +102,7 @@ swust-code run --goal "修复所有 TypeScript 错误" "开始工作"
 3. 工具特定 `checkPermissions()` — 逐工具检查
 4. 模式覆盖 — bypass / acceptEdits / dontAsk / auto
 
-Bash 安全分析器检测危险模式（rm -rf、fork bomb、eval、chmod 777、curl|sh 等）并在执行前阻止。
+Bash 安全分析器检测危险模式（rm -rf、fork bomb、eval、chmod 777、curl|sh 等）并在执行前阻止。工具默认 fail-closed：`isReadOnly=false`，`isDestructive=true`。
 
 ### 技能系统
 
@@ -117,9 +127,38 @@ SWUST Code 通过项目目录下的 `.swust-code/config.json` 配置（全局配
 
 - Provider 和模型选择
 - 智能体权限
-- 记忆行为
+- 记忆行为（`memory_reconcile_on_search`、`memory_search_score_floor`）
 - MCP 服务器连接
 - 键绑定和主题
+
+---
+
+## 架构
+
+```
+┌─────────────────────────────────────────────────┐
+│           CLI / TUI / Web / Desktop              │
+├─────────────────────────────────────────────────┤
+│           Session Runner                         │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐        │
+│  │ 记忆     │ │ 目标     │ │ 进化     │        │
+│  │ 上下文   │ │ Gate     │ │ 触发器   │        │
+│  └──────────┘ └──────────┘ └──────────┘        │
+├─────────────────────────────────────────────────┤
+│  工具 / 安全 / Actor / 工作流 / 技能             │
+├─────────────────────────────────────────────────┤
+│  SQLite FTS5 + Drizzle ORM + Effect-TS          │
+└─────────────────────────────────────────────────┘
+```
+
+| 层 | 技术 |
+|----|------|
+| 运行时 | Bun 1.3.14 |
+| 效果系统 | Effect-TS 4.0 beta |
+| 数据库 | SQLite + Drizzle ORM + FTS5 |
+| LLM | Vercel AI SDK (15+ 提供商) |
+| 前端 | SolidJS + OpenTUI |
+| 包管理 | Bun + Turborepo |
 
 ---
 
@@ -134,13 +173,15 @@ bun turbo test           # 运行测试
 
 ---
 
-## 与 OpenCode 的关系
+## 致谢
 
-SWUST Code 基于 [OpenCode](https://github.com/anomalyco/opencode) 的 fork 构建。保留了 OpenCode 的全部核心能力（多 Provider、TUI、LSP、MCP、插件），并在此基础上增加了持久化记忆、目标驱动自治、Dream/Distill 自我进化、多智能体编排、工作流引擎和分层安全。
+SWUST Code 站在三个开源项目的肩膀上：
 
-关键模式移植自：
-- [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) — 记忆系统、Dream/Distill、Actor/Spawn、工作流引擎
-- [DevEco Code](https://github.com/nicognaW/deveco-code) — NAPI 桥接、Workspace 适配器、文档验证
+- [**OpenCode**](https://github.com/anomalyco/opencode) by Anomaly Co. — 基座。所有核心能力（多 Provider LLM、TUI、LSP、MCP、插件系统）来自 OpenCode。
+- [**MiMo-Code**](https://github.com/XiaomiMiMo/MiMo-Code) by 小米 — 持久化记忆（FTS5）、Dream/Distill 自我进化、Actor/Spawn 编排、检查点系统、上下文压缩、工作流引擎。
+- [**DevEco Code**](https://github.com/nicognaW/deveco-code) by nicognaW — NAPI 原生工具桥接、Workspace 适配器模式、文档验证系统。
+
+感谢这些项目的维护者和贡献者在开源协议下发布他们的工作。
 
 ---
 

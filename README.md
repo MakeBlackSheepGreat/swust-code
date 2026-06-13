@@ -8,9 +8,11 @@
 
 ---
 
-SWUST Code is a terminal-native AI coding agent. It can read and write code, run commands, manage Git, and use a persistent memory system to keep a deep understanding of your project across sessions while continuously improving itself.
+SWUST Code is built on top of [OpenCode](https://github.com/anomalyco/opencode) by Anomaly Co., with key capabilities ported from [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi and [DevEco Code](https://github.com/nicognaW/deveco-code) by nicognaW. It keeps all core OpenCode capabilities (multiple providers, TUI, LSP, MCP, plugins) and adds persistent memory, goal-driven autonomy, self-improvement, multi-agent orchestration, workflow engine, and layered security.
 
-SWUST Code supports connecting to any mainstream LLM provider API via the Vercel AI SDK.
+From MiMo-Code we ported: persistent memory (FTS5), Dream/Distill self-improvement, Actor/Spawn subagent orchestration, checkpoint system, context compaction, and workflow engine.
+
+From DevEco Code we ported: NAPI bridge for native tool loading, workspace adapter pattern, and document validation system.
 
 ---
 
@@ -29,6 +31,7 @@ bun run --cwd packages/opencode src/index.ts
 The first launch guides you through configuration automatically. Supported options:
 - **Anthropic** — Claude models via API key
 - **OpenAI** — GPT models via API key
+- **Google** — Gemini models via API key
 - **Custom Provider** — add any OpenAI-compatible API in the TUI
 
 ---
@@ -66,7 +69,7 @@ The `--goal` flag sets a stopping condition for a session:
 swust-code run --goal "fix all TypeScript errors" "start working"
 ```
 
-When the agent tries to stop, an independent judge model evaluates the conversation to decide whether the condition is truly satisfied — preventing premature stops during autonomous work. Re-entry is capped at 12 attempts per goal.
+When the agent tries to stop, an independent judge model evaluates the conversation to decide whether the condition is truly satisfied — preventing premature stops during autonomous work. Re-entry is capped at 12 attempts per goal. A secondary task gate checks for incomplete tasks before allowing the agent to stop.
 
 ### Dream & Distill
 
@@ -79,9 +82,16 @@ The primary agent can create subagents on demand. Subagents share the current se
 - **peer** — creates a new child session (full isolation)
 - **subagent** — shares the parent session context (distinct actorID)
 
+Subagents reuse the parent's prompt cache prefix (Fork Cache alignment) to reduce token costs.
+
 ### Workflow Engine
 
-Scriptable multi-agent orchestration with crash recovery. Workflows are JavaScript scripts that run in a sandboxed environment and can spawn agents, run tasks in parallel, and compose results. Built-in workflow: Deep Research (6-phase pipeline with adversarial fact-checking).
+Scriptable multi-agent orchestration with crash recovery. Workflows are JavaScript scripts that run in a sandboxed environment and can spawn agents, run tasks in parallel, and compose results.
+
+- **Journal persistence** — JSONL logs with deterministic key deduplication
+- **Crash recovery** — resume from last checkpoint on restart
+- **Concurrency control** — semaphore bounded to `min(16, 2*cores)`
+- **Built-in workflow** — Deep Research (6-phase pipeline with adversarial jury voting)
 
 ### Security
 
@@ -92,7 +102,7 @@ Scriptable multi-agent orchestration with crash recovery. Workflows are JavaScri
 3. Tool-specific `checkPermissions()` — per tool
 4. Mode override — bypass / acceptEdits / dontAsk / auto
 
-Bash safety analyzer detects dangerous patterns (rm -rf, fork bomb, eval, chmod 777, curl|sh, etc.) and blocks them before execution.
+Bash safety analyzer detects dangerous patterns (rm -rf, fork bomb, eval, chmod 777, curl|sh, etc.) and blocks them before execution. Tools default to fail-closed: `isReadOnly=false`, `isDestructive=true`.
 
 ### Skills System
 
@@ -117,9 +127,38 @@ SWUST Code is configured via `.swust-code/config.json` in the project directory 
 
 - Provider and model selection
 - Agent permissions
-- Memory behavior
+- Memory behavior (`memory_reconcile_on_search`, `memory_search_score_floor`)
 - MCP server connections
 - Keybindings and theme
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│           CLI / TUI / Web / Desktop              │
+├─────────────────────────────────────────────────┤
+│           Session Runner                         │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐        │
+│  │ Memory   │ │ Goal     │ │ Dream    │        │
+│  │ Context  │ │ Gate     │ │ Trigger  │        │
+│  └──────────┘ └──────────┘ └──────────┘        │
+├─────────────────────────────────────────────────┤
+│  Tools / Security / Actor / Workflow / Skills    │
+├─────────────────────────────────────────────────┤
+│  SQLite FTS5 + Drizzle ORM + Effect-TS          │
+└─────────────────────────────────────────────────┘
+```
+
+| Layer | Technology |
+|-------|-----------|
+| Runtime | Bun 1.3.14 |
+| Effect System | Effect-TS 4.0 beta |
+| Database | SQLite + Drizzle ORM + FTS5 |
+| LLM | Vercel AI SDK (15+ providers) |
+| Frontend | SolidJS + OpenTUI |
+| Package Manager | Bun + Turborepo |
 
 ---
 
@@ -134,13 +173,15 @@ bun turbo test           # Run tests
 
 ---
 
-## Relationship to OpenCode
+## Acknowledgments
 
-SWUST Code is built as a fork of [OpenCode](https://github.com/anomalyco/opencode). It keeps all core OpenCode capabilities (multiple providers, TUI, LSP, MCP, plugins) and adds persistent memory, goal-driven autonomy, self-improvement via dream/distill, multi-agent orchestration, workflow engine, and layered security.
+SWUST Code stands on the shoulders of three open-source projects:
 
-Key patterns ported from:
-- [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) — Memory system, Dream/Distill, Actor/Spawn, Workflow engine
-- [DevEco Code](https://github.com/nicognaW/deveco-code) — NAPI bridge, Workspace adapter, Document validation
+- [**OpenCode**](https://github.com/anomalyco/opencode) by Anomaly Co. — the foundation. All core capabilities (multi-provider LLM, TUI, LSP, MCP, plugin system) come from OpenCode.
+- [**MiMo-Code**](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi — persistent memory (FTS5), Dream/Distill self-improvement, Actor/Spawn orchestration, checkpoint system, context compaction, workflow engine.
+- [**DevEco Code**](https://github.com/nicognaW/deveco-code) by nicognaW — NAPI bridge for native tool loading, workspace adapter pattern, document validation system.
+
+We are grateful to the maintainers and contributors of these projects for making their work available under open-source licenses.
 
 ---
 
