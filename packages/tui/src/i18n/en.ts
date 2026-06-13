@@ -400,3 +400,15 @@ const en = {
 export type Keys = keyof typeof en
 export type Dictionary = Partial<Record<Keys, string>>
 export default en
+
+  // SWUST Code specific commands
+  "tui.command.dream.title": "Dream Knowledge Consolidation",
+  "tui.command.dream.description": "Auto-consolidate project knowledge from recent sessions",
+  "tui.command.distill.title": "Distill Skill Discovery",
+  "tui.command.distill.description": "Discover repeated workflows and package as reusable skills",
+  "tui.command.goal.title": "Set Autonomous Goal",
+  "tui.command.goal.description": "Set a goal and the agent works autonomously until complete",
+  "tui.command.memory.title": "Search Memory",
+  "tui.command.memory.description": "Search persistent project knowledge",
+  "tui.command.providers_import.title": "Import Credentials",
+  "tui.command.providers_import.description": "Import API keys from MiMo-Code / Claude Code / env vars",

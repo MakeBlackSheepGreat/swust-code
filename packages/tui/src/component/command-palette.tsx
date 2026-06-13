@@ -9,6 +9,7 @@ import {
   useOpencodeKeymap,
 } from "../keymap"
 import { useTuiConfig } from "../config"
+import { useLanguage } from "../context/language"
 
 type PaletteCommandEntry = ReturnType<OpenTuiKeymap["getCommandEntries"]>[number]
 
@@ -26,6 +27,7 @@ function isSuggestedPaletteCommand(entry: PaletteCommandEntry) {
 export function CommandPaletteDialog() {
   const config = useTuiConfig()
   const keymap = useOpencodeKeymap()
+  const { t } = useLanguage()
   const entries = useKeymapSelector((keymap: OpenTuiKeymap) => {
     const query = {
       namespace: "palette",
@@ -46,18 +48,30 @@ export function CommandPaletteDialog() {
     }))
   })
   const options = createMemo(() =>
-    entries().map((entry) => ({
-      title: typeof entry.command.title === "string" ? entry.command.title : entry.command.name,
-      description: typeof entry.command.desc === "string" ? entry.command.desc : undefined,
-      category: typeof entry.command.category === "string" ? entry.command.category : undefined,
-      footer: formatKeyBindings(entry.bindings, config),
-      value: entry.command.name,
-      suggested: isSuggestedPaletteCommand(entry),
-      onSelect: (dialog: DialogContext) => {
-        dialog.clear()
-        keymap.dispatchCommand(entry.command.name)
-      },
-    })),
+    entries().map((entry) => {
+      const rawTitle = typeof entry.command.title === "string" ? entry.command.title : entry.command.name
+      const rawDesc = typeof entry.command.desc === "string" ? entry.command.desc : undefined
+      // Try to resolve i18n key for title: tui.command.session.list.title
+      const titleKey = `tui.command.${entry.command.name}.title`
+      const descKey = `tui.command.${entry.command.name}.description`
+      const resolvedTitle = t(titleKey)
+      const resolvedDesc = t(descKey)
+      const rawCategory = typeof entry.command.category === "string" ? entry.command.category : undefined
+      const categoryKey = `tui.command.category.${rawCategory}`
+      const resolvedCategory = rawCategory ? t(categoryKey) : undefined
+      return {
+        title: resolvedTitle !== titleKey ? resolvedTitle : rawTitle,
+        description: resolvedDesc !== descKey ? resolvedDesc : rawDesc,
+        category: resolvedCategory && resolvedCategory !== categoryKey ? resolvedCategory : rawCategory,
+        footer: formatKeyBindings(entry.bindings, config),
+        value: entry.command.name,
+        suggested: isSuggestedPaletteCommand(entry),
+        onSelect: (dialog: DialogContext) => {
+          dialog.clear()
+          keymap.dispatchCommand(entry.command.name)
+        },
+      }
+    }),
   )
 
   let ref: DialogSelectRef<string>

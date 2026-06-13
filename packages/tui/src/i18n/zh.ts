@@ -391,3 +391,15 @@ const zh: Dictionary = {
   // Session badges
   "tui.session.badge.auto": "自动",
 } satisfies Partial<Record<Keys, string>>
+
+  // SWUST Code specific commands
+  "tui.command.dream.title": "Dream 知识整合",
+  "tui.command.dream.description": "自动从近期会话轨迹提炼项目知识",
+  "tui.command.distill.title": "Distill 技能发现",
+  "tui.command.distill.description": "发现重复工作流并打包为可复用技能",
+  "tui.command.goal.title": "设定自治目标",
+  "tui.command.goal.description": "设定目标后 Agent 自主工作直到完成",
+  "tui.command.memory.title": "搜索记忆",
+  "tui.command.memory.description": "搜索持久化的项目知识",
+  "tui.command.providers_import.title": "导入凭证",
+  "tui.command.providers_import.description": "从 MiMo-Code / Claude Code / 环境变量导入 API Key",
