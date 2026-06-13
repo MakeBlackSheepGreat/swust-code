@@ -30,6 +30,7 @@ import { Pty } from "./pty"
 import { SkillV2 } from "./skill"
 import { SkillGuidance } from "./skill/guidance"
 import { MemoryContext } from "./memory/context"
+import { Memory } from "./memory/service"
 import { Goal } from "./session/goal"
 import { BuiltInTools } from "./tool/builtins"
 import { Image } from "./image"
@@ -131,6 +132,7 @@ export class LocationServiceMap extends LayerMap.Service<LocationServiceMap>()("
     Global.defaultLayer,
     Ripgrep.defaultLayer,
     Database.defaultLayer,
+    Memory.defaultLayer,
     SessionStore.layer.pipe(Layer.provide(Database.defaultLayer)),
     PermissionSaved.defaultLayer,
     RepositoryCache.defaultLayer,

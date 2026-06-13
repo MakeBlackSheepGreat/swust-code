@@ -53,6 +53,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Goal } from "@/session/goal"
 import { GoalJudge } from "@/session/goal-judge"
+import { Memory } from "@swust-code/core/memory/service"
 
 export const AppLayer = Layer.mergeAll(
   Npm.defaultLayer,
@@ -103,6 +104,7 @@ export const AppLayer = Layer.mergeAll(
   SessionShare.defaultLayer,
   Goal.defaultLayer,
   GoalJudge.defaultLayer,
+  Memory.defaultLayer,
 ).pipe(
   Layer.provideMerge(Ripgrep.defaultLayer),
   Layer.provideMerge(InstanceLayer.layer),

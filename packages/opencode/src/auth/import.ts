@@ -33,11 +33,14 @@ function homeDir(): string {
 
 function mimocodeAuthPath(): string | null {
   const home = homeDir()
-  // XDG default
-  const xdg = path.join(home, ".local", "share", "mimocode", "data", "auth.json")
+  // XDG default (no data/ subdirectory - MiMo stores auth.json directly)
+  const xdg = path.join(home, ".local", "share", "mimocode", "auth.json")
   if (fs.existsSync(xdg)) return xdg
+  // XDG with data/ subdirectory
+  const xdgData = path.join(home, ".local", "share", "mimocode", "data", "auth.json")
+  if (fs.existsSync(xdgData)) return xdgData
   // macOS default
-  const macos = path.join(home, "Library", "Application Support", "mimocode", "data", "auth.json")
+  const macos = path.join(home, "Library", "Application Support", "mimocode", "auth.json")
   if (fs.existsSync(macos)) return macos
   // MIMOCODE_HOME env
   const envHome = process.env.MIMOCODE_HOME
