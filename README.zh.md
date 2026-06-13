@@ -16,11 +16,13 @@
 
 ---
 
-SWUST Code 基于 Anomaly Co. 的 [OpenCode](https://github.com/anomalyco/opencode) 构建，核心能力移植自小米的 [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) 和 nicognaW 的 [DevEco Code](https://github.com/nicognaW/deveco-code)。保留了 OpenCode 的全部核心能力（多 Provider、TUI、LSP、MCP、插件），并在此基础上增加了持久化记忆、目标驱动自治、自我进化、多智能体编排、工作流引擎和分层安全。
+SWUST Code 基于 Anomaly Co. 的 [OpenCode](https://github.com/anomalyco/opencode) 构建，核心能力移植自小米的 [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)、nicognaW 的 [DevEco Code](https://github.com/nicognaW/deveco-code) 和 esengine 的 [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix)。保留了 OpenCode 的全部核心能力（多 Provider、TUI、LSP、MCP、插件），并在此基础上增加了持久化记忆、目标驱动自治、自我进化、多智能体编排、工作流引擎、分层安全和缓存优先架构。
 
-从 MiMo-Code 移植：持久化记忆（FTS5）、Dream/Distill 自我进化、Actor/Spawn 子智能体编排、检查点系统、上下文压缩、工作流引擎。
+从 MiMo-Code 移植：持久化记忆（FTS5）、Dream/Distill 自我进化、Actor/Spawn 子智能体编排、检查点系统、上下文压缩、工作流引擎、重试策略、死循环检测。
 
-从 DevEco Code 移植：NAPI 原生工具桥接、Workspace 适配器模式、文档验证系统。
+从 DevEco Code 移植：NAPI 原生工具桥接、Workspace 适配器模式、文档验证系统、Tool Output 裁剪。
+
+从 DeepSeek-Reasonix 移植：Cache-Stable 前缀架构、@path 导入指令、One-Fact-Per-File 记忆存储、Slash 命令系统。
 
 > **[阅读完整文档](https://swust-code-docs.pages.dev)** — 安装、配置、功能详解、API 参考、开发者指南。
 
@@ -66,10 +68,9 @@ bun run --cwd packages/opencode src/index.ts
 - **全局记忆** (`global/MEMORY.md`) — 跨项目用户偏好
 - **会话检查点** (`checkpoint.md`) — 结构化 11 段状态快照，每段独立 token 预算
 - **会话笔记** (`notes.md`) — Agent 临时记录区
+- **事实存储** — 每个事实一个 md 文件 + frontmatter，与 FTS5 互补
 
-记忆自动在会话恢复时注入上下文，agent 无需重新理解项目背景。提供两个工具：
-- `memory` — 搜索持久知识（FTS5 + BM25 排序）
-- `memory_write` — 写入结构化知识到记忆文件
+记忆文件支持 `@path` 导入实现交叉引用。记忆自动在会话恢复时注入上下文。
 
 ### 目标驱动自治
 
@@ -79,7 +80,7 @@ bun run --cwd packages/opencode src/index.ts
 swust-code run --goal "修复所有 TypeScript 错误" "开始工作"
 ```
 
-当 agent 尝试停止时，独立的 judge 模型会评估对话，判断条件是否真正满足——防止自治工作中的过早停止。每个目标最多重入 12 次。二级 task gate 在允许 agent 停止前检查未完成的任务。
+当 agent 尝试停止时，独立的 judge 模型会评估对话，判断条件是否真正满足——防止自治工作中的过早停止。每个目标最多重入 12 次。
 
 ### Dream & Distill
 
@@ -88,7 +89,7 @@ swust-code run --goal "修复所有 TypeScript 错误" "开始工作"
 
 ### 子智能体系统
 
-主智能体可按需生成子智能体，共享当前会话上下文并行工作，支持生命周期追踪、取消机制和后台执行。两种派生模式：
+主智能体可按需生成子智能体，两种派生模式：
 - **peer** — 创建新子会话（完全隔离）
 - **subagent** — 共享父会话上下文（不同 actorID）
 
@@ -96,7 +97,7 @@ swust-code run --goal "修复所有 TypeScript 错误" "开始工作"
 
 ### 工作流引擎
 
-可脚本化的多智能体编排运行时，支持崩溃恢复。工作流是运行在沙箱环境中的 JavaScript 脚本，可以派生智能体、并行执行任务、组合结果。
+可脚本化的多智能体编排运行时，支持崩溃恢复：
 
 - **Journal 持久化** — JSONL 日志，确定性 key 去重
 - **崩溃恢复** — 从最后检查点恢复执行
@@ -105,43 +106,29 @@ swust-code run --goal "修复所有 TypeScript 错误" "开始工作"
 
 ### 安全防护
 
-四步权限流水线 + Bash 命令安全分析：
+四步权限流水线 + Bash 命令安全分析。工具默认 fail-closed。
 
-1. Blanket deny 规则 — 直接阻止
-2. Blanket ask 规则 — 提示用户确认
-3. 工具特定 `checkPermissions()` — 逐工具检查
-4. 模式覆盖 — bypass / acceptEdits / dontAsk / auto
+### 缓存优先架构
 
-Bash 安全分析器检测危险模式（rm -rf、fork bomb、eval、chmod 777、curl|sh 等）并在执行前阻止。工具默认 fail-closed：`isReadOnly=false`，`isDestructive=true`。
+System prompt 分为字节稳定的前缀（Agent 提示 + 工具定义 + 记忆）和每轮变化的尾部（检查点 + 笔记 + 任务）。前缀在会话内保持不变，确保 LLM Provider 缓存持续命中，降低长会话的 token 成本。
 
-### 技能系统
+### Slash 命令
 
-在 `.swust-code/skills/<name>/SKILL.md` 中创建自定义技能：
+TUI 内交互式命令：
 
-```markdown
----
-name: code-review
-description: 审查代码变更的正确性和风格
----
-
-# 技能说明...
-```
-
-技能从多个来源自动发现，并根据文件路径条件激活。
+| 命令 | 说明 |
+|------|------|
+| `/memory <query>` | 搜索持久记忆 |
+| `/goal <condition>` | 设定自治目标 |
+| `/dream` | 触发记忆整合 |
+| `/distill` | 触发技能发现 |
+| `/help` | 显示可用命令 |
 
 ---
 
 ## 配置
 
-SWUST Code 通过项目目录下的 `.swust-code/config.json` 配置（全局配置在 `~/.config/swust-code/config.json`）。主要选项包括：
-
-- Provider 和模型选择
-- 智能体权限
-- 记忆行为（`memory_reconcile_on_search`、`memory_search_score_floor`）
-- MCP 服务器连接
-- 键绑定和主题
-
-详见[配置指南](https://swust-code-docs.pages.dev/guide/config)。
+SWUST Code 通过项目目录下的 `.swust-code/config.json` 配置（全局配置在 `~/.config/swust-code/config.json`）。详见[配置指南](https://swust-code-docs.pages.dev/guide/config)。
 
 ---
 
@@ -187,30 +174,18 @@ bun turbo test           # 运行测试
 
 ## 文档
 
-完整文档请访问 **[swust-code-docs.pages.dev](https://swust-code-docs.pages.dev)**：
-
-- [快速开始](https://swust-code-docs.pages.dev/guide/start)
-- [安装指南](https://swust-code-docs.pages.dev/guide/install)
-- [配置说明](https://swust-code-docs.pages.dev/guide/config)
-- [LLM 提供商](https://swust-code-docs.pages.dev/guide/providers)
-- [持久化记忆](https://swust-code-docs.pages.dev/features/memory)
-- [目标驱动自治](https://swust-code-docs.pages.dev/features/goal)
-- [Dream & Distill](https://swust-code-docs.pages.dev/features/dream)
-- [安全防护](https://swust-code-docs.pages.dev/features/security)
-- [工作流引擎](https://swust-code-docs.pages.dev/features/workflow)
-- [技能系统](https://swust-code-docs.pages.dev/features/skills)
-- [CLI 命令](https://swust-code-docs.pages.dev/api/commands)
-- [架构设计](https://swust-code-docs.pages.dev/dev/architecture)
+完整文档请访问 **[swust-code-docs.pages.dev](https://swust-code-docs.pages.dev)**。
 
 ---
 
 ## 致谢
 
-SWUST Code 站在三个开源项目的肩膀上：
+SWUST Code 站在四个开源项目的肩膀上：
 
 - [**OpenCode**](https://github.com/anomalyco/opencode) by Anomaly Co. — 基座。所有核心能力（多 Provider LLM、TUI、LSP、MCP、插件系统）来自 OpenCode。
-- [**MiMo-Code**](https://github.com/XiaomiMiMo/MiMo-Code) by 小米 — 持久化记忆（FTS5）、Dream/Distill 自我进化、Actor/Spawn 编排、检查点系统、上下文压缩、工作流引擎。
-- [**DevEco Code**](https://github.com/nicognaW/deveco-code) by nicognaW — NAPI 原生工具桥接、Workspace 适配器模式、文档验证系统。
+- [**MiMo-Code**](https://github.com/XiaomiMiMo/MiMo-Code) by 小米 — 持久化记忆（FTS5）、Dream/Distill 自我进化、Actor/Spawn 编排、检查点系统、上下文压缩、工作流引擎、重试策略、死循环检测。
+- [**DevEco Code**](https://github.com/nicognaW/deveco-code) by nicognaW — NAPI 原生工具桥接、Workspace 适配器模式、文档验证系统、Tool Output 裁剪。
+- [**DeepSeek-Reasonix**](https://github.com/esengine/DeepSeek-Reasonix) by esengine — Cache-Stable 前缀架构、@path 导入指令、One-Fact-Per-File 记忆存储、Slash 命令系统。
 
 感谢这些项目的维护者和贡献者在开源协议下发布他们的工作。
 

@@ -16,11 +16,13 @@
 
 ---
 
-SWUST Code is built on top of [OpenCode](https://github.com/anomalyco/opencode) by Anomaly Co., with key capabilities ported from [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi and [DevEco Code](https://github.com/nicognaW/deveco-code) by nicognaW. It keeps all core OpenCode capabilities (multiple providers, TUI, LSP, MCP, plugins) and adds persistent memory, goal-driven autonomy, self-improvement, multi-agent orchestration, workflow engine, and layered security.
+SWUST Code is built on top of [OpenCode](https://github.com/anomalyco/opencode) by Anomaly Co., with key capabilities ported from [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi, [DevEco Code](https://github.com/nicognaW/deveco-code) by nicognaW, and [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix) by esengine. It keeps all core OpenCode capabilities (multiple providers, TUI, LSP, MCP, plugins) and adds persistent memory, goal-driven autonomy, self-improvement, multi-agent orchestration, workflow engine, layered security, and cache-first architecture.
 
-From MiMo-Code we ported: persistent memory (FTS5), Dream/Distill self-improvement, Actor/Spawn subagent orchestration, checkpoint system, context compaction, and workflow engine.
+From MiMo-Code we ported: persistent memory (FTS5), Dream/Distill self-improvement, Actor/Spawn subagent orchestration, checkpoint system, context compaction, workflow engine, retry strategy, and doom loop detection.
 
-From DevEco Code we ported: NAPI bridge for native tool loading, workspace adapter pattern, and document validation system.
+From DevEco Code we ported: NAPI bridge for native tool loading, workspace adapter pattern, document validation system, and tool output pruning.
+
+From DeepSeek-Reasonix we ported: cache-stable prefix architecture, `@path` import directive for memory files, one-fact-per-file memory store with frontmatter, and slash command system.
 
 > **[Read the full documentation](https://swust-code-docs.pages.dev)** — installation, configuration, features, API reference, and developer guides.
 
@@ -66,10 +68,9 @@ Cross-session memory powered by SQLite FTS5 full-text search:
 - **Global memory** (`global/MEMORY.md`) — cross-project user preferences
 - **Session checkpoint** (`checkpoint.md`) — structured 11-section state snapshot with per-section token budgets
 - **Session notes** (`notes.md`) — temporary scratchpad for agents
+- **Fact store** — one-fact-per-file storage with frontmatter, complementary to FTS5 search
 
-Memory is injected automatically when a session resumes, so the agent does not need to relearn project context. Two tools are available:
-- `memory` — search persistent knowledge (FTS5 + BM25 ranking)
-- `memory_write` — write structured knowledge to memory files
+Memory files support `@path` imports for cross-referencing. Memory is injected automatically when a session resumes.
 
 ### Goal-Driven Autonomy
 
@@ -79,7 +80,7 @@ The `--goal` flag sets a stopping condition for a session:
 swust-code run --goal "fix all TypeScript errors" "start working"
 ```
 
-When the agent tries to stop, an independent judge model evaluates the conversation to decide whether the condition is truly satisfied — preventing premature stops during autonomous work. Re-entry is capped at 12 attempts per goal. A secondary task gate checks for incomplete tasks before allowing the agent to stop.
+When the agent tries to stop, an independent judge model evaluates the conversation to decide whether the condition is truly satisfied — preventing premature stops during autonomous work. Re-entry is capped at 12 attempts per goal.
 
 ### Dream & Distill
 
@@ -88,7 +89,7 @@ When the agent tries to stop, an independent judge model evaluates the conversat
 
 ### Subagent System
 
-The primary agent can create subagents on demand. Subagents share the current session context and can work in parallel, with lifecycle tracking, cancellation, and background execution. Two spawn modes:
+The primary agent can create subagents on demand. Two spawn modes:
 - **peer** — creates a new child session (full isolation)
 - **subagent** — shares the parent session context (distinct actorID)
 
@@ -96,7 +97,7 @@ Subagents reuse the parent's prompt cache prefix (Fork Cache alignment) to reduc
 
 ### Workflow Engine
 
-Scriptable multi-agent orchestration with crash recovery. Workflows are JavaScript scripts that run in a sandboxed environment and can spawn agents, run tasks in parallel, and compose results.
+Scriptable multi-agent orchestration with crash recovery:
 
 - **Journal persistence** — JSONL logs with deterministic key deduplication
 - **Crash recovery** — resume from last checkpoint on restart
@@ -105,43 +106,29 @@ Scriptable multi-agent orchestration with crash recovery. Workflows are JavaScri
 
 ### Security
 
-4-step permission pipeline with bash command safety analysis:
+4-step permission pipeline with bash command safety analysis. Tools default to fail-closed: `isReadOnly=false`, `isDestructive=true`.
 
-1. Blanket deny rules — immediate block
-2. Blanket ask rules — prompt user
-3. Tool-specific `checkPermissions()` — per tool
-4. Mode override — bypass / acceptEdits / dontAsk / auto
+### Cache-First Architecture
 
-Bash safety analyzer detects dangerous patterns (rm -rf, fork bomb, eval, chmod 777, curl|sh, etc.) and blocks them before execution. Tools default to fail-closed: `isReadOnly=false`, `isDestructive=true`.
+The system prompt is split into a byte-stable prefix (agent prompt + tools + memory) and a per-turn tail (checkpoint + notes + tasks). The prefix stays identical across turns so LLM provider caches remain warm, reducing token costs in long sessions.
 
-### Skills System
+### Slash Commands
 
-Create custom skills in `.swust-code/skills/<name>/SKILL.md`:
+Interactive commands in the TUI:
 
-```markdown
----
-name: code-review
-description: Review code changes for correctness and style
----
-
-# Instructions...
-```
-
-Skills are automatically discovered from multiple sources and conditionally activated based on file paths.
+| Command | Description |
+|---------|-------------|
+| `/memory <query>` | Search persistent memory |
+| `/goal <condition>` | Set autonomous goal |
+| `/dream` | Trigger memory consolidation |
+| `/distill` | Trigger workflow discovery |
+| `/help` | Show available commands |
 
 ---
 
 ## Configuration
 
-SWUST Code is configured via `.swust-code/config.json` in the project directory (or `~/.config/swust-code/config.json` globally). Key options include:
-
-- Provider and model selection
-- Agent permissions
-- Memory behavior (`memory_reconcile_on_search`, `memory_search_score_floor`)
-- MCP server connections
-- Keybindings and theme
-
-See the [Configuration Guide](https://swust-code-docs.pages.dev/guide/config) for details.
+SWUST Code is configured via `.swust-code/config.json` in the project directory (or `~/.config/swust-code/config.json` globally). See the [Configuration Guide](https://swust-code-docs.pages.dev/guide/config).
 
 ---
 
@@ -187,30 +174,18 @@ bun turbo test           # Run tests
 
 ## Documentation
 
-Full documentation is available at **[swust-code-docs.pages.dev](https://swust-code-docs.pages.dev)**:
-
-- [Quick Start](https://swust-code-docs.pages.dev/guide/start)
-- [Installation](https://swust-code-docs.pages.dev/guide/install)
-- [Configuration](https://swust-code-docs.pages.dev/guide/config)
-- [LLM Providers](https://swust-code-docs.pages.dev/guide/providers)
-- [Persistent Memory](https://swust-code-docs.pages.dev/features/memory)
-- [Goal-Driven Autonomy](https://swust-code-docs.pages.dev/features/goal)
-- [Dream & Distill](https://swust-code-docs.pages.dev/features/dream)
-- [Security](https://swust-code-docs.pages.dev/features/security)
-- [Workflow Engine](https://swust-code-docs.pages.dev/features/workflow)
-- [Skills System](https://swust-code-docs.pages.dev/features/skills)
-- [CLI Commands](https://swust-code-docs.pages.dev/api/commands)
-- [Architecture](https://swust-code-docs.pages.dev/dev/architecture)
+Full documentation is available at **[swust-code-docs.pages.dev](https://swust-code-docs.pages.dev)**.
 
 ---
 
 ## Acknowledgments
 
-SWUST Code stands on the shoulders of three open-source projects:
+SWUST Code stands on the shoulders of four open-source projects:
 
 - [**OpenCode**](https://github.com/anomalyco/opencode) by Anomaly Co. — the foundation. All core capabilities (multi-provider LLM, TUI, LSP, MCP, plugin system) come from OpenCode.
-- [**MiMo-Code**](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi — persistent memory (FTS5), Dream/Distill self-improvement, Actor/Spawn orchestration, checkpoint system, context compaction, workflow engine.
-- [**DevEco Code**](https://github.com/nicognaW/deveco-code) by nicognaW — NAPI bridge for native tool loading, workspace adapter pattern, document validation system.
+- [**MiMo-Code**](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi — persistent memory (FTS5), Dream/Distill self-improvement, Actor/Spawn orchestration, checkpoint system, context compaction, workflow engine, retry strategy, doom loop detection.
+- [**DevEco Code**](https://github.com/nicognaW/deveco-code) by nicognaW — NAPI bridge for native tool loading, workspace adapter pattern, document validation system, tool output pruning.
+- [**DeepSeek-Reasonix**](https://github.com/esengine/DeepSeek-Reasonix) by esengine — cache-stable prefix architecture, `@path` import directive, one-fact-per-file memory store, slash command system.
 
 We are grateful to the maintainers and contributors of these projects for making their work available under open-source licenses.
 
