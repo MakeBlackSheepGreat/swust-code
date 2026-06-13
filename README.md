@@ -1,22 +1,16 @@
 <h1 align="center">SWUST Code</h1>
 
-<p align="center">
-  <strong>An open-source AI coding agent with persistent memory, goal-driven autonomy, and self-improvement.</strong>
-</p>
+<p align="center"><strong>An open-source AI coding agent with persistent memory, goal-driven autonomy, and self-improvement.</strong></p>
 
 <p align="center">
   <a href="README.zh.md">中文</a> | English
 </p>
 
-<p align="center">
-  <a href="https://github.com/MakeBlackSheepGreat/swust-code">GitHub</a> | <a href="docs/DIFFERENCES.md">Why SWUST Code?</a> | <a href="docs/quickstart.md">Quick Start</a>
-</p>
-
 ---
 
-SWUST Code is a terminal-native AI coding agent built on [OpenCode](https://github.com/anomalyco/opencode). It goes beyond code assistance — it **remembers** your project across sessions, **learns** from your work patterns, and **evolves** its own capabilities over time.
+SWUST Code is a terminal-native AI coding agent. It can read and write code, run commands, manage Git, and use a persistent memory system to keep a deep understanding of your project across sessions while continuously improving itself.
 
-Built with Effect-TS, SQLite FTS5, and the Vercel AI SDK, SWUST Code supports 15+ LLM providers and runs as CLI, TUI, Web, or Desktop app from a single codebase.
+SWUST Code supports connecting to any mainstream LLM provider API via the Vercel AI SDK.
 
 ---
 
@@ -32,101 +26,73 @@ cd swust-code && bun install
 bun run --cwd packages/opencode src/index.ts
 ```
 
-Configure your LLM provider:
-
-```bash
-# Set API key (choose one)
-export ANTHROPIC_API_KEY="your-key"
-export OPENAI_API_KEY="your-key"
-
-# Run interactively
-swust-code
-
-# Run with a message
-swust-code run "explain this project"
-
-# Run with an autonomous goal
-swust-code run --goal "fix all TypeScript errors" "start working"
-```
+The first launch guides you through configuration automatically. Supported options:
+- **Anthropic** — Claude models via API key
+- **OpenAI** — GPT models via API key
+- **Custom Provider** — add any OpenAI-compatible API in the TUI
 
 ---
 
 ## Core Features
 
+### Multiple Agents
+
+| Agent | Description |
+|-------|-------------|
+| **build** | Default. Full tool permissions for development |
+| **plan** | Read-only analysis mode for code exploration and solution design |
+| **explore** | Fast read-only search agent for locating code |
+
+Press `Tab` to switch between primary agents. Subagents are created by the system as needed.
+
 ### Persistent Memory
 
 Cross-session memory powered by SQLite FTS5 full-text search:
 
-- **Project memory** (`projects/<id>/MEMORY.md`) — persistent project knowledge, rules, architecture decisions
+- **Project memory** (`MEMORY.md`) — persistent project knowledge, rules, and architecture decisions
 - **Global memory** (`global/MEMORY.md`) — cross-project user preferences
-- **Session checkpoint** (`sessions/<id>/checkpoint.md`) — structured 11-section state snapshot with per-section token budgets
-- **Session notes** (`sessions/<id>/notes.md`) — temporary scratchpad for agents
+- **Session checkpoint** (`checkpoint.md`) — structured 11-section state snapshot with per-section token budgets
+- **Session notes** (`notes.md`) — temporary scratchpad for agents
 
-The agent automatically indexes memory files for full-text search, injects relevant context into conversations, and persists knowledge across sessions.
-
-```bash
-# Memory tools available to the agent:
-# memory      — search persistent knowledge (FTS5 + BM25 ranking)
-# memory_write — write structured knowledge to memory files
-```
+Memory is injected automatically when a session resumes, so the agent does not need to relearn project context. Two tools are available:
+- `memory` — search persistent knowledge (FTS5 + BM25 ranking)
+- `memory_write` — write structured knowledge to memory files
 
 ### Goal-Driven Autonomy
 
-Set a goal and the agent works autonomously until it's done:
+The `--goal` flag sets a stopping condition for a session:
 
 ```bash
-swust-code run --goal "refactor the auth module to use JWT" "start working"
+swust-code run --goal "fix all TypeScript errors" "start working"
 ```
 
-- **Goal Judge** — an independent LLM evaluates whether the goal is truly met
-- **Re-entry control** — up to 12 re-entries per goal to prevent infinite loops
-- **Task Gate** — secondary stop condition checking for incomplete tasks
-- **Step Classifier** — deterministic priority cascade for loop decisions
+When the agent tries to stop, an independent judge model evaluates the conversation to decide whether the condition is truly satisfied — preventing premature stops during autonomous work. Re-entry is capped at 12 attempts per goal.
 
-### Self-Improvement
+### Dream & Distill
 
-The agent continuously improves itself from your usage patterns:
+- **`swust-code dream`** — scans recent session traces, extracts persistent knowledge into project memory, and removes outdated entries (auto-triggers every 7 days)
+- **`swust-code distill`** — discovers repeated manual workflows in recent work and packages high-confidence candidates into reusable skills (auto-triggers every 30 days)
 
-- **`swust-code dream`** — scans recent session traces, extracts persistent knowledge into project memory, removes outdated entries (auto-triggers every 7 days)
-- **`swust-code distill`** — discovers repeated manual workflows and packages high-confidence candidates into reusable skills (auto-triggers every 30 days)
+### Subagent System
 
-### Multi-Agent Orchestration
-
-| Mode | Description |
-|------|-------------|
-| **peer** | Creates a new child session (full isolation) |
-| **subagent** | Shares the parent session context (distinct actorID) |
-
-- **Actor Registry** — lifecycle tracking, orphan recovery, stuck detection
-- **Fork Cache Alignment** — subagents reuse the parent's prompt cache prefix
-- **Coordinator Protocol** — structured phases: Research → Synthesis → Implementation → Verification
+The primary agent can create subagents on demand. Subagents share the current session context and can work in parallel, with lifecycle tracking, cancellation, and background execution. Two spawn modes:
+- **peer** — creates a new child session (full isolation)
+- **subagent** — shares the parent session context (distinct actorID)
 
 ### Workflow Engine
 
-Scriptable multi-agent orchestration with crash recovery:
-
-```javascript
-// Deep Research workflow (built-in)
-phase('Plan')
-const plan = await agent('Break into search lines: ' + args)
-const results = await parallel(plan.lines.map(line => () => agent('Search: ' + line)))
-// ... Extract → Group → Crosscheck → Report
-```
-
-- **Journal persistence** — JSONL logs with deterministic key deduplication
-- **Crash recovery** — resume from last checkpoint on restart
-- **Concurrency control** — semaphore bounded to `min(16, 2*cores)`
+Scriptable multi-agent orchestration with crash recovery. Workflows are JavaScript scripts that run in a sandboxed environment and can spawn agents, run tasks in parallel, and compose results. Built-in workflow: Deep Research (6-phase pipeline with adversarial fact-checking).
 
 ### Security
 
 4-step permission pipeline with bash command safety analysis:
 
-1. **Blanket deny rules** — immediate block
-2. **Blanket ask rules** — prompt user
-3. **Tool-specific check** — `checkPermissions()` per tool
-4. **Mode override** — bypass/acceptEdits/dontAsk/auto
+1. Blanket deny rules — immediate block
+2. Blanket ask rules — prompt user
+3. Tool-specific `checkPermissions()` — per tool
+4. Mode override — bypass / acceptEdits / dontAsk / auto
 
-Bash safety analyzer detects 21 dangerous patterns (rm -rf, fork bomb, eval, chmod 777, curl|sh, etc.).
+Bash safety analyzer detects dangerous patterns (rm -rf, fork bomb, eval, chmod 777, curl|sh, etc.) and blocks them before execution.
 
 ### Skills System
 
@@ -135,100 +101,49 @@ Create custom skills in `.swust-code/skills/<name>/SKILL.md`:
 ```markdown
 ---
 name: code-review
-description: Review code changes for correctness, style, and potential issues
+description: Review code changes for correctness and style
 ---
 
-# Code Review Skill
-...
+# Instructions...
 ```
 
 Skills are automatically discovered from multiple sources and conditionally activated based on file paths.
 
 ---
 
-## Architecture
+## Configuration
 
-```
-┌─────────────────────────────────────────────────┐
-│              CLI / TUI / Web / Desktop           │
-├─────────────────────────────────────────────────┤
-│           Session Runner                         │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐        │
-│  │ Memory   │ │ Goal     │ │ Dream    │        │
-│  │ Context  │ │ Gate     │ │ Trigger  │        │
-│  └──────────┘ └──────────┘ └──────────┘        │
-├─────────────────────────────────────────────────┤
-│  Tools / Security / Actor / Workflow / Skills    │
-├─────────────────────────────────────────────────┤
-│  SQLite FTS5 + Drizzle ORM + Effect-TS          │
-└─────────────────────────────────────────────────┘
-```
+SWUST Code is configured via `.swust-code/config.json` in the project directory (or `~/.config/swust-code/config.json` globally). Key options include:
 
-| Layer | Technology |
-|-------|-----------|
-| Runtime | Bun 1.3.14 |
-| Effect System | Effect-TS 4.0 beta |
-| Database | SQLite + Drizzle ORM + FTS5 |
-| LLM | Vercel AI SDK (15+ providers) |
-| Frontend | SolidJS + OpenTUI |
-| Package Manager | Bun + Turborepo |
-
----
-
-## Supported Providers
-
-Anthropic, OpenAI, Google, Azure, AWS Bedrock, Groq, Mistral, xAI, Cohere, Perplexity, Together AI, OpenRouter, Cloudflare Workers AI, and any OpenAI-compatible API.
+- Provider and model selection
+- Agent permissions
+- Memory behavior
+- MCP server connections
+- Keybindings and theme
 
 ---
 
 ## Development
 
 ```bash
-# Clone
-git clone https://github.com/MakeBlackSheepGreat/swust-code.git
-cd swust-code
-
-# Install
-bun install
-
-# Run CLI
-bun run --cwd packages/opencode src/index.ts
-
-# Typecheck
-bun typecheck
-
-# Run tests
-bun turbo test
+bun install              # Install dependencies
+bun run dev              # Run in development mode
+bun turbo typecheck      # Type check
+bun turbo test           # Run tests
 ```
 
 ---
 
-## Comparison with OpenCode
+## Relationship to OpenCode
 
-SWUST Code adds **6 core capability layers** on top of OpenCode:
-
-| Capability | OpenCode | SWUST Code |
-|-----------|----------|------------|
-| Memory | None | FTS5 + BM25 + incremental sync |
-| Autonomy | None | Goal Judge + Task Gate + re-entry control |
-| Evolution | None | Dream + Distill + auto-trigger |
-| Security | Basic | 4-step pipeline + bash safety + fail-closed defaults |
-| Orchestration | Basic | Actor + ForkCache + Coordinator |
-| Workflow | None | QuickJS sandbox + journal + Deep Research |
-
-See [docs/DIFFERENCES.md](docs/DIFFERENCES.md) for the complete analysis.
-
----
-
-## Acknowledgments
-
-Based on [OpenCode](https://github.com/anomalyco/opencode) by Anomaly Co.
+SWUST Code is built as a fork of [OpenCode](https://github.com/anomalyco/opencode). It keeps all core OpenCode capabilities (multiple providers, TUI, LSP, MCP, plugins) and adds persistent memory, goal-driven autonomy, self-improvement via dream/distill, multi-agent orchestration, workflow engine, and layered security.
 
 Key patterns ported from:
 - [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) — Memory system, Dream/Distill, Actor/Spawn, Workflow engine
 - [DevEco Code](https://github.com/nicognaW/deveco-code) — NAPI bridge, Workspace adapter, Document validation
-- Claude Code (reverse-engineered) — Permission pipeline, Bash safety, Coordinator protocol
+
+---
 
 ## License
 
-[MIT](LICENSE)
+Source code is licensed under the [MIT License](./LICENSE).
