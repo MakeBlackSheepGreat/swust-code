@@ -8,6 +8,7 @@ import { Service as ReconcilerService, defaultLayer as ReconcilerDefaultLayer } 
 import { Flag } from "../flag/flag"
 import { buildFtsQuery, applyScoreFloor, type SearchResult } from "./fts-query"
 import { assertMemoryWriteAllowed } from "./write-guard"
+import { saveFact, loadFacts, type MemoryFact, normalizeType } from "./fact-store"
 import { sql } from "drizzle-orm"
 
 export type { SearchResult }
@@ -22,12 +23,23 @@ export interface WriteInput {
   readonly taskId?: string
 }
 
+export interface FactInput {
+  readonly name: string
+  readonly title: string
+  readonly description: string
+  readonly type: string
+  readonly body: string
+  readonly projectId: string
+}
+
 export interface Interface {
   readonly search: (
     query: string,
     opts?: { readonly limit?: number; readonly kind?: string },
   ) => Effect.Effect<ReadonlyArray<SearchResult>>
   readonly write: (input: WriteInput) => Effect.Effect<string>
+  readonly saveFact: (input: FactInput) => Effect.Effect<string>
+  readonly listFacts: (projectId: string) => Effect.Effect<ReadonlyArray<MemoryFact>>
   readonly reconcile: () => Effect.Effect<void>
   readonly root: () => string
 }
@@ -123,7 +135,28 @@ export const layer = Layer.effect(
         return filePath
       })
 
-    return Service.of({ search, write, reconcile, root: () => root })
+    const saveFactMethod = (input: FactInput): Effect.Effect<string> =>
+      Effect.tryPromise({
+        try: async () => {
+          await saveFact(global.data, input.projectId, {
+            name: input.name,
+            title: input.title,
+            description: input.description,
+            type: normalizeType(input.type),
+            body: input.body,
+          })
+          return path.join(global.data, "memory", "projects", input.projectId, "facts", `${input.name}.md`)
+        },
+        catch: (e) => new Error(`Failed to save fact: ${e}`),
+      }).pipe(Effect.catch(() => Effect.succeed("")))
+
+    const listFactsMethod = (projectId: string): Effect.Effect<ReadonlyArray<MemoryFact>> =>
+      Effect.tryPromise({
+        try: () => loadFacts(global.data, projectId),
+        catch: () => [] as MemoryFact[],
+      }).pipe(Effect.catch(() => Effect.succeed([] as ReadonlyArray<MemoryFact>)))
+
+    return Service.of({ search, write, saveFact: saveFactMethod, listFacts: listFactsMethod, reconcile, root: () => root })
   }),
 )
 

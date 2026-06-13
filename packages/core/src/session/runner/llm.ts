@@ -28,6 +28,7 @@ import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
+import { pruneToolOutputs } from "../tool-pruning"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
@@ -173,6 +174,7 @@ export const layer = Layer.effect(
       )
 
     const sameModel = Schema.toEquivalence(Schema.UndefinedOr(ModelV2.Ref))
+
     const loadSystemContext = (agent: AgentV2.Selection) =>
       Effect.all([systemContext.load(), skillGuidance.load(agent), referenceGuidance.load(), memoryContext.load()], {
         concurrency: "unbounded",
@@ -231,6 +233,9 @@ export const layer = Layer.effect(
         messages: toLLMMessages(context, model),
         tools: toolMaterialization.definitions,
       })
+      // Tool output pruning is handled by the compaction system
+      // See tool-pruning.ts for standalone pruning utility
+
       if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request }))
         return yield* Effect.die(rebuildPreparedTurn())
       const publisher = createLLMEventPublisher(events, {
