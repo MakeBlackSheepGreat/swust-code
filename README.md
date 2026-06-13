@@ -1,6 +1,14 @@
 <h1 align="center">SWUST Code</h1>
 
-<p align="center"><strong>An open-source AI coding agent with persistent memory, goal-driven autonomy, and self-improvement.</strong></p>
+<p align="center">
+  <strong>An open-source AI coding agent with persistent memory, goal-driven autonomy, and self-improvement.</strong>
+</p>
+
+<p align="center">
+  <a href="https://swust-code-docs.pages.dev"><img src="https://img.shields.io/badge/docs-live-brightgreen" alt="Docs"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
+  <a href="https://github.com/MakeBlackSheepGreat/swust-code"><img src="https://img.shields.io/github/stars/MakeBlackSheepGreat/swust-code?style=social" alt="Stars"></a>
+</p>
 
 <p align="center">
   <a href="README.zh.md">中文</a> | English
@@ -13,6 +21,8 @@ SWUST Code is built on top of [OpenCode](https://github.com/anomalyco/opencode) 
 From MiMo-Code we ported: persistent memory (FTS5), Dream/Distill self-improvement, Actor/Spawn subagent orchestration, checkpoint system, context compaction, and workflow engine.
 
 From DevEco Code we ported: NAPI bridge for native tool loading, workspace adapter pattern, and document validation system.
+
+> **[Read the full documentation](https://swust-code-docs.pages.dev)** — installation, configuration, features, API reference, and developer guides.
 
 ---
 
@@ -131,6 +141,8 @@ SWUST Code is configured via `.swust-code/config.json` in the project directory 
 - MCP server connections
 - Keybindings and theme
 
+See the [Configuration Guide](https://swust-code-docs.pages.dev/guide/config) for details.
+
 ---
 
 ## Architecture
@@ -173,6 +185,25 @@ bun turbo test           # Run tests
 
 ---
 
+## Documentation
+
+Full documentation is available at **[swust-code-docs.pages.dev](https://swust-code-docs.pages.dev)**:
+
+- [Quick Start](https://swust-code-docs.pages.dev/guide/start)
+- [Installation](https://swust-code-docs.pages.dev/guide/install)
+- [Configuration](https://swust-code-docs.pages.dev/guide/config)
+- [LLM Providers](https://swust-code-docs.pages.dev/guide/providers)
+- [Persistent Memory](https://swust-code-docs.pages.dev/features/memory)
+- [Goal-Driven Autonomy](https://swust-code-docs.pages.dev/features/goal)
+- [Dream & Distill](https://swust-code-docs.pages.dev/features/dream)
+- [Security](https://swust-code-docs.pages.dev/features/security)
+- [Workflow Engine](https://swust-code-docs.pages.dev/features/workflow)
+- [Skills System](https://swust-code-docs.pages.dev/features/skills)
+- [CLI Commands](https://swust-code-docs.pages.dev/api/commands)
+- [Architecture](https://swust-code-docs.pages.dev/dev/architecture)
+
+---
+
 ## Acknowledgments
 
 SWUST Code stands on the shoulders of three open-source projects:
@@ -187,4 +218,4 @@ We are grateful to the maintainers and contributors of these projects for making
 
 ## License
 
-Source code is licensed under the [MIT License](./LICENSE).
+[MIT](LICENSE)

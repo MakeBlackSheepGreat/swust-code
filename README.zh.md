@@ -1,6 +1,14 @@
 <h1 align="center">SWUST Code</h1>
 
-<p align="center"><strong>开源 AI 编程智能体，拥有持久记忆、目标驱动自治和自我进化能力。</strong></p>
+<p align="center">
+  <strong>开源 AI 编程智能体，拥有持久记忆、目标驱动自治和自我进化能力。</strong>
+</p>
+
+<p align="center">
+  <a href="https://swust-code-docs.pages.dev"><img src="https://img.shields.io/badge/docs-live-brightgreen" alt="Docs"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
+  <a href="https://github.com/MakeBlackSheepGreat/swust-code"><img src="https://img.shields.io/github/stars/MakeBlackSheepGreat/swust-code?style=social" alt="Stars"></a>
+</p>
 
 <p align="center">
   中文 | <a href="README.md">English</a>
@@ -13,6 +21,8 @@ SWUST Code 基于 Anomaly Co. 的 [OpenCode](https://github.com/anomalyco/openco
 从 MiMo-Code 移植：持久化记忆（FTS5）、Dream/Distill 自我进化、Actor/Spawn 子智能体编排、检查点系统、上下文压缩、工作流引擎。
 
 从 DevEco Code 移植：NAPI 原生工具桥接、Workspace 适配器模式、文档验证系统。
+
+> **[阅读完整文档](https://swust-code-docs.pages.dev)** — 安装、配置、功能详解、API 参考、开发者指南。
 
 ---
 
@@ -131,6 +141,8 @@ SWUST Code 通过项目目录下的 `.swust-code/config.json` 配置（全局配
 - MCP 服务器连接
 - 键绑定和主题
 
+详见[配置指南](https://swust-code-docs.pages.dev/guide/config)。
+
 ---
 
 ## 架构
@@ -173,6 +185,25 @@ bun turbo test           # 运行测试
 
 ---
 
+## 文档
+
+完整文档请访问 **[swust-code-docs.pages.dev](https://swust-code-docs.pages.dev)**：
+
+- [快速开始](https://swust-code-docs.pages.dev/guide/start)
+- [安装指南](https://swust-code-docs.pages.dev/guide/install)
+- [配置说明](https://swust-code-docs.pages.dev/guide/config)
+- [LLM 提供商](https://swust-code-docs.pages.dev/guide/providers)
+- [持久化记忆](https://swust-code-docs.pages.dev/features/memory)
+- [目标驱动自治](https://swust-code-docs.pages.dev/features/goal)
+- [Dream & Distill](https://swust-code-docs.pages.dev/features/dream)
+- [安全防护](https://swust-code-docs.pages.dev/features/security)
+- [工作流引擎](https://swust-code-docs.pages.dev/features/workflow)
+- [技能系统](https://swust-code-docs.pages.dev/features/skills)
+- [CLI 命令](https://swust-code-docs.pages.dev/api/commands)
+- [架构设计](https://swust-code-docs.pages.dev/dev/architecture)
+
+---
+
 ## 致谢
 
 SWUST Code 站在三个开源项目的肩膀上：
@@ -187,4 +218,4 @@ SWUST Code 站在三个开源项目的肩膀上：
 
 ## 协议
 
-源代码以 [MIT 协议](./LICENSE) 授权。
+[MIT](LICENSE)
