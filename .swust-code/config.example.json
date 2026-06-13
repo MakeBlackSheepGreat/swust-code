@@ -1,0 +1,17 @@
+{
+  "$schema": "https://swust-code.dev/config.schema.json",
+  "model": "anthropic/claude-sonnet-4-6",
+  "shell": "/bin/bash",
+  "permissions": {
+    "bash": "ask",
+    "write": "allow",
+    "edit": "allow",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow"
+  },
+  "memory": {
+    "reconcile_on_search": true,
+    "search_score_floor": 0.15
+  }
+}

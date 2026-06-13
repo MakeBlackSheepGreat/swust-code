@@ -1,0 +1,92 @@
+# Distill: Workflow Packaging
+
+You look back over recent work, identify repeated manual workflows worth
+packaging, and turn only the high-confidence ones into reusable assets:
+skills, custom subagents, or commands.
+
+Default window: review the last 30 days of sessions, or all available history if shorter.
+
+This command is manual. The user intentionally started it and is watching.
+
+## Data Sources
+
+1. Recent sessions from the raw trajectory database (source of truth).
+2. Memory files (MEMORY.md, checkpoint.md, notes.md) for cross-session patterns.
+3. Existing skills, agents, commands to avoid duplication.
+
+Trajectory database: `<DATA>/swust-code.db` (SQLite, read-only)
+Memory files root: `<DATA>/memory/`
+
+## Ground Rules
+
+- Raw trajectory is authoritative.
+- Read-only SQLite queries only.
+- If nothing has been repeated, create nothing. Zero packaging is valid.
+- Do not create speculative or overlapping assets.
+
+## Phase 0 - Locate Data
+
+1. Memory search for "workflow", "repeat", "every time", "rule".
+2. Glob memory paths.
+3. If no recent activity and memory is empty, stop.
+
+## Phase 1 - Inventory Existing Assets
+
+Before proposing anything, catalog what exists:
+- Skills: `{skill,skills}/**/SKILL.md` under `.swust-code/`
+- Commands: `{command,commands}/**/*.md`
+- Agents: `{agent,agents}/**/*.md`
+
+## Phase 2 - Discover Repeated Workflows
+
+Scan memory artifacts for repeated procedures:
+1. `checkpoint.md`: recurring task shapes, repeated sequences.
+2. `tasks/*/progress.md`: multi-step procedures that recur.
+3. `MEMORY.md` Patterns/Rules sections.
+
+## Phase 3 - Confirm Against Trajectory
+
+SQLite query for repeated tool usage:
+
+```sql
+SELECT json_extract(p.data, '$.tool') as tool,
+       substr(json_extract(p.data, '$.state.input'), 1, 200) as input_preview,
+       count(*) as n
+FROM message m
+JOIN part p ON p.message_id = m.id
+WHERE json_extract(m.data, '$.role') = 'assistant'
+  AND json_extract(p.data, '$.type') = 'tool'
+  AND m.time_created > <CUTOFF_MS>
+GROUP BY tool, input_preview
+ORDER BY n DESC
+LIMIT 50;
+```
+
+A candidate is real only when it occurred at least twice.
+
+## Phase 4 - Shortlist
+
+For each candidate:
+- Workflow description (one line)
+- Evidence and session IDs
+- Frequency / confidence
+- Recommended form: skill / agent / command / skip
+
+## Phase 5 - Choose Smallest Form
+
+- **Skill**: `SKILL.md` with YAML frontmatter under `.swust-code/skills/<name>/`
+- **Agent**: `.swust-code/agent/<name>.md` with frontmatter + system prompt
+- **Command**: `.swust-code/command/<name>.md` with `$ARGUMENTS` placeholders
+
+## Phase 6 - Create And Validate
+
+- Write to `.swust-code/` directory.
+- Keep each asset focused on one workflow.
+- Verify referenced paths with Glob, names with Grep.
+
+## Output Format
+
+- Shortlist: candidates with evidence.
+- Created: assets with paths and purpose.
+- Skipped: what was not packaged and why.
+- Health: asset count and coverage assessment.

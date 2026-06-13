@@ -1,0 +1,97 @@
+# Dream: Memory Consolidation
+
+You consolidate durable project memory from two sources:
+
+1. Memory files under the data directory's memory tree.
+2. Raw SWUST Code trajectory in the local SQLite database.
+
+Default window: review the last 7 days of sessions, or all available history if shorter.
+
+This command is manual. The user intentionally started it and is watching.
+You have bash access for inspection and SQLite queries, but use it carefully.
+
+## Data Source
+
+Trajectory database: `<DATA>/swust-code.db` (SQLite, read-only)
+Memory files root: `<DATA>/memory/`
+
+## Ground Rules
+
+- Raw trajectory is authoritative; memory files are a structured index/cache.
+- Prefer read-only bash commands for discovery and SQLite queries.
+- Do not modify the SQLite database or raw trajectory.
+- Write final durable knowledge only to project memory files.
+- Keep the memory folder compact and high-signal. Information density matters more than completeness.
+- `global/MEMORY.md` is for cross-project user preferences. Prefer the project's MEMORY.md for project-specific facts.
+
+## Phase 0 - Locate Data
+
+1. Use memory search with broad queries: "project", "session", "rule", "decision", "error".
+2. Use Glob/Read to inspect the memory paths.
+3. Use bash to locate the database at `<DATA>/swust-code.db`.
+4. If memory is empty and database has no sessions, report "Nothing to consolidate" and stop.
+
+## Phase 1 - Orient
+
+- Read the current project's `MEMORY.md`.
+- Read current session `notes.md` if it exists.
+- Glob `memory/sessions/*/checkpoint.md` for recent checkpoints.
+- List recent sessions from the database, newest first.
+
+## Phase 2 - Gather From Memory Files
+
+Extract candidate durable facts from:
+1. Recent `checkpoint.md` files (errors/fixes, design decisions).
+2. `tasks/*/progress.md` for durable task history.
+3. `notes.md` entries not in project memory.
+
+Prefer recent and repeated signals.
+
+## Phase 3 - Verify Against Raw Trajectory
+
+Use SQLite read-only queries to check candidates:
+
+```sql
+SELECT m.id, m.agent_id,
+       json_extract(p.data, '$.type') as part_type,
+       json_extract(p.data, '$.tool') as tool,
+       substr(p.data, 1, 800) as preview
+FROM message m
+JOIN part p ON p.message_id = m.id
+WHERE m.session_id = '<SESSION_ID>'
+  AND json_extract(m.data, '$.role') = 'assistant'
+ORDER BY m.time_created, p.time_created;
+```
+
+Promote a fact only when supported by explicit user statements, clear design decisions, or repeated evidence.
+
+## Phase 4 - Consolidate
+
+Edit `MEMORY.md` using these sections:
+
+- `## Rules` - project-level rules stated by the user.
+- `## Architecture decisions` - decision + date + rationale.
+- `## Discovered durable knowledge` - cross-session facts.
+- `## Patterns` - repeated problems and solutions.
+- `## Gotchas` - easy-to-miss traps.
+
+Principles:
+- Merge duplicates instead of appending.
+- Convert relative dates to YYYY-MM-DD.
+- Remove contradicted or obsolete entries.
+- Keep each entry to 1-3 lines.
+
+## Phase 5 - Prune And Verify
+
+- Keep `MEMORY.md` under 200 lines / 10KB.
+- Remove superseded entries.
+- Verify file paths with Glob, function names with Grep.
+- Mark unverifiable claims `[unverified]`.
+
+## Output Format
+
+Return a brief summary:
+- Consolidated: new entries added.
+- Updated: existing entries changed.
+- Deleted: stale entries removed.
+- Health: line count / 200, size / 10KB.
