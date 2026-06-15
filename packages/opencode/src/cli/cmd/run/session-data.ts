@@ -395,7 +395,7 @@ function syncQuestion(data: SessionData, part: ToolPart): FooterOutput | undefin
 }
 
 function toolStatus(part: ToolPart): string {
-  if (part.tool !== "task") {
+  if (part.tool !== "task" && part.tool !== "subagent") {
     return `running ${part.tool}`
   }
 
@@ -413,6 +413,15 @@ function toolStatus(part: ToolPart): string {
   const type = state.input?.subagent_type
   if (typeof type === "string" && type.trim()) {
     return `running ${type.trim()}`
+  }
+
+  if (part.tool === "task") {
+    const op = (state.input as { operation?: { action?: unknown; id?: unknown; summary?: unknown } } | undefined)?.operation
+    if (op && typeof op === "object") {
+      const action = typeof op.action === "string" ? op.action : "task"
+      const id = typeof op.id === "string" ? ` ${op.id}` : ""
+      return `running task ${action}${id}`
+    }
   }
 
   return "running task"

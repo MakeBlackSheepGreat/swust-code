@@ -156,6 +156,7 @@ export const layer = Layer.effect(
           plan: {
             name: "plan",
             description: "Plan mode. Disallows all edit tools.",
+            color: "#c7e2a8",
             options: {},
             permission: Permission.merge(
               defaults,
@@ -179,8 +180,44 @@ export const layer = Layer.effect(
             mode: "primary",
             native: true,
           },
+          compose: {
+            name: "compose",
+            color: "#a7a3d8",
+            description: "Compose mode. Orchestrates workflows with built-in compose skills.",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                actor: "allow",
+                question: "allow",
+                skill: "allow",
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+          },
+          goal: {
+            name: "goal",
+            color: "#7cc7c8",
+            description: "Goal mode. Works autonomously until the user's request is completed, verified, or impossible.",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                actor: "allow",
+                question: "allow",
+                plan_enter: "allow",
+                skill: "allow",
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+          },
           general: {
             name: "general",
+            color: "#aac4e1",
             description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
             permission: Permission.merge(
               defaults,
@@ -195,6 +232,7 @@ export const layer = Layer.effect(
           },
           explore: {
             name: "explore",
+            color: "#f5c9b0",
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
@@ -261,6 +299,14 @@ export const layer = Layer.effect(
               user,
             ),
             prompt: PROMPT_SUMMARY,
+          },
+          "checkpoint-writer": {
+            name: "checkpoint-writer",
+            mode: "subagent" as const,
+            options: {},
+            native: true,
+            hidden: true,
+            permission: Permission.merge(defaults, user),
           },
           dream: {
             name: "dream",
@@ -363,7 +409,11 @@ export const layer = Layer.effect(
             agents,
             values(),
             sortBy(
-              [(x) => (cfg.default_agent ? x.name === cfg.default_agent : x.name === "build"), "desc"],
+              [(x) => cfg.default_agent !== undefined && x.name === cfg.default_agent, "desc"],
+              [(x) => x.name === "build", "desc"],
+              [(x) => x.name === "plan", "desc"],
+              [(x) => x.name === "compose", "desc"],
+              [(x) => x.name === "goal", "desc"],
               [(x) => x.name, "asc"],
             ),
           )

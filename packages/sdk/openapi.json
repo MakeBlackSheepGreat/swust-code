@@ -6439,6 +6439,9 @@
                   "variant": {
                     "type": "string"
                   },
+                  "goal": {
+                    "type": "string"
+                  },
                   "parts": {
                     "type": "array",
                     "items": {
@@ -7319,6 +7322,9 @@
                     "type": "string"
                   },
                   "variant": {
+                    "type": "string"
+                  },
+                  "goal": {
                     "type": "string"
                   },
                   "parts": {
@@ -15417,6 +15423,40 @@
         "required": ["id", "sessionID", "messageID", "type", "attempt", "error", "time"],
         "additionalProperties": false
       },
+      "CheckpointPart": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^prt"
+          },
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "messageID": {
+            "type": "string",
+            "pattern": "^msg"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["checkpoint"]
+          },
+          "checkpointDir": {
+            "type": "string"
+          },
+          "checkpointNumber": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "coveredUpTo": {
+            "type": "string",
+            "pattern": "^msg"
+          }
+        },
+        "required": ["id", "sessionID", "messageID", "type", "checkpointDir", "checkpointNumber", "coveredUpTo"],
+        "additionalProperties": false
+      },
       "CompactionPart": {
         "type": "object",
         "properties": {
@@ -15484,6 +15524,9 @@
           },
           {
             "$ref": "#/components/schemas/RetryPart"
+          },
+          {
+            "$ref": "#/components/schemas/CheckpointPart"
           },
           {
             "$ref": "#/components/schemas/CompactionPart"

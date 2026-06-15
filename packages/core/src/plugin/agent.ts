@@ -11,6 +11,18 @@ import { PluginV2 } from "../plugin"
 const TRUNCATION_GLOB = path.join(Global.Path.data, "tool-output", "*")
 const BUILD_SYSTEM =
   "You are SWUST Code, an AI coding agent. Help the user accomplish software engineering tasks by inspecting the workspace, making targeted changes, and using tools according to the configured permissions."
+const PROMPT_COMPOSE = `You are the SWUST Code Compose Agent, an orchestrator that coordinates specialized skills into coherent workflows.
+
+When a skill clearly matches the task, use the skill tool before acting. Prefer compose:* skills for brainstorming, planning, debugging, test-driven work, verification, review, parallel work, reporting, merging, and skill creation.
+
+Ask decisions through the question tool. If no answer is available and a conservative default is clear, choose it and continue.
+
+Keep implementation minimal and focused. You are done only after code changes address the request and relevant verification has been run.`
+const PROMPT_GOAL = `Goal mode is active. Treat the user's latest request as a stopping condition, not just as an ordinary prompt.
+
+Keep working until the request is genuinely completed, verified, or impossible. Before stopping, inspect the relevant current state, make requested implementation changes, and run the most relevant available verification command.
+
+Do not ask the user to continue manually when you can keep making progress with available tools. If you need a decision, use the question tool.`
 
 const PROMPT_EXPLORE = `You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
 
@@ -150,6 +162,33 @@ export const Plugin = PluginV2.define({
               resource: path.relative(worktree, path.join(Global.Path.data, "plans", "*.md")),
               effect: "allow",
             },
+          ]),
+        )
+      })
+
+      editor.update(AgentV2.ID.make("compose"), (item) => {
+        item.description = "Compose mode. Orchestrates workflows with built-in compose skills."
+        item.system = PROMPT_COMPOSE
+        item.mode = "primary"
+        item.permissions.push(
+          ...PermissionV2.merge(defaults, [
+            { action: "actor", resource: "*", effect: "allow" },
+            { action: "question", resource: "*", effect: "allow" },
+            { action: "skill", resource: "*", effect: "allow" },
+          ]),
+        )
+      })
+
+      editor.update(AgentV2.ID.make("goal"), (item) => {
+        item.description = "Goal mode. Works autonomously until the user's request is completed, verified, or impossible."
+        item.system = PROMPT_GOAL
+        item.mode = "primary"
+        item.permissions.push(
+          ...PermissionV2.merge(defaults, [
+            { action: "actor", resource: "*", effect: "allow" },
+            { action: "question", resource: "*", effect: "allow" },
+            { action: "plan_enter", resource: "*", effect: "allow" },
+            { action: "skill", resource: "*", effect: "allow" },
           ]),
         )
       })

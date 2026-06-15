@@ -3,15 +3,18 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, Show } from "solid-js"
 import { Tips } from "./tips-view"
 import { useBindings } from "../../keymap"
+import { useLanguage } from "../../context/language"
 
 const id = "internal:home-tips"
 
 function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connected: boolean }) {
+  const { t } = useLanguage()
   useBindings(() => ({
     commands: [
       {
         name: "tips.toggle",
         title: props.hidden ? "Show tips" : "Hide tips",
+        desc: t(props.hidden ? "tui.command.tips.toggle.show" : "tui.command.tips.toggle.hide"),
         category: "System",
         namespace: "palette",
         run() {
@@ -26,7 +29,7 @@ function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connec
   return (
     <box width="100%" maxWidth={75} alignItems="center" paddingTop={3} flexShrink={1}>
       <Show when={props.show}>
-        <Tips api={props.api} connected={props.connected} />
+        <Tips connected={props.connected} />
       </Show>
     </box>
   )

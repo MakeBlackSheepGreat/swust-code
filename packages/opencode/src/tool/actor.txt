@@ -1,0 +1,72 @@
+Launch a new actor (subagent) to handle complex, multi-step tasks autonomously.
+
+JSON calls wrap the action payload inside an `operation` object; `action` is the discriminator field.
+
+Examples:
+{"operation":{"action":"run","subagent_type":"explore","description":"Find error recovery","prompt":"<full task>"}}
+{"operation":{"action":"run","subagent_type":"explore","description":"Investigate T4","prompt":"<full task>","task_id":"T4"}}
+{"operation":{"action":"spawn","subagent_type":"general","description":"Long-running search","prompt":"<full task>"}}
+{"operation":{"action":"status","actor_id":"<existing>"}}
+{"operation":{"action":"wait","actor_id":"<existing>"}}
+{"operation":{"action":"cancel","actor_id":"<existing>"}}
+{"operation":{"action":"send","to_actor_id":"<existing>","content":"<message>"}}
+
+## Operations (the `operation.action` field selects one)
+
+- run: spawn a subagent and BLOCK until completion; result returned inline.
+  Required: subagent_type, description, prompt.
+  Optional: actor_id, timeout_ms, command, context, model, task_id, output_schema.
+- spawn: spawn a subagent and return actor_id IMMEDIATELY (background).
+  Required: subagent_type, description, prompt.
+  Optional: actor_id, command, context, model, task_id, output_schema.
+- status: poll actor state without blocking. Required: actor_id.
+  Returns: { status: "pending"|"running"|"idle"|"failed"|"cancelled"|"unknown", actor_id, turnCount, ... }
+- wait: block until actor completes or timeout. Required: actor_id. Optional: timeout_ms.
+  Returns: { status, actor_id, result?, error? }
+- cancel: stop a running actor. Required: actor_id. Idempotent.
+- send: deliver message to another actor's inbox. Required: to_actor_id, content.
+
+## When to use actor
+
+- Parallelize independent searches or analyses concurrently; `wait` on each actor_id.
+- Delegate heavy file reading to a subagent and receive only the synthesis.
+- Use `explore` for read-only code discovery.
+- Use `general` for an independent implementation or review.
+- Pass `task_id` when delegating work related to a tracked MiMo-style task ID.
+- Avoid spawning for trivial single-file lookups or answers already in your context.
+
+## Writing the prompt
+
+You are the subagent's only briefing. It may not have seen this conversation.
+- Explain what you are trying to accomplish and why.
+- Say what you already learned or ruled out.
+- Give enough context for judgment calls.
+- If you need short output, say so.
+- For investigation, hand over the question and constraints.
+
+## Context inheritance
+
+- `context="full"`: MiMo-style full conversation inheritance request.
+- `context="state"`: MiMo-style checkpoint-summary inheritance request.
+- `context="none"` (default): clean context, only the prompt.
+
+## Actor ID vs Task ID
+
+`actor_id` identifies a subagent session and can be reused for resume-like flows. `task_id` identifies a MiMo-style task returned by the `task` tool. Valid task IDs are started for the actor and reconciled from the actor's required `**Status**`/`**Summary**` return header; malformed or missing task IDs degrade to ad-hoc execution with a notice.
+
+## Usage notes
+
+- Resume the same subagent: pass `actor_id` to `run` or `spawn`.
+- `run` blocks and returns the result inline. If `timeout_ms` expires, the actor keeps running and can be inspected with `status`, `wait`, or `cancel`.
+- `spawn` returns immediately with an actor_id. Use `wait` to collect the result explicitly.
+- `model` is forwarded to the target SWUST subagent as a model override.
+- `output_schema` is forwarded as structured output for the target SWUST subagent.
+- `send` writes to SWUST's MiMo-compatible actor inbox and returns `{ "inboxID": "..." }`. Unknown receivers return `{ "inboxID": null, "error": "receiver not found" }`.
+
+## SWUST compatibility notes
+
+This tool exposes the MiMo Code actor API and routes execution through SWUST Code's same-session ActorSpawn runtime. `run`, `spawn`, `status`, `wait`, `cancel`, `send`, shell-style invocation, `model`, `output_schema`, task-id validation, return-header reconciliation, durable actor registry state, durable inbox persistence, inbox wake, prompt-loop inbox drain, TaskGate completion re-entry, and plugin-driven actor `preStop`/`postStop` hook re-entry are active.
+
+Built-in MiMo hook plugins are active. `checkpoint-splitover` validates `checkpoint-writer` output before stop. `subagent-progress-checker` validates task-bound writable subagents after stop and requests a follow-up turn when `tasks/<task_id>/progress.md` is missing or incomplete.
+
+The hidden `checkpoint-writer` subagent is registered as a system-spawned actor type. SWUST also includes MiMo's checkpoint progress reconcile scanner for detecting NEW/CHANGED task progress files via `written-at` and `last-reconciled-written-at` markers.

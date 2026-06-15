@@ -47,6 +47,7 @@ import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
 import { DialogAlert } from "../../ui/dialog-alert"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
+import { useLanguage } from "../../context/language"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
@@ -166,6 +167,7 @@ export function Prompt(props: PromptProps) {
   const exit = useExit()
   const dimensions = useTerminalDimensions()
   const { theme, syntax } = useTheme()
+  const { t } = useLanguage()
   const kv = useKV()
   const animationsEnabled = createMemo(() => kv.get("animations_enabled", true))
   const list = createMemo(() => props.placeholders?.normal ?? [])
@@ -203,6 +205,7 @@ export function Prompt(props: PromptProps) {
   })
   const editorContextLabelState = createMemo(() => editor.labelState())
   const [auto, setAuto] = createSignal<AutocompleteRef>()
+  const [ghost, setGhost] = createSignal("")
   const workspace = usePromptWorkspace(props.sessionID)
   const move = usePromptMove({ projectID: project.project, sessionID: () => props.sessionID })
   const [cursorVersion, setCursorVersion] = createSignal(0)
@@ -212,7 +215,7 @@ export function Prompt(props: PromptProps) {
   function promptModelWarning() {
     toast.show({
       variant: "warning",
-      message: "Connect a provider to send prompts",
+      message: t("tui.prompt.warning.connect_provider"),
       duration: 3000,
     })
     if (sync.data.provider.length === 0) {
@@ -293,13 +296,67 @@ export function Prompt(props: PromptProps) {
     interrupt: 0,
   })
 
+  let ghostRequest = 0
+
   createEffect(
     on(
       () => props.sessionID,
       () => {
         setStore("placeholder", randomIndex(list().length))
+        ghostRequest++
+        setGhost("")
       },
       { defer: true },
+    ),
+  )
+
+  const canUseGhost = () =>
+    !!ghost() && store.mode === "normal" && !auto()?.visible && store.prompt.input === "" && !props.disabled
+
+  async function fetchGhost(sessionID: string) {
+    if (props.showPlaceholder === false) return
+    const token = ++ghostRequest
+    const userMessageID = lastUserMessage()?.id
+    const res = await sdk.client.session.predict({ sessionID }).catch(() => undefined)
+    const text = res?.data?.prediction?.trim()
+    if (!text) return
+    if (token !== ghostRequest) return
+    if (props.sessionID !== sessionID) return
+    if (status().type !== "idle") return
+    if (lastUserMessage()?.id !== userMessageID) return
+    if (!input || input.isDestroyed || input.plainText !== "") return
+    setGhost(text)
+  }
+
+  function acceptGhost() {
+    const text = ghost()
+    if (!text || !input || input.isDestroyed) return
+    setGhost("")
+    input.setText(text)
+    setStore("prompt", "input", text)
+    input.gotoBufferEnd()
+    setCursorVersion((value) => value + 1)
+  }
+
+  function dismissGhost() {
+    ghostRequest++
+    if (ghost()) setGhost("")
+  }
+
+  createEffect(
+    on(
+      () => status().type,
+      (type, prev) => {
+        if (type !== "idle") {
+          dismissGhost()
+          return
+        }
+        if (prev === "idle") return
+        const sessionID = props.sessionID
+        if (!sessionID || !input || input.isDestroyed || input.plainText !== "") return
+        if (!lastUserMessage()) return
+        fetchGhost(sessionID)
+      },
     ),
   )
 
@@ -529,9 +586,9 @@ export function Prompt(props: PromptProps) {
       },
       {
         title: "Warp",
-        desc: "Change the workspace for the session",
+        desc: t("tui.command.workspace.set.description"),
         name: "workspace.set",
-        category: "Session",
+        category: t("tui.command.category.session"),
         enabled: Flag.SWUST_CODE_EXPERIMENTAL_WORKSPACES,
         slashName: "warp",
         run: () => {
@@ -540,9 +597,9 @@ export function Prompt(props: PromptProps) {
       },
       {
         title: "Move session",
-        desc: "Move to another project dir",
+        desc: t("tui.command.session.move.description"),
         name: "session.move",
-        category: "Session",
+        category: t("tui.command.category.session"),
         slashName: "move",
         run: () => {
           move.open()
@@ -573,6 +630,25 @@ export function Prompt(props: PromptProps) {
     ]),
   }))
 
+  useBindings(() => ({
+    target: inputTarget,
+    enabled: inputTarget() !== undefined && canUseGhost(),
+    bindings: [
+      {
+        key: "tab",
+        desc: t("tui.prompt.ghost.accept"),
+        group: "Prompt",
+        cmd: acceptGhost,
+      },
+      {
+        key: "escape",
+        desc: t("tui.prompt.ghost.dismiss"),
+        group: "Prompt",
+        cmd: dismissGhost,
+      },
+    ],
+  }))
+
   const ref: PromptRef = {
     get focused() {
       return input.focused
@@ -587,12 +663,14 @@ export function Prompt(props: PromptProps) {
       input.blur()
     },
     set(prompt) {
+      dismissGhost()
       input.setText(prompt.input)
       setStore("prompt", prompt)
       restoreExtmarksFromParts(prompt.parts)
       input.gotoBufferEnd()
     },
     reset() {
+      dismissGhost()
       input.clear()
       input.extmarks.clear()
       setStore("prompt", {
@@ -731,8 +809,9 @@ export function Prompt(props: PromptProps) {
     [
       {
         title: "Stash prompt",
+        desc: t("tui.command.prompt.stash.title"),
         name: "prompt.stash",
-        category: "Prompt",
+        category: t("tui.command.category.prompt"),
         enabled: !!store.prompt.input,
         run: () => {
           if (!store.prompt.input) return
@@ -749,8 +828,9 @@ export function Prompt(props: PromptProps) {
       },
       {
         title: "Stash pop",
+        desc: t("tui.command.prompt.stash.pop.title"),
         name: "prompt.stash.pop",
-        category: "Prompt",
+        category: t("tui.command.category.prompt"),
         enabled: stash.list().length > 0,
         run: () => {
           const entry = stash.pop()
@@ -765,8 +845,9 @@ export function Prompt(props: PromptProps) {
       },
       {
         title: "Stash list",
+        desc: t("tui.command.prompt.stash.list.title"),
         name: "prompt.stash.list",
-        category: "Prompt",
+        category: t("tui.command.category.prompt"),
         enabled: stash.list().length > 0,
         run: () => {
           dialog.replace(() => (
@@ -823,7 +904,7 @@ export function Prompt(props: PromptProps) {
       bindings: [
         {
           key: "!",
-          desc: "Shell mode",
+          desc: t("tui.prompt.mode.shell"),
           group: "Prompt",
           cmd: () => {
             setStore("placeholder", randomIndex(shell().length))
@@ -838,7 +919,9 @@ export function Prompt(props: PromptProps) {
     return {
       target: inputTarget,
       enabled: inputTarget() !== undefined && store.mode === "shell",
-      bindings: [{ key: "escape", desc: "Exit shell mode", group: "Prompt", cmd: () => setStore("mode", "normal") }],
+      bindings: [
+        { key: "escape", desc: t("tui.prompt.hint.exit_shell"), group: "Prompt", cmd: () => setStore("mode", "normal") },
+      ],
     }
   })
 
@@ -849,7 +932,14 @@ export function Prompt(props: PromptProps) {
         cursorVersion()
         return inputTarget() !== undefined && store.mode === "shell" && input?.visualCursor.offset === 0
       })(),
-      bindings: [{ key: "backspace", desc: "Exit shell mode", group: "Prompt", cmd: () => setStore("mode", "normal") }],
+      bindings: [
+        {
+          key: "backspace",
+          desc: t("tui.prompt.hint.exit_shell"),
+          group: "Prompt",
+          cmd: () => setStore("mode", "normal"),
+        },
+      ],
     }
   })
 
@@ -940,6 +1030,7 @@ export function Prompt(props: PromptProps) {
 
   async function submitInner() {
     workspace.clearNotice()
+    dismissGhost()
 
     // IME: double-defer may fire before onContentChange flushes the last
     // composed character (e.g. Korean hangul) to the store, so read
@@ -1007,7 +1098,7 @@ export function Prompt(props: PromptProps) {
         console.log("Creating a session failed:", res.error)
 
         toast.show({
-          message: "Creating a session failed. Open console for more details.",
+          message: t("tui.prompt.session.create_failed"),
           variant: "error",
         })
 
@@ -1202,7 +1293,7 @@ export function Prompt(props: PromptProps) {
       (lineCount >= 3 || pastedContent.length > 150) &&
       kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary)
     ) {
-      pasteText(pastedContent, `[Pasted ~${lineCount} lines]`)
+      pasteText(pastedContent, t("tui.prompt.paste.summary", { count: lineCount }))
       return
     }
 
@@ -1264,6 +1355,7 @@ export function Prompt(props: PromptProps) {
   }
 
   function clearPrompt() {
+    dismissGhost()
     if (store.prompt.input.trim().length >= DRAFT_RETENTION_MIN_CHARS || store.prompt.parts.length > 0) {
       history.append({
         ...store.prompt,
@@ -1304,13 +1396,14 @@ export function Prompt(props: PromptProps) {
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
+    if (canUseGhost()) return t("tui.prompt.ghost", { prediction: ghost() })
     if (store.mode === "shell") {
       if (!shell().length) return undefined
       const example = shell()[store.placeholder % shell().length]
-      return `Run a command... "${example}"`
+      return t("tui.prompt.placeholder.shell", { example })
     }
     if (!list().length) return undefined
-    return `Ask anything... "${list()[store.placeholder % list().length]}"`
+    return t("tui.prompt.placeholder.normal", { example: list()[store.placeholder % list().length] })
   })
 
   const spinnerDef = createMemo(() => {
@@ -1370,16 +1463,29 @@ export function Prompt(props: PromptProps) {
               maxHeight={maxHeight()}
               onContentChange={() => {
                 const value = input.plainText
+                if (value !== "" && ghost()) dismissGhost()
                 setStore("prompt", "input", value)
                 auto()?.onInput(value)
                 syncExtmarksWithPromptParts()
                 setCursorVersion((value) => value + 1)
               }}
               onCursorChange={() => setCursorVersion((value) => value + 1)}
-              onKeyDown={(e: { preventDefault(): void }) => {
+              onKeyDown={(e: KeyEvent & { preventDefault(): void }) => {
                 if (props.disabled) {
                   e.preventDefault()
                   return
+                }
+                if (canUseGhost()) {
+                  if (e.name === "tab") {
+                    acceptGhost()
+                    e.preventDefault()
+                    return
+                  }
+                  if (e.name === "escape") {
+                    dismissGhost()
+                    e.preventDefault()
+                    return
+                  }
                 }
               }}
               onSubmit={() => {
@@ -1439,7 +1545,7 @@ export function Prompt(props: PromptProps) {
                   {(agent) => (
                     <>
                       <text fg={fadeColor(highlight(), agentMetaAlpha())}>
-                        {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
+                        {store.mode === "shell" ? t("tui.prompt.mode.shell") : Locale.titlecase(agent().name)}
                       </text>
                       <Show when={store.mode === "normal"}>
                         <box flexDirection="row" gap={1}>
@@ -1548,18 +1654,19 @@ export function Prompt(props: PromptProps) {
                       const handleMessageClick = () => {
                         const r = retry()
                         if (!r) return
-                        if (isTruncated()) {
-                          void DialogAlert.show(dialog, "Retry Error", r.message)
-                        }
+                        if (isTruncated()) void DialogAlert.show(dialog, t("tui.prompt.retry.error.title"), r.message)
                       }
 
                       const retryText = () => {
                         const r = retry()
                         if (!r) return ""
                         const baseMessage = message()
-                        const truncatedHint = isTruncated() ? " (click to expand)" : ""
+                        const truncatedHint = isTruncated() ? t("tui.prompt.retry.expand_hint") : ""
                         const duration = formatDuration(seconds())
-                        const retryInfo = ` [retrying ${duration ? `in ${duration} ` : ""}attempt #${r.attempt}]`
+                        const retryInfo = t("tui.prompt.retry.info", {
+                          duration: duration ? t("tui.prompt.retry.duration", { duration }) : "",
+                          attempt: r.attempt,
+                        })
                         return baseMessage + truncatedHint + retryInfo
                       }
 
@@ -1576,7 +1683,7 @@ export function Prompt(props: PromptProps) {
                 <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
                   esc{" "}
                   <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
-                    {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
+                    {store.interrupt > 0 ? t("tui.prompt.interrupt.again") : t("tui.prompt.interrupt")}
                   </span>
                 </text>
               </box>
@@ -1598,17 +1705,25 @@ export function Prompt(props: PromptProps) {
                     {(() => {
                       const item = label()
                       if (item.type === "new") {
-                        if (workspace.creating())
-                          return `Creating ${item.workspaceType}${".".repeat(workspace.creatingDots())}`
+                        if (workspace.creating()) {
+                          return t("tui.prompt.workspace.creating", {
+                            type: item.workspaceType,
+                            dots: ".".repeat(workspace.creatingDots()),
+                          })
+                        }
                         return (
                           <>
-                            Workspace <span style={{ fg: theme.textMuted }}>(new {item.workspaceType})</span>
+                            {t("tui.prompt.workspace.label")}{" "}
+                            <span style={{ fg: theme.textMuted }}>
+                              ({t("tui.prompt.workspace.new", { type: item.workspaceType })})
+                            </span>
                           </>
                         )
                       }
                       return (
                         <>
-                          Workspace <span style={{ fg: theme.textMuted }}>{item.workspaceName}</span>
+                          {t("tui.prompt.workspace.label")}{" "}
+                          <span style={{ fg: theme.textMuted }}>{item.workspaceName}</span>
                         </>
                       )
                     })()}
@@ -1628,7 +1743,7 @@ export function Prompt(props: PromptProps) {
             </Match>
             <Match when={move.pendingNew()}>
               <box paddingLeft={3}>
-                <text fg={theme.accent}>(new working copy)</text>
+                <text fg={theme.accent}>{t("tui.prompt.workspace.new_working_copy")}</text>
               </box>
             </Match>
             <Match when={true}>{props.hint ?? <text />}</Match>
@@ -1652,17 +1767,17 @@ export function Prompt(props: PromptProps) {
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
-                        {agentShortcut()} <span style={{ fg: theme.textMuted }}>agents</span>
+                        {agentShortcut()} <span style={{ fg: theme.textMuted }}>{t("tui.prompt.hint.agents")}</span>
                       </text>
                     </Match>
                   </Switch>
                   <text fg={theme.text}>
-                    {paletteShortcut()} <span style={{ fg: theme.textMuted }}>commands</span>
+                    {paletteShortcut()} <span style={{ fg: theme.textMuted }}>{t("tui.prompt.hint.commands")}</span>
                   </text>
                 </Match>
                 <Match when={store.mode === "shell"}>
                   <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
+                    esc <span style={{ fg: theme.textMuted }}>{t("tui.prompt.hint.exit_shell")}</span>
                   </text>
                 </Match>
               </Switch>

@@ -87,6 +87,37 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("accepts MiMo-compatible checkpoint configuration in v1", () =>
+    Effect.sync(() => {
+      const parsed = Schema.decodeUnknownSync(ConfigV1.Info)({
+        checkpoint: {
+          thresholds: ["40%", "100K", "1.5M"],
+          reserved: 20000,
+          max_writer_failures: 3,
+          fork: true,
+          push_caps: {
+            tasks_ledger: 2000,
+            actor_ledger: 500,
+            checkpoint: 11000,
+            memory: 10000,
+            notes: 6000,
+          },
+          task_archive_days: 7,
+          task_cleanup_days: 7,
+          memory_reconcile_on_search: true,
+          memory_search_score_floor: 0.15,
+        },
+      })
+
+      expect(parsed.checkpoint?.thresholds).toEqual(["40%", "100K", "1.5M"])
+      expect(parsed.checkpoint?.fork).toBe(true)
+      expect(parsed.checkpoint?.push_caps?.checkpoint).toBe(11000)
+      expect(parsed.checkpoint?.memory_search_score_floor).toBe(0.15)
+      expect(() => Schema.decodeUnknownSync(ConfigV1.Info)({ checkpoint: { fork: "yes" } })).toThrow()
+      expect(() => Schema.decodeUnknownSync(ConfigV1.Info)({ checkpoint: { max_writer_failures: 0 } })).toThrow()
+    }),
+  )
+
   it.effect("migrates v1 provider setup options into AISDK settings", () =>
     Effect.sync(() => {
       const migrated = ConfigMigrateV1.migrate({

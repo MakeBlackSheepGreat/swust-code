@@ -14,7 +14,7 @@ import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 
-import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { SubagentTool, type TaskPromptOps } from "../../src/tool/subagent"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -59,7 +59,7 @@ function defer<T>() {
   return { promise, resolve }
 }
 
-const seed = Effect.fn("TaskToolTest.seed")(function* (title = "Pinned") {
+const seed = Effect.fn("SubagentToolTest.seed")(function* (title = "Pinned") {
   const session = yield* Session.Service
   const chat = yield* session.create({ title })
   const user = yield* session.updateMessage({
@@ -131,7 +131,7 @@ function reply(input: SessionPrompt.PromptInput, text: string): SessionV1.WithPa
   }
 }
 
-describe("tool.task", () => {
+describe("tool.subagent", () => {
   it.instance(
     "description sorts subagents by name and is stable across calls",
     () =>
@@ -141,7 +141,7 @@ describe("tool.task", () => {
         const registry = yield* ToolRegistry.Service
         const get = Effect.fnUntraced(function* () {
           const tools = yield* registry.tools({ ...ref, agent: build })
-          return tools.find((tool) => tool.id === TaskTool.id)?.description ?? ""
+          return tools.find((tool) => tool.id === SubagentTool.id)?.description ?? ""
         })
         const first = yield* get()
         const second = yield* get()
@@ -182,7 +182,7 @@ describe("tool.task", () => {
         const build = yield* agent.get("build")
         const registry = yield* ToolRegistry.Service
         const description =
-          (yield* registry.tools({ ...ref, agent: build })).find((tool) => tool.id === TaskTool.id)?.description ?? ""
+          (yield* registry.tools({ ...ref, agent: build })).find((tool) => tool.id === SubagentTool.id)?.description ?? ""
 
         expect(description).toContain("- alpha: Alpha agent")
         expect(description).not.toContain("- zebra: Zebra agent")
@@ -190,7 +190,7 @@ describe("tool.task", () => {
     {
       config: {
         permission: {
-          task: {
+          subagent: {
             "*": "allow",
             zebra: "deny",
           },
@@ -214,7 +214,7 @@ describe("tool.task", () => {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
       const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
       let seen: SessionPrompt.PromptInput | undefined
       const promptOps = stubOps({ text: "resumed", onPrompt: (input) => (seen = input) })
@@ -251,7 +251,7 @@ describe("tool.task", () => {
   it.instance("execute asks by default and skips checks when bypassed", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
       const calls: unknown[] = []
       const promptOps = stubOps()
@@ -283,7 +283,7 @@ describe("tool.task", () => {
 
       expect(calls).toHaveLength(1)
       expect(calls[0]).toEqual({
-        permission: "task",
+        permission: "subagent",
         patterns: ["general"],
         always: ["*"],
         metadata: {
@@ -297,7 +297,7 @@ describe("tool.task", () => {
   it.instance("execute cancels child session when abort signal fires", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
       const ready = defer<SessionPrompt.PromptInput>()
       const cancelled = defer<SessionID>()
@@ -348,7 +348,7 @@ describe("tool.task", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
       let seen: SessionPrompt.PromptInput | undefined
       const promptOps = stubOps({ text: "created", onPrompt: (input) => (seen = input) })
@@ -382,12 +382,12 @@ describe("tool.task", () => {
   )
 
   it.instance(
-    "execute shapes child permissions for task, todowrite, and primary tools",
+    "execute shapes child permissions for subagent, todowrite, and primary tools",
     () =>
       Effect.gen(function* () {
         const sessions = yield* Session.Service
         const { chat, assistant } = yield* seed()
-        const tool = yield* TaskTool
+        const tool = yield* SubagentTool
         const def = yield* tool.init()
         let seen: SessionPrompt.PromptInput | undefined
         const promptOps = stubOps({ onPrompt: (input) => (seen = input) })
@@ -438,7 +438,7 @@ describe("tool.task", () => {
           reviewer: {
             mode: "subagent",
             permission: {
-              task: "allow",
+              subagent: "allow",
             },
           },
         },
@@ -452,7 +452,7 @@ describe("tool.task", () => {
   it.instance("rejects background execution when the experiment is disabled", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
 
       const exit = yield* def
@@ -484,7 +484,7 @@ describe("tool.task", () => {
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
       const ready = yield* Deferred.make<void>()
       const done = yield* Deferred.make<void>()
@@ -550,7 +550,7 @@ describe("tool.task", () => {
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
 
       const result = yield* def.execute(
@@ -588,7 +588,7 @@ describe("tool.task", () => {
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
       const first = defer<void>()
       const second = defer<void>()
@@ -662,7 +662,7 @@ describe("tool.task", () => {
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
 
       const result = yield* def.execute(
@@ -695,7 +695,7 @@ describe("tool.task", () => {
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
 
       const result = yield* def.execute(
@@ -734,7 +734,7 @@ describe("tool.task", () => {
       const jobs = yield* BackgroundJob.Service
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
 
       const result = yield* def.execute(
@@ -773,7 +773,7 @@ describe("tool.task", () => {
       const jobs = yield* BackgroundJob.Service
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
 
       const result = yield* def.execute(
@@ -812,7 +812,7 @@ describe("tool.task", () => {
       const jobs = yield* BackgroundJob.Service
       const runState = yield* SessionRunState.Service
       const { chat, assistant } = yield* seed()
-      const tool = yield* TaskTool
+      const tool = yield* SubagentTool
       const def = yield* tool.init()
 
       const result = yield* def.execute(

@@ -53,6 +53,7 @@ export const SessionTable = sqliteTable(
       providerID: string
       variant?: string
     }>(),
+    last_checkpoint_message_id: text().$type<MessageID>(),
     ...Timestamps,
     time_compacting: integer(),
     time_archived: integer(),
@@ -72,10 +73,14 @@ export const MessageTable = sqliteTable(
       .$type<SessionSchema.ID>()
       .notNull()
       .references(() => SessionTable.id, { onDelete: "cascade" }),
+    agent_id: text().notNull().default("main"),
     ...Timestamps,
     data: text({ mode: "json" }).notNull().$type<V1MessageData>(),
   },
-  (table) => [index("message_session_time_created_id_idx").on(table.session_id, table.time_created, table.id)],
+  (table) => [
+    index("message_session_time_created_id_idx").on(table.session_id, table.time_created, table.id),
+    index("message_session_agent_idx").on(table.session_id, table.agent_id, table.id),
+  ],
 )
 
 export const PartTable = sqliteTable(

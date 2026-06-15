@@ -1,9 +1,6 @@
 import { Effect } from "effect"
 import { Goal, MAX_GOAL_REACT } from "./goal"
 import { GoalJudge } from "./goal-judge"
-import { Log } from "../util"
-
-const log = Log.create({ service: "session.goal-gate" })
 
 export interface GoalGateResult {
   readonly shouldContinue: boolean
@@ -23,8 +20,8 @@ export interface GoalGateResult {
 export function goalGate(input: {
   readonly sessionID: string
   readonly agentID: string
-  readonly goal: Goal.Service
-  readonly judge: GoalJudge.Service
+  readonly goal: Goal.Interface
+  readonly judge: GoalJudge.Interface
   readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>
 }): Effect.Effect<GoalGateResult> {
   return Effect.gen(function* () {
@@ -43,13 +40,13 @@ export function goalGate(input: {
 
     if (verdict.ok) {
       yield* input.goal.clear(input.sessionID)
-      log.info("Goal satisfied", { sessionID: input.sessionID, reason: verdict.reason })
+      yield* Effect.logInfo("Goal satisfied", { sessionID: input.sessionID, reason: verdict.reason })
       return { shouldContinue: false }
     }
 
     if (verdict.impossible) {
       yield* input.goal.clear(input.sessionID)
-      log.info("Goal impossible", { sessionID: input.sessionID, reason: verdict.reason })
+      yield* Effect.logInfo("Goal impossible", { sessionID: input.sessionID, reason: verdict.reason })
       return { shouldContinue: false }
     }
 
@@ -57,7 +54,7 @@ export function goalGate(input: {
     const count = yield* input.goal.bumpReact(input.sessionID)
     if (count > MAX_GOAL_REACT) {
       yield* input.goal.clear(input.sessionID)
-      log.warn("Goal re-entry cap exceeded", { sessionID: input.sessionID, count })
+      yield* Effect.logWarning("Goal re-entry cap exceeded", { sessionID: input.sessionID, count })
       return { shouldContinue: false }
     }
 
@@ -71,13 +68,14 @@ export function goalGate(input: {
       `</system-reminder>`,
     ].join("\n")
 
-    log.info("Goal gate: re-entering loop", { sessionID: input.sessionID, count, reason: verdict.reason })
+    yield* Effect.logInfo("Goal gate: re-entering loop", { sessionID: input.sessionID, count, reason: verdict.reason })
 
     return { shouldContinue: true, message }
   }).pipe(
-    Effect.catchAll((e) => {
-      log.warn("Goal gate error - failing open", { error: String(e) })
-      return Effect.succeed({ shouldContinue: false } as GoalGateResult)
-    }),
+    Effect.catch((e: unknown) =>
+      Effect.logWarning("Goal gate error - failing open", { error: String(e) }).pipe(
+        Effect.as({ shouldContinue: false } as GoalGateResult),
+      ),
+    ),
   )
 }

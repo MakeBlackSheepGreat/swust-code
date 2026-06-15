@@ -8,7 +8,7 @@ import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
 import { Agent } from "@/agent/agent"
 
-interface Metadata {
+export interface Metadata {
   [key: string]: any
 }
 
@@ -62,6 +62,11 @@ export interface Def<
   jsonSchema?: JSONSchema7
   execute(args: Schema.Schema.Type<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>>
   formatValidationError?(error: unknown): string
+  shell?: {
+    description: string
+    parse(script: string): Effect.Effect<Schema.Schema.Type<Parameters>[], unknown>
+    recover?(rawArgs: unknown): Schema.Schema.Type<Parameters> | undefined
+  }
 }
 export type DefWithoutID<
   Parameters extends Schema.Decoder<unknown> = Schema.Decoder<unknown>,

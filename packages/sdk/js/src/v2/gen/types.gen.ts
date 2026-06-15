@@ -612,6 +612,16 @@ export type RetryPart = {
   }
 }
 
+export type CheckpointPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "checkpoint"
+  checkpointDir: string
+  checkpointNumber: number
+  coveredUpTo: string
+}
+
 export type CompactionPart = {
   id: string
   sessionID: string
@@ -634,6 +644,7 @@ export type Part =
   | PatchPart
   | AgentPart
   | RetryPart
+  | CheckpointPart
   | CompactionPart
 
 export type Prompt = {
@@ -1666,7 +1677,7 @@ export type GlobalEvent = {
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 
 /**
- * Server configuration for opencode serve and web commands
+ * Server configuration for swust-code serve and web commands
  */
 export type ServerConfig = {
   port?: number
@@ -2037,6 +2048,7 @@ export type Config = {
   }
   experimental?: {
     disable_paste_summary?: boolean
+    predict_next_prompt?: boolean
     batch_tool?: boolean
     openTelemetry?: boolean
     primary_tools?: Array<string>
@@ -8015,6 +8027,7 @@ export type SessionPromptData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    goal?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -8347,6 +8360,42 @@ export type SessionSummarizeResponses = {
 
 export type SessionSummarizeResponse = SessionSummarizeResponses[keyof SessionSummarizeResponses]
 
+export type SessionPredictData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/predict"
+}
+
+export type SessionPredictErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionPredictError = SessionPredictErrors[keyof SessionPredictErrors]
+
+export type SessionPredictResponses = {
+  /**
+   * Predicted next prompt
+   */
+  200: {
+    prediction: string
+  }
+}
+
+export type SessionPredictResponse = SessionPredictResponses[keyof SessionPredictResponses]
+
 export type SessionPromptAsyncData = {
   body?: {
     messageID?: string
@@ -8362,6 +8411,7 @@ export type SessionPromptAsyncData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    goal?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {

@@ -62,6 +62,7 @@ export function toToolKind(toolName: string): ToolKind {
       return "read"
 
     case "task":
+    case "subagent":
       return "think"
 
     default:

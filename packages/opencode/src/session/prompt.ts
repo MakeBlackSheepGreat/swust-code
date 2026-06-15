@@ -5,6 +5,7 @@ import { SessionV1 } from "@swust-code/core/v1/session"
 import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
+import { Goal, MAX_GOAL_REACT } from "./goal"
 import { SessionRevert } from "./revert"
 import { Session } from "./session"
 import { Agent } from "../agent/agent"
@@ -12,6 +13,7 @@ import { Provider } from "@/provider/provider"
 
 import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
+import { SessionCheckpoint } from "./checkpoint"
 import { SessionCompaction } from "./compaction"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
@@ -44,7 +46,7 @@ import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
-import { TaskTool, type TaskPromptOps } from "@/tool/task"
+import { SubagentTool, type TaskPromptOps } from "@/tool/subagent"
 import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -60,6 +62,8 @@ import { SessionTable } from "@swust-code/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@swust-code/llm"
+import { Inbox } from "@/inbox"
+import { sessionPromptRef } from "@/inbox/inbox-ref"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -77,6 +81,10 @@ IMPORTANT:
 
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
 
+const PREDICT_SYSTEM = `You predict the single most likely next message a user will send to a coding assistant, based on the conversation so far. Output only that next message as one short, natural first-person request (what the user would type). Match the language and style of the user's latest message. No preamble, no quotes, no explanation, no markdown. Keep it under 100 characters.`
+
+const PREDICT_NUDGE = `Based on the conversation above, write the user's most likely next message:`
+
 function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
   // cleanup() marks abandoned tool_use blocks this way after retries/aborts.
   // They are not pending work and must not trigger an assistant-prefill request.
@@ -90,6 +98,7 @@ export interface Interface {
   readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
   readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
+  readonly predict: (input: { sessionID: SessionID }) => Effect.Effect<string>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@swust-code/SessionPrompt") {}
@@ -99,10 +108,12 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const status = yield* SessionStatus.Service
     const sessions = yield* Session.Service
+    const goal = yield* Goal.Service
     const agents = yield* Agent.Service
     const provider = yield* Provider.Service
     const processor = yield* SessionProcessor.Service
     const compaction = yield* SessionCompaction.Service
+    const checkpoint = yield* SessionCheckpoint.Service
     const plugin = yield* Plugin.Service
     const commands = yield* Command.Service
     const config = yield* Config.Service
@@ -124,6 +135,7 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const inbox = yield* Inbox.Service
     const { db } = database
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
@@ -236,6 +248,67 @@ export const layer = Layer.effect(
         .pipe(Effect.catchCause((cause) => Effect.logError("failed to generate title", { error: Cause.squash(cause) })))
     })
 
+    const predict = Effect.fn("SessionPrompt.predict")(function* (input: { sessionID: SessionID }) {
+      return yield* Effect.gen(function* () {
+        const cfg = yield* config.get()
+        if (cfg.experimental?.predict_next_prompt === false) return ""
+
+        const history = yield* sessions.messages({ sessionID: input.sessionID })
+        const real = (m: SessionV1.WithParts) =>
+          m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
+        const userIdx = history.findLastIndex(real)
+        if (userIdx === -1) return ""
+
+        const lastUser = history[userIdx]
+        if (!lastUser || lastUser.info.role !== "user") return ""
+
+        const assistants = history
+          .slice(userIdx + 1)
+          .filter((m): m is SessionV1.WithParts & { info: SessionV1.Assistant } => m.info.role === "assistant")
+        if (assistants.length === 0) return ""
+        if (assistants.some((m) => m.info.time.completed === undefined)) return ""
+
+        const lastAssistant = assistants[assistants.length - 1]
+        if (!lastAssistant) return ""
+
+        const base = yield* agents.get("title")
+        if (!base) return ""
+        const ag = { ...base, prompt: PREDICT_SYSTEM }
+        const mdl = ag.model
+          ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
+          : ((yield* provider.getSmallModel(lastAssistant.info.providerID)) ??
+            (yield* provider.getModel(lastAssistant.info.providerID, lastAssistant.info.modelID)))
+
+        const msgs = yield* MessageV2.toModelMessagesEffect([lastUser, lastAssistant], mdl, { stripMedia: true })
+        const text = yield* llm
+          .stream({
+            agent: ag,
+            user: lastUser.info,
+            system: [],
+            small: true,
+            tools: {},
+            model: mdl,
+            sessionID: input.sessionID,
+            retries: 1,
+            messages: [...msgs, { role: "user", content: PREDICT_NUDGE }],
+          })
+          .pipe(
+            Stream.filter(LLMEvent.is.textDelta),
+            Stream.map((e) => e.text),
+            Stream.mkString,
+            Effect.orElseSucceed(() => ""),
+          )
+        const cleaned = text
+          .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+          .split("\n")
+          .map((line) => line.trim())
+          .find((line) => line.length > 0)
+        if (!cleaned) return ""
+        const stripped = cleaned.replace(quoteTrimRegex, "")
+        return stripped.length > 120 ? stripped.substring(0, 117) + "..." : stripped
+      }).pipe(Effect.catch(() => Effect.succeed("")))
+    })
+
     const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
       task: SessionV1.SubtaskPart
       model: Provider.Model
@@ -247,7 +320,7 @@ export const layer = Layer.effect(
       const { task, model, lastUser, sessionID, session, msgs } = input
       const ctx = yield* InstanceState.context
       const promptOps = yield* ops()
-      const { task: taskTool } = yield* registry.named()
+      const { subagent: subagentTool } = yield* registry.named()
       const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
       const assistantMessage: SessionV1.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
@@ -270,7 +343,7 @@ export const layer = Layer.effect(
         sessionID: assistantMessage.sessionID,
         type: "tool",
         callID: ulid(),
-        tool: TaskTool.id,
+        tool: SubagentTool.id,
         state: {
           status: "running",
           input: {
@@ -290,7 +363,7 @@ export const layer = Layer.effect(
       }
       yield* plugin.trigger(
         "tool.execute.before",
-        { tool: TaskTool.id, sessionID, callID: part.id },
+        { tool: SubagentTool.id, sessionID, callID: part.id },
         { args: taskArgs },
       )
 
@@ -305,7 +378,7 @@ export const layer = Layer.effect(
 
       let error: Error | undefined
       const taskAbort = new AbortController()
-      const result = yield* taskTool
+      const result = yield* subagentTool
         .execute(taskArgs, {
           agent: task.agent,
           messageID: assistantMessage.id,
@@ -372,7 +445,7 @@ export const layer = Layer.effect(
 
       yield* plugin.trigger(
         "tool.execute.after",
-        { tool: TaskTool.id, sessionID, callID: part.id, args: taskArgs },
+        { tool: SubagentTool.id, sessionID, callID: part.id, args: taskArgs },
         result,
       )
 
@@ -664,6 +737,9 @@ export const layer = Layer.effect(
         id: input.messageID ?? MessageID.ascending(),
         role: "user",
         sessionID: input.sessionID,
+        agentID: input.agentID ?? "main",
+        source: input.source,
+        provenance: input.provenance,
         time: { created: Date.now() },
         tools: input.tools,
         agent: ag.name,
@@ -955,7 +1031,7 @@ export const layer = Layer.effect(
         }
 
         if (part.type === "agent") {
-          const perm = Permission.evaluate("task", part.name, ag.permission)
+          const perm = Permission.evaluate("actor", part.name, ag.permission)
           const hint = perm.action === "deny" ? " . Invoked by user; guaranteed to exist." : ""
           return [
             { ...part, messageID: info.id, sessionID: input.sessionID },
@@ -965,7 +1041,7 @@ export const layer = Layer.effect(
               type: "text",
               synthetic: true,
               text:
-                " Use the above message and context to generate a prompt and call the task tool with subagent: " +
+                " Use the above message and context to generate a prompt and call the actor tool with subagent_type: " +
                 part.name +
                 hint,
             },
@@ -1108,6 +1184,22 @@ export const layer = Layer.effect(
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
+      const explicitGoal = input.goal?.trim()
+      const promptGoal = input.parts
+        .filter((part): part is SessionV1.TextPartInput => part.type === "text" && part.synthetic !== true)
+        .map((part) => part.text.trim())
+        .filter(Boolean)
+        .join("\n")
+        .trim()
+      const goalCondition =
+        input.goal !== undefined
+          ? explicitGoal || undefined
+          : message.info.agent === "goal"
+          ? promptGoal
+            ? `Complete the user's request: ${promptGoal}`
+            : "Complete the user's latest request."
+          : undefined
+      if (goalCondition) yield* goal.set(input.sessionID, goalCondition)
       yield* sessions.touch(input.sessionID)
 
       const permissions: PermissionV1.Rule[] = []
@@ -1120,29 +1212,148 @@ export const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
-      return yield* loop({ sessionID: input.sessionID })
+      return yield* loop({ sessionID: input.sessionID, agentID: input.agentID ?? "main", task_id: input.task_id })
     })
 
-    const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const match = yield* sessions.findMessage(sessionID, (m) => m.info.role !== "user").pipe(Effect.orDie)
+    const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID, agentID = "main") {
+      const match = yield* sessions
+        .findMessage(sessionID, (m) => m.info.role !== "user", { agentID })
+        .pipe(Effect.orDie)
       if (Option.isSome(match)) return match.value
-      const msgs = yield* sessions.messages({ sessionID, limit: 1 }).pipe(Effect.orDie)
+      const msgs = yield* sessions.messages({ sessionID, limit: 1, agentID }).pipe(Effect.orDie)
       if (msgs.length > 0) return msgs[0]
       throw new Error("Impossible")
     })
 
-    const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
-      function* (sessionID: SessionID) {
+    const runLoop: (sessionID: SessionID, agentID?: string, task_id?: string) => Effect.Effect<SessionV1.WithParts> =
+      Effect.fn("SessionPrompt.run")(
+      function* (sessionID: SessionID, agentID = "main", task_id?: string) {
         const ctx = yield* InstanceState.context
         let structured: unknown
         let step = 0
+        let skipOverflowCheck = false
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
+        const goalGate = Effect.fn("SessionPrompt.goalGate")(function* (lastUser: SessionV1.User) {
+          if (agentID !== "main") return false
+          const active = yield* goal.get(sessionID)
+          if (!active) return false
+
+          const transcriptMsgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+            Effect.provideService(Database.Service, database),
+          )
+          const judgedMessageID = transcriptMsgs.findLast((msg) => msg.info.role === "assistant")?.info.id
+          const verdict = yield* goal
+            .evaluate({
+              condition: active.condition,
+              msgs: transcriptMsgs,
+              model: lastUser.model,
+            })
+            .pipe(
+              Effect.catch((error) =>
+                Effect.gen(function* () {
+                  yield* Effect.logWarning("Goal judge failed; allowing stop", {
+                    sessionID,
+                    error: String(error),
+                  })
+                  return { ok: true, impossible: false, reason: "judge error" }
+                }),
+              ),
+            )
+
+          if (verdict.ok || verdict.impossible) {
+            yield* Effect.logInfo("Goal satisfied; allowing stop", {
+              sessionID,
+              impossible: verdict.impossible === true,
+              reason: verdict.reason,
+              judgedMessageID,
+            })
+            yield* goal.clear(sessionID)
+            return false
+          }
+
+          const count = yield* goal.bumpReact(sessionID)
+          if (count > MAX_GOAL_REACT) {
+            yield* Effect.logWarning("Goal re-entry cap exceeded; allowing stop", {
+              sessionID,
+              condition: active.condition,
+              count,
+              judgedMessageID,
+            })
+            yield* goal.clear(sessionID)
+            return false
+          }
+
+          yield* Effect.logInfo("Goal not satisfied; re-entering loop", {
+            sessionID,
+            count,
+            reason: verdict.reason,
+            judgedMessageID,
+          })
+
+          const reentry = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            role: "user" as const,
+            sessionID,
+            agent: lastUser.agent,
+            model: lastUser.model,
+            tools: lastUser.tools,
+            format: lastUser.format,
+            time: { created: Date.now() },
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: reentry.id,
+            sessionID,
+            type: "text",
+            synthetic: true,
+            text: [
+              "<system-reminder>",
+              `Your goal is not yet satisfied: "${active.condition}".`,
+              "A judge reviewed the transcript and reported what is still missing:",
+              verdict.reason,
+              "Keep working toward the goal. Do not stop until it is genuinely met or impossible.",
+              "</system-reminder>",
+            ].join("\n"),
+          })
+          return true
+        })
+
+        const tryInsertCheckpointBoundary = Effect.fn("SessionPrompt.tryInsertCheckpointBoundary")(function* (input: {
+          msgs: SessionV1.WithParts[]
+          lastUser: SessionV1.User
+          model: Provider.Model
+          includeRunningWriter?: boolean
+        }) {
+          const writerRunning = input.includeRunningWriter
+            ? yield* checkpoint.isWriterRunning(sessionID).pipe(Effect.catch(() => Effect.succeed(false)))
+            : false
+          const hasCheckpoint = yield* checkpoint.hasCheckpoint(sessionID).pipe(Effect.catch(() => Effect.succeed(false)))
+          if (!writerRunning && !hasCheckpoint) return false
+
+          yield* checkpoint.waitForWriter(sessionID).pipe(Effect.ignore)
+          const boundary = yield* checkpoint.lastBoundary(sessionID).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          if (!boundary) return false
+
+          const boundaryMsg = input.msgs.find((msg) => msg.info.id === boundary)
+          return yield* checkpoint
+            .insertRebuildBoundary({
+              sessionID,
+              boundary,
+              agentID: input.lastUser.agentID,
+              agent: input.lastUser.agent,
+              model: { providerID: input.model.providerID, modelID: input.model.id },
+              boundaryCreatedAt: boundaryMsg?.info.time.created,
+            })
+            .pipe(Effect.catch(() => Effect.succeed(false)))
+        })
+
         while (true) {
-          yield* status.set(sessionID, { type: "busy" })
+          if (agentID === "main") yield* status.set(sessionID, { type: "busy" })
+          yield* inbox.drain(sessionID, agentID).pipe(Effect.ignore)
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
 
-          let msgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+          let msgs = yield* MessageV2.filterCompactedEffect(sessionID, { agentID }).pipe(
             Effect.provideService(Database.Service, database),
           )
 
@@ -1179,11 +1390,12 @@ export const layer = Layer.effect(
               })
             }
             yield* Effect.logInfo("exiting loop", { "session.id": sessionID })
+            if (yield* goalGate(lastUser)) continue
             break
           }
 
           step++
-          if (step === 1)
+          if (step === 1 && agentID === "main")
             yield* title({
               session,
               modelID: lastUser.model.modelID,
@@ -1212,13 +1424,21 @@ export const layer = Layer.effect(
           }
 
           if (
+            !skipOverflowCheck &&
             lastFinished &&
             lastFinished.summary !== true &&
             (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
           ) {
+            const inserted = yield* tryInsertCheckpointBoundary({ msgs, lastUser, model })
+            if (inserted) {
+              skipOverflowCheck = true
+              continue
+            }
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
+            skipOverflowCheck = true
             continue
           }
+          skipOverflowCheck = false
 
           const agent = yield* agents.get(lastUser.agent)
           if (!agent) {
@@ -1240,6 +1460,7 @@ export const layer = Layer.effect(
             id: MessageID.ascending(),
             parentID: lastUser.id,
             role: "assistant",
+            agentID,
             mode: agent.name,
             agent: agent.name,
             variant: lastUser.model.variant,
@@ -1379,33 +1600,53 @@ export const layer = Layer.effect(
 
             if (result === "stop") return "break" as const
             if (result === "compact") {
-              yield* compaction.create({
-                sessionID,
-                agent: lastUser.agent,
-                model: lastUser.model,
-                auto: true,
-                overflow: !handle.message.finish,
+              const inserted = yield* tryInsertCheckpointBoundary({
+                msgs,
+                lastUser,
+                model,
+                includeRunningWriter: true,
               })
+              if (inserted) {
+                skipOverflowCheck = true
+              } else {
+                yield* compaction.create({
+                  sessionID,
+                  agent: lastUser.agent,
+                  model: lastUser.model,
+                  auto: true,
+                  overflow: !handle.message.finish,
+                })
+                skipOverflowCheck = true
+              }
             }
             return "continue" as const
           }).pipe(
             Effect.ensuring(instruction.clear(handle.message.id)),
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
-          if (outcome === "break") break
+          if (outcome === "break") {
+            if (yield* goalGate(lastUser)) continue
+            break
+          }
           continue
         }
 
-        yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        return yield* lastAssistant(sessionID)
+        if (agentID === "main") yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+        return yield* lastAssistant(sessionID, agentID)
       },
     )
 
-    const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
-      input: LoopInput,
-    ) {
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
-    })
+    const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(
+      function* (input: LoopInput) {
+        const agentID = input.agentID ?? "main"
+        return yield* state.ensureRunning(
+          input.sessionID,
+          agentID,
+          lastAssistant(input.sessionID, agentID),
+          runLoop(input.sessionID, agentID, input.task_id),
+        )
+      },
+    )
 
     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
@@ -1429,6 +1670,23 @@ export const layer = Layer.effect(
         throw error
       }
       const agentName = cmd.agent ?? input.agent
+      let commandGoal: string | undefined
+
+      if (input.command === Command.Default.GOAL) {
+        const condition = input.arguments.trim()
+        if (condition === "" || condition === "clear" || condition === "reset") {
+          yield* goal.clear(input.sessionID)
+          return yield* prompt({
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            agent: agentName ?? (yield* agents.defaultInfo()).name,
+            goal: "",
+            parts: [{ type: "text", text: "Goal cleared.", synthetic: true }],
+            noReply: true,
+          })
+        }
+        commandGoal = condition
+      }
 
       const raw = input.arguments.match(argsRegex) ?? []
       const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
@@ -1529,6 +1787,7 @@ export const layer = Layer.effect(
         messageID: input.messageID,
         model: userModel,
         agent: userAgent,
+        goal: commandGoal,
         parts,
         variant: input.variant,
       })
@@ -1541,47 +1800,64 @@ export const layer = Layer.effect(
       return result
     })
 
-    return Service.of({
+    const impl = Service.of({
       cancel,
       prompt,
       loop,
       shell,
       command,
       resolvePromptParts,
+      predict,
     })
+    sessionPromptRef.current = { loop: impl.loop }
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (sessionPromptRef.current?.loop === impl.loop) sessionPromptRef.current = undefined
+      }),
+    )
+    return impl
   }),
 )
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
-    Layer.provide(SessionRunState.defaultLayer),
-    Layer.provide(SessionStatus.defaultLayer),
-    Layer.provide(SessionCompaction.defaultLayer),
-    Layer.provide(SessionProcessor.defaultLayer),
-    Layer.provide(Command.defaultLayer),
-    Layer.provide(Permission.defaultLayer),
-    Layer.provide(MCP.defaultLayer),
-    Layer.provide(LSP.defaultLayer),
-    Layer.provide(ToolRegistry.defaultLayer),
-    Layer.provide(Truncate.defaultLayer),
-    Layer.provide(Provider.defaultLayer),
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(Instruction.defaultLayer),
-    Layer.provide(FSUtil.defaultLayer),
-    Layer.provide(Plugin.defaultLayer),
-    Layer.provide(Session.defaultLayer),
-    Layer.provide(SessionRevert.defaultLayer),
-    Layer.provide(SessionSummary.defaultLayer),
-    Layer.provide(Image.defaultLayer),
     Layer.provide(
       Layer.mergeAll(
-        Agent.defaultLayer,
-        Database.defaultLayer,
-        SystemPrompt.defaultLayer,
-        LLM.defaultLayer,
-        CrossSpawnSpawner.defaultLayer,
-        RuntimeFlags.defaultLayer,
-        EventV2Bridge.defaultLayer,
+        Layer.mergeAll(
+          SessionRunState.defaultLayer,
+          SessionStatus.defaultLayer,
+          Goal.defaultLayer,
+          SessionCompaction.defaultLayer,
+          SessionCheckpoint.defaultLayer,
+          SessionProcessor.defaultLayer,
+          Command.defaultLayer,
+          Permission.defaultLayer,
+          MCP.defaultLayer,
+          LSP.defaultLayer,
+          ToolRegistry.defaultLayer,
+        ),
+        Layer.mergeAll(
+          Truncate.defaultLayer,
+          Provider.defaultLayer,
+          Config.defaultLayer,
+          Instruction.defaultLayer,
+          FSUtil.defaultLayer,
+          Plugin.defaultLayer,
+          Session.defaultLayer,
+          SessionRevert.defaultLayer,
+          SessionSummary.defaultLayer,
+          Image.defaultLayer,
+        ),
+        Layer.mergeAll(
+          Agent.defaultLayer,
+          Database.defaultLayer,
+          SystemPrompt.defaultLayer,
+          LLM.defaultLayer,
+          CrossSpawnSpawner.defaultLayer,
+          RuntimeFlags.defaultLayer,
+          EventV2Bridge.defaultLayer,
+          Inbox.defaultLayer,
+        ),
       ),
     ),
   ),
@@ -1596,6 +1872,12 @@ export const PromptInput = Schema.Struct({
   messageID: Schema.optional(MessageID),
   model: Schema.optional(ModelRef),
   agent: Schema.optional(Schema.String),
+  agentID: Schema.optional(Schema.String),
+  task_id: Schema.optional(Schema.String).annotate({
+    description: "MiMo-compatible task id bound to this actor prompt.",
+  }),
+  source: Schema.optional(Schema.Literals(["user", "spawn", "hook"])),
+  provenance: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
   noReply: Schema.optional(Schema.Boolean),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)).annotate({
     description:
@@ -1604,6 +1886,7 @@ export const PromptInput = Schema.Struct({
   format: Schema.optional(SessionV1.Format),
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  goal: Schema.optional(Schema.String),
   parts: Schema.Array(
     Schema.Union([
       SessionV1.TextPartInput,
@@ -1617,6 +1900,8 @@ export type PromptInput = Schema.Schema.Type<typeof PromptInput>
 
 export class LoopInput extends Schema.Class<LoopInput>("SessionPrompt.LoopInput")({
   sessionID: SessionID,
+  agentID: Schema.optional(Schema.String),
+  task_id: Schema.optional(Schema.String),
 }) {}
 
 export const ShellInput = Schema.Struct({
@@ -1690,13 +1975,15 @@ const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const placeholderRegex = /\$(\d+)/g
 const quoteTrimRegex = /^["']|["']$/g
 
-export const node = LayerNode.make(layer, [
+const promptNodeDependencies = LayerNode.group([
   SessionStatus.node,
+  Goal.node,
   Session.node,
   Agent.node,
   Provider.node,
   SessionProcessor.node,
   SessionCompaction.node,
+  SessionCheckpoint.node,
   Plugin.node,
   Command.node,
   Config.node,
@@ -1717,6 +2004,9 @@ export const node = LayerNode.make(layer, [
   EventV2Bridge.node,
   RuntimeFlags.node,
   Database.node,
+  Inbox.node,
 ])
+
+export const node = LayerNode.make(layer, [promptNodeDependencies])
 
 export * as SessionPrompt from "./prompt"

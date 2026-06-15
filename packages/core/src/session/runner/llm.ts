@@ -22,6 +22,7 @@ import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { MemoryContext } from "../../memory/context"
 import { Goal } from "../goal"
+import { GoalJudge } from "../goal-judge"
 import { goalGate } from "../goal-gate"
 import { taskGate } from "../task-gate"
 import { ToolRegistry } from "../../tool/registry"
@@ -32,12 +33,39 @@ import { pruneToolOutputs } from "../tool-pruning"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
+import { SessionMessage } from "../message"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { type RunError, Service, StepLimitExceededError } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
+
+type AutoEvolutionModule = {
+  readonly shouldAutoDream: (cfg: AutoEvolutionConfig) => Effect.Effect<boolean, never, Database.Service>
+  readonly shouldAutoDistill: (cfg: AutoEvolutionConfig) => Effect.Effect<boolean, never, Database.Service>
+  readonly enqueueAutoDream: (input: { readonly cwd: string }) => Effect.Effect<number | undefined>
+  readonly enqueueAutoDistill: (input: { readonly cwd: string }) => Effect.Effect<number | undefined>
+}
+
+type AutoEvolutionConfig = {
+  readonly dream?: {
+    readonly auto?: boolean
+    readonly interval_days?: number
+  }
+  readonly distill?: {
+    readonly auto?: boolean
+    readonly interval_days?: number
+  }
+}
+
+const autoEvolutionModulePath = "../../../../opencode/src/session/auto-dream"
+const disabledAutoEvolution: AutoEvolutionModule = {
+  shouldAutoDream: () => Effect.succeed(false),
+  shouldAutoDistill: () => Effect.succeed(false),
+  enqueueAutoDream: () => Effect.succeed(undefined),
+  enqueueAutoDistill: () => Effect.succeed(undefined),
+}
 
 /**
  * Runs one durable coding-agent Session until it settles.
@@ -92,6 +120,30 @@ import { toLLMMessages } from "./to-llm-message"
 // QUESTION: Did this exist previously, or did we add this limit? Does it make sense?
 const MAX_STEPS = 25
 
+const judgeText = (message: SessionMessage.Message): string | undefined => {
+  if (message.type === "user") return message.text
+  if (message.type === "synthetic") return message.text
+  if (message.type === "system") return message.text
+  if (message.type === "shell") return [`$ ${message.command}`, message.output].filter(Boolean).join("\n")
+  if (message.type === "compaction") return [`Compaction summary:`, message.summary, `Recent context:`, message.recent].join("\n")
+  if (message.type !== "assistant") return
+  const parts = message.content.map((part) => {
+    if (part.type === "text") return part.text
+    if (part.type === "reasoning") return `[reasoning] ${part.text}`
+    if (part.state.status === "completed") return `[tool:${part.name}] ${JSON.stringify(part.state.result)}`
+    if (part.state.status === "error") return `[tool:${part.name}:error] ${part.state.error.message}`
+    return `[tool:${part.name}:${part.state.status}]`
+  })
+  return parts.join("\n")
+}
+
+const judgeTranscript = (messages: ReadonlyArray<SessionMessage.Message>) =>
+  messages.flatMap((message) => {
+    const content = judgeText(message)
+    if (!content?.trim()) return []
+    return [{ role: message.type === "assistant" ? "assistant" : message.type, content }]
+  })
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -107,9 +159,11 @@ export const layer = Layer.effect(
     const referenceGuidance = yield* ReferenceGuidance.Service
     const memoryContext = yield* MemoryContext.Service
     const goal = yield* Goal.Service
+    const judge = yield* GoalJudge.Service
     const config = yield* Config.Service
     const db = (yield* Database.Service).db
-    const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
+    const configEntries = yield* config.entries()
+    const compaction = SessionCompaction.make({ events, llm, config: configEntries })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
       const session = yield* store.get(sessionID)
       if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
@@ -401,17 +455,26 @@ export const layer = Layer.effect(
             // Task gate: check for non-terminal tasks
             const taskResult = taskGate([])
             // Goal gate: check if an active goal should force continuation
+            const judgeSession = yield* getSession(input.sessionID)
+            const judgeModel = yield* models.resolve(judgeSession)
+            const messages = judgeTranscript(yield* SessionHistory.load(db, input.sessionID))
             const gateResult = yield* goalGate({
               sessionID: input.sessionID,
               agentID: "main",
               getGoal: (sid) => goal.get(sid),
               clearGoal: (sid) => goal.clear(sid),
               bumpReact: (sid) => goal.bumpReact(sid),
-              evaluate: (_condition, _messages) =>
-                Effect.succeed({ ok: false, impossible: false, reason: "Judge not yet integrated" }),
-              messages: [],
+              evaluate: (condition, messages) => judge.evaluate({ condition, messages, model: judgeModel }),
+              messages,
             })
             if (taskResult.shouldContinue || gateResult.shouldContinue) {
+              if (gateResult.message)
+                yield* events.publish(SessionEvent.Synthetic, {
+                  sessionID: input.sessionID,
+                  messageID: SessionMessage.ID.create(),
+                  timestamp: yield* DateTime.now,
+                  text: gateResult.message,
+                })
               needsContinuation = true
             } else {
               break
@@ -424,19 +487,42 @@ export const layer = Layer.effect(
         promotion = openActivity ? "queue" : undefined
       }
 
-      // Post-run: check if Dream/Distill should auto-trigger
-      // Fire-and-forget - don't block the user
+      // Post-run: check if Dream/Distill should auto-trigger.
+      // Fire-and-forget - don't block the user.
       try {
-        const { shouldAutoDream } = yield* Effect.tryPromise({
-          try: () => import("../../../../opencode/src/session/auto-dream"),
-          catch: () => ({ shouldAutoDream: () => Effect.succeed(false) }),
-        }).pipe(Effect.catch(() => Effect.succeed({ shouldAutoDream: () => Effect.succeed(false) })))
-        const shouldDream = yield* shouldAutoDream().pipe(Effect.catch(() => Effect.succeed(false)))
+        const evolution = yield* Effect.tryPromise({
+          try: async () => (await import(autoEvolutionModulePath)) as AutoEvolutionModule,
+          catch: () => undefined,
+        }).pipe(
+          Effect.catch(() => Effect.succeed(disabledAutoEvolution)),
+        )
+        const autoEvolutionConfig: AutoEvolutionConfig = {
+          dream: Config.latest(configEntries, "dream"),
+          distill: Config.latest(configEntries, "distill"),
+        }
+        const shouldDream = yield* evolution.shouldAutoDream(autoEvolutionConfig).pipe(
+          Effect.provideService(Database.Service, { db }),
+          Effect.catch(() => Effect.succeed(false)),
+        )
         if (shouldDream) {
-          yield* Effect.logInfo("Auto-dream triggered - memory consolidation queued")
+          const pid = yield* evolution.enqueueAutoDream({ cwd: location.directory }).pipe(
+            Effect.catch(() => Effect.succeed(undefined)),
+          )
+          yield* Effect.logInfo("Auto-dream triggered - memory consolidation queued", { pid })
+        }
+
+        const shouldDistill = yield* evolution.shouldAutoDistill(autoEvolutionConfig).pipe(
+          Effect.provideService(Database.Service, { db }),
+          Effect.catch(() => Effect.succeed(false)),
+        )
+        if (shouldDistill) {
+          const pid = yield* evolution.enqueueAutoDistill({ cwd: location.directory }).pipe(
+            Effect.catch(() => Effect.succeed(undefined)),
+          )
+          yield* Effect.logInfo("Auto-distill triggered - workflow packaging queued", { pid })
         }
       } catch {
-        // Dream trigger is non-critical - ignore errors
+        // Evolution triggers are non-critical - ignore errors
       }
     })
 

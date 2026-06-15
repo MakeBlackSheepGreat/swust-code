@@ -8,6 +8,7 @@ import { ConfigAgentV1 } from "./agent"
 import { ConfigAttachmentV1 } from "./attachment"
 import { ConfigCommandV1 } from "./command"
 import { ConfigFormatterV1 } from "./formatter"
+import { ConfigHistoryV1 } from "./history"
 import { ConfigLayoutV1 } from "./layout"
 import { ConfigLSPV1 } from "./lsp"
 import { ConfigMCPV1 } from "./mcp"
@@ -58,6 +59,20 @@ export const Info = Schema.Struct({
     description:
       "Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing",
   }),
+  tool: Schema.optional(
+    Schema.Struct({
+      invocation_style: Schema.optional(Schema.Literals(["json", "shell"])).annotate({
+        description:
+          "Default invocation style for all tools. 'json' exposes the original schema; 'shell' exposes a single script parameter for tools that provide shell parsing.",
+      }),
+      invocation_style_by_tool: Schema.optional(
+        Schema.Record(Schema.String, Schema.Literals(["json", "shell"])),
+      ).annotate({
+        description:
+          "Per-tool invocation style override. Keys are tool IDs. Tools without shell parsing fall back to JSON.",
+      }),
+    }),
+  ).annotate({ description: "Tool invocation style configuration." }),
   autoshare: Schema.optional(Schema.Boolean).annotate({
     description: "@deprecated Use 'share' field instead. Share newly created sessions automatically",
   }),
@@ -114,6 +129,9 @@ export const Info = Schema.Struct({
     description:
       "Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.",
   }),
+  history: Schema.optional(ConfigHistoryV1.Info).annotate({
+    description: "Trajectory (conversation history) FTS index configuration.",
+  }),
   lsp: Schema.optional(ConfigLSPV1.Info).annotate({
     description:
       "Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.",
@@ -143,6 +161,26 @@ export const Info = Schema.Struct({
     description:
       "Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.",
   }),
+  dream: Schema.optional(
+    Schema.Struct({
+      auto: Schema.optional(Schema.Boolean).annotate({
+        description: "Auto-trigger dream memory consolidation on new session start. Default: true.",
+      }),
+      interval_days: Schema.optional(NonNegativeInt).annotate({
+        description: "Minimum days between automatic dream runs. Set to 0 to trigger on every new session. Default: 7.",
+      }),
+    }),
+  ),
+  distill: Schema.optional(
+    Schema.Struct({
+      auto: Schema.optional(Schema.Boolean).annotate({
+        description: "Auto-trigger distill workflow packaging on new session start. Default: true.",
+      }),
+      interval_days: Schema.optional(NonNegativeInt).annotate({
+        description: "Minimum days between automatic distill runs. Default: 30.",
+      }),
+    }),
+  ),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({
@@ -163,9 +201,82 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
+  checkpoint: Schema.optional(
+    Schema.Struct({
+      thresholds: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+        description:
+          'Context fill thresholds that trigger checkpoint writes. Strings may be percentages ("40%"), absolute tokens ("100K", "1.5M"), or mixed ("100K", "50%"). Each threshold must be <= window - 20K reserved. Default: ["40%", "60%", "80%"].',
+      }),
+      reserved: Schema.optional(NonNegativeInt).annotate({
+        description: "Token buffer reserved for checkpoint operations. Default: 20000.",
+      }),
+      max_writer_failures: Schema.optional(PositiveInt).annotate({
+        description:
+          "Maximum consecutive writer failures per session before checkpointing stops retrying until process restart. Default: 3.",
+      }),
+      fork: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Whether to fork the parent agent's message prefix into the writer session for prefix-cache reuse. Requires provider cache-breakpoint support. Default: false.",
+      }),
+      push_caps: Schema.optional(
+        Schema.Struct({
+          tasks_ledger: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for the tasks ledger section of rebuild context. Default: 2000.",
+          }),
+          focus_task: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for the focus task body in rebuild context. Default: 4000.",
+          }),
+          actor_ledger: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for the actor ledger section of rebuild context. Default: 500.",
+          }),
+          memory_titles: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for memory titles in rebuild context. Default: 500.",
+          }),
+          global: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for the global memory section (global/MEMORY.md) of rebuild context. Default: 6000.",
+          }),
+          checkpoint: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for the session checkpoint section (checkpoint.md) of rebuild context. Default: 11000.",
+          }),
+          memory: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for the project memory section (MEMORY.md) of rebuild context. Default: 10000.",
+          }),
+          notes: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for the session notes (notes.md) of rebuild context. Default: 6000.",
+          }),
+          design_decisions: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for section 10 Design decisions in checkpoint.md. Default: 3000.",
+          }),
+          open_notes: Schema.optional(PositiveInt).annotate({
+            description: "Token cap for section 11 Open notes in checkpoint.md. Default: 800.",
+          }),
+        }),
+      ).annotate({
+        description:
+          "Per-section token caps for checkpoint rebuild context. Each section is loaded up to its cap so the rebuild stays within a predictable budget.",
+      }),
+      task_archive_days: Schema.optional(PositiveInt).annotate({
+        description:
+          "Number of days after task done or abandoned before it is filtered out of list({ include_archived: false }). Rows are not deleted. Default: 7.",
+      }),
+      task_cleanup_days: Schema.optional(PositiveInt).annotate({
+        description: "[deprecated] Alias for task_archive_days.",
+      }),
+      memory_reconcile_on_search: Schema.optional(Schema.Boolean).annotate({
+        description: "Whether to reconcile memory state on search operations. Default: true.",
+      }),
+      memory_search_score_floor: Schema.optional(Schema.Number).annotate({
+        description:
+          "Relative BM25 floor for memory.search results. The top result is always kept. Default: 0.15. Set 0 to keep all matches.",
+      }),
+    }),
+  ),
   experimental: Schema.optional(
     Schema.Struct({
       disable_paste_summary: Schema.optional(Schema.Boolean),
+      predict_next_prompt: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable the TUI next-prompt ghost suggestion (default: true)",
+      }),
       batch_tool: Schema.optional(Schema.Boolean).annotate({ description: "Enable the batch tool" }),
       openTelemetry: Schema.optional(Schema.Boolean).annotate({
         description: "Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)",

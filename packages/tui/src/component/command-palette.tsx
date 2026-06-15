@@ -51,17 +51,21 @@ export function CommandPaletteDialog() {
     entries().map((entry) => {
       const rawTitle = typeof entry.command.title === "string" ? entry.command.title : entry.command.name
       const rawDesc = typeof entry.command.desc === "string" ? entry.command.desc : undefined
-      // Try to resolve i18n key for title: tui.command.session.list.title
+      const slashName = entry.command.slashName
+      const commandTitle = typeof slashName === "string" && slashName ? `/${slashName}` : entry.command.name
+      // Keep commands themselves in English; put localized text in the description.
       const titleKey = `tui.command.${entry.command.name}.title`
       const descKey = `tui.command.${entry.command.name}.description`
       const resolvedTitle = t(titleKey)
       const resolvedDesc = t(descKey)
+      const localizedTitle = resolvedTitle !== titleKey ? resolvedTitle : rawTitle
+      const localizedDesc = resolvedDesc !== descKey ? resolvedDesc : rawDesc
       const rawCategory = typeof entry.command.category === "string" ? entry.command.category : undefined
-      const categoryKey = `tui.command.category.${rawCategory}`
+      const categoryKey = `tui.command.category.${rawCategory?.toLowerCase()}`
       const resolvedCategory = rawCategory ? t(categoryKey) : undefined
       return {
-        title: resolvedTitle !== titleKey ? resolvedTitle : rawTitle,
-        description: resolvedDesc !== descKey ? resolvedDesc : rawDesc,
+        title: commandTitle,
+        description: localizedDesc ?? (localizedTitle !== commandTitle ? localizedTitle : undefined),
         category: resolvedCategory && resolvedCategory !== categoryKey ? resolvedCategory : rawCategory,
         footer: formatKeyBindings(entry.bindings, config),
         value: entry.command.name,
@@ -83,11 +87,18 @@ export function CommandPaletteDialog() {
         .map((option) => ({
           ...option,
           value: `suggested:${option.value}`,
-          category: "Suggested",
+          category: t("tui.command.palette.suggested"),
         })),
       ...options(),
     ]
   }
 
-  return <DialogSelect ref={(value) => (ref = value)} title="Commands" options={list()} />
+  return (
+    <DialogSelect
+      ref={(value) => (ref = value)}
+      title={t("tui.command.palette.title")}
+      placeholder={t("tui.dialog.select.placeholder")}
+      options={list()}
+    />
+  )
 }

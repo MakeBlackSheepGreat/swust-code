@@ -18,7 +18,7 @@
 
 SWUST Code is built on top of [OpenCode](https://github.com/anomalyco/opencode) by Anomaly Co., with key capabilities ported from [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi, [DevEco Code](https://github.com/nicognaW/deveco-code) by nicognaW, and [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix) by esengine. It keeps all core OpenCode capabilities (multiple providers, TUI, LSP, MCP, plugins) and adds persistent memory, goal-driven autonomy, self-improvement, multi-agent orchestration, workflow engine, layered security, and cache-first architecture.
 
-From MiMo-Code we ported: persistent memory (FTS5), Dream/Distill self-improvement, Actor/Spawn subagent orchestration, checkpoint system, context compaction, workflow engine, retry strategy, and doom loop detection.
+From MiMo-Code we ported: persistent memory and raw history search (FTS5), Dream/Distill self-improvement, Compose skills, Actor/Spawn-compatible subagent orchestration, checkpoint system, context compaction, workflow engine, retry strategy, and doom loop detection.
 
 From DevEco Code we ported: NAPI bridge for native tool loading, workspace adapter pattern, document validation system, and tool output pruning.
 
@@ -50,12 +50,24 @@ The first launch guides you through configuration automatically. Supported optio
 
 ## Core Features
 
+### Version 0.3 Focus
+
+SWUST Code 0.3 adds two primary agent modes plus MiMo-compatible actor, memory, and history tool entrypoints:
+
+- **compose** — a primary orchestration agent that injects MiMo Compose guidance and the built-in `compose:*` skill catalog.
+- **goal** — a primary goal-driven agent mode that automatically sets the user's request as the session stopping condition and keeps the independent goal gate active.
+- **actor** — a MiMo-compatible `operation` API and optional shell-style invocation for `run`, `spawn`, `status`, `wait`, `cancel`, and `send`, backed by the same-session `ActorSpawn` runtime.
+- **memory** — a MiMo-compatible LLM tool for BM25 search across SWUST global, project, and session memory, backed by the core FTS5 memory index.
+- **history** — a MiMo-style fallback tool for raw conversation trajectory search, with `search` snippets and `around` context expansion by `message_id`.
+
 ### Multiple Agents
 
 | Agent | Description |
 |-------|-------------|
 | **build** | Default. Full tool permissions for development |
 | **plan** | Read-only analysis mode for code exploration and solution design |
+| **compose** | Workflow orchestration mode using bundled `compose:*` skills |
+| **goal** | Goal-driven mode that continues until the request is completed, verified, or blocked |
 | **explore** | Fast read-only search agent for locating code |
 
 Press `Tab` to switch between primary agents. Subagents are created by the system as needed.
@@ -72,9 +84,13 @@ Cross-session memory powered by SQLite FTS5 full-text search:
 
 Memory files support `@path` imports for cross-referencing. Memory is injected automatically when a session resumes.
 
+The built-in `memory` tool is exposed to agents with the MiMo `operation: "search"` API: `query`, `scope`, `scope_id`, `type`, and `limit`. SWUST maps MiMo `global`, `projects`, and `sessions` scopes to its current memory index; `cc` scope and `type` filtering are accepted for compatibility and return explicit notes until those indexes are implemented.
+
+The built-in `history` tool follows the MiMo escalation pattern: agents try `memory` first, then use `history` for exact or verbatim recall from raw session parts. A MiMo-style history writer listens to `message.part.updated` / `message.part.removed`, while background backfill indexes older `message` / `part` rows. `history.search` supports project/global scope plus session, kind, tool, and time filters. `history.around` expands a hit's `message_id` into neighboring messages for context. Configure indexed kinds with `history.kinds`.
+
 ### Goal-Driven Autonomy
 
-The `--goal` flag sets a stopping condition for a session:
+The `goal` agent mode and the `--goal` flag both set a stopping condition for a session:
 
 ```bash
 swust-code run --goal "fix all TypeScript errors" "start working"
@@ -82,18 +98,28 @@ swust-code run --goal "fix all TypeScript errors" "start working"
 
 When the agent tries to stop, an independent judge model evaluates the conversation to decide whether the condition is truly satisfied — preventing premature stops during autonomous work. Re-entry is capped at 12 attempts per goal.
 
+In interactive mode, `/goal <condition>` routes the turn through the `goal` agent mode and sets that condition as the stop condition. Use `/goal clear` or `/goal reset` to remove it.
+
 ### Dream & Distill
 
-- **`swust-code dream`** — scans recent session traces, extracts persistent knowledge into project memory, and removes outdated entries (auto-triggers every 7 days)
-- **`swust-code distill`** — discovers repeated manual workflows in recent work and packages high-confidence candidates into reusable skills (auto-triggers every 30 days)
+- **`swust-code dream`** — scans recent session traces, extracts persistent knowledge into project memory, and removes outdated entries.
+- **`swust-code distill`** — discovers repeated manual workflows in recent work and packages high-confidence candidates into reusable skills.
+
+Automatic Dream/Distill follows MiMo's config shape: `dream.auto` / `distill.auto` disable the background trigger when set to `false`, and `dream.interval_days` / `distill.interval_days` control the minimum gap between runs. Defaults are 7 days for Dream and 30 days for Distill.
 
 ### Subagent System
 
-The primary agent can create subagents on demand. Two spawn modes:
-- **peer** — creates a new child session (full isolation)
-- **subagent** — shares the parent session context (distinct actorID)
+The primary agent can create subagents on demand through the native `task` tool or the MiMo-compatible `actor` tool. The `actor` tool accepts the MiMo `operation` envelope:
 
-Subagents reuse the parent's prompt cache prefix (Fork Cache alignment) to reduce token costs.
+- **run** — starts a subagent and returns its result inline.
+- **spawn** — starts a background actor and returns an `actor_id`.
+- **status / wait / cancel / send** — inspects, waits for, cancels, or sends an inbox message to a spawned actor.
+- **model / output_schema** — forwards model overrides and structured-output schemas to the target subagent.
+- **shell invocation** — set `tool.invocation_style_by_tool.actor = "shell"` to expose MiMo-style `actor run ...`, `actor spawn ...`, `actor wait ...` scripts.
+
+The current actor implementation uses the MiMo-style `ActorSpawn` path: subagent messages stay in the parent session under an isolated `agentID` slice such as `general-1`, while the main transcript remains the default view. Actor lifecycle state is persisted in an `actor_registry` table. Actor `send` writes durable inbox rows, schedules a receiver wake when `SessionPrompt` is live, and the prompt loop drains inbox rows into the receiver's actor slice. Gate-eligible subagents also run a MiMo-style TaskGate completion check before final delivery. Plugin-driven actor `preStop`/`postStop` hook aggregation is wired into the actor lifecycle, with hook ReAct re-entry events published through SWUST Code's EventV2 stream. The MiMo-style built-in hook plugins are active: `checkpoint-splitover` validates `checkpoint-writer` output before stop, and `subagent-progress-checker` verifies task-bound writable subagents write `tasks/<task_id>/progress.md` with the required five-section journal.
+
+The hidden MiMo-style `checkpoint-writer` subagent is registered as a system-spawned actor type. SWUST also includes the MiMo `checkpoint-progress-reconcile` scanner, which detects NEW/CHANGED `tasks/<task_id>/progress.md` files by comparing `written-at` frontmatter with `last-reconciled-written-at` checkpoint markers.
 
 ### Workflow Engine
 
@@ -119,7 +145,7 @@ Interactive commands in the TUI:
 | Command | Description |
 |---------|-------------|
 | `/memory <query>` | Search persistent memory |
-| `/goal <condition>` | Set autonomous goal |
+| `/goal <condition>` | Run in goal agent mode with an autonomous stop condition |
 | `/dream` | Trigger memory consolidation |
 | `/distill` | Trigger workflow discovery |
 | `/help` | Show available commands |

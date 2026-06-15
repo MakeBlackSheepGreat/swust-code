@@ -9,6 +9,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { ShareNext } from "@/share/share-next"
 import { Effect, Layer } from "effect"
 import { Config } from "@/config/config"
+import { BackfillService, History, WriterService } from "@/history"
 import { Service } from "./bootstrap-service"
 
 export { Service } from "./bootstrap-service"
@@ -28,6 +29,8 @@ export const layer = Layer.effect(
     const shareNext = yield* ShareNext.Service
     const snapshot = yield* Snapshot.Service
     const vcs = yield* Vcs.Service
+    const historyWriter = yield* WriterService
+    const historyBackfill = yield* BackfillService
 
     const run = Effect.gen(function* () {
       const ctx = yield* InstanceState.context
@@ -39,7 +42,7 @@ export const layer = Layer.effect(
       // Each service self-manages its own slow work via Effect.forkScoped against
       // its per-instance state scope. We just await materialization here.
       yield* Effect.forEach(
-        [lsp, shareNext, format, vcs, snapshot, project],
+        [lsp, shareNext, format, vcs, snapshot, project, historyWriter, historyBackfill],
         (s) => s.init().pipe(Effect.catchCause((cause) => Effect.logWarning("init failed", { cause }))),
         { concurrency: "unbounded", discard: true },
       ).pipe(Effect.withSpan("InstanceBootstrap.init"))
@@ -59,6 +62,7 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
     ShareNext.defaultLayer,
     Snapshot.defaultLayer,
     Vcs.defaultLayer,
+    History.defaultLayer,
   ]),
 )
 
@@ -71,6 +75,7 @@ export const node = LayerNode.make(layer, [
   ShareNext.node,
   Snapshot.node,
   Vcs.node,
+  History.node,
 ])
 
 export * as InstanceBootstrap from "./bootstrap"

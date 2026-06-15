@@ -1,5 +1,5 @@
 import type { PermissionV1 } from "@swust-code/core/v1/permission"
-// CLI entry point for `opencode run`.
+// CLI entry point for `swust-code run`.
 //
 // Handles three modes:
 //   1. Non-interactive (default): sends a single prompt, streams events to
@@ -45,6 +45,10 @@ function resolveRunInput(value?: string, piped?: string): string | undefined {
   }
 
   return value + "\n" + piped
+}
+
+export function resolveRunAgent(argsAgent: string | undefined, goalText: string | undefined): string | undefined {
+  return argsAgent ?? (goalText ? "goal" : undefined)
 }
 
 type FilePart = {
@@ -121,7 +125,7 @@ async function toolError(part: ToolPart) {
 
 export const RunCommand = effectCmd({
   command: "run [message..]",
-  describe: "run opencode with a message",
+  describe: "run SWUST Code with a message",
   // --attach connects to a remote server (no local instance needed); the
   // default path runs an in-process server and needs the project instance.
   instance: (args) => !args.attach,
@@ -273,6 +277,14 @@ export const RunCommand = effectCmd({
         die("--interactive cannot be used with --command")
       }
 
+      if (args.goal && args.command) {
+        die("--goal cannot be used with --command")
+      }
+
+      if (args.goal && args.interactive) {
+        die("--goal is supported for non-interactive runs; use /goal inside interactive mode")
+      }
+
       if (args.demo && !args.interactive) {
         die("--demo requires --interactive")
       }
@@ -356,8 +368,14 @@ export const RunCommand = effectCmd({
       message = resolveRunInput(message, piped) ?? ""
       const initialInput = resolveRunInput(rawMessage, piped)
 
-      if (message.trim().length === 0 && !args.command && !args.interactive) {
+      if (message.trim().length === 0 && !args.command && !args.interactive && !args.goal) {
         UI.error("You must provide a message or a command")
+        process.exit(1)
+      }
+
+      const goalText = args.goal?.trim()
+      if (args.goal !== undefined && !goalText) {
+        UI.error("--goal cannot be empty")
         process.exit(1)
       }
 
@@ -531,9 +549,12 @@ export const RunCommand = effectCmd({
         process.exit(1)
       }
 
-      async function localAgent() {
-        if (!args.agent) return undefined
-        const name = args.agent
+      function requestedAgent() {
+        return resolveRunAgent(args.agent, goalText)
+      }
+
+      async function localAgent(name = requestedAgent()) {
+        if (!name) return undefined
 
         const entry = await Effect.runPromise(
           agentSvc.get(name).pipe(Effect.provideService(InstanceRef, localInstance)),
@@ -557,9 +578,8 @@ export const RunCommand = effectCmd({
         return name
       }
 
-      async function attachAgent(sdk: OpencodeClient) {
-        if (!args.agent) return undefined
-        const name = args.agent
+      async function attachAgent(sdk: OpencodeClient, name = requestedAgent()) {
+        if (!name) return undefined
 
         const modes = await sdk.app
           .agents(undefined, { throwOnError: true })
@@ -598,12 +618,13 @@ export const RunCommand = effectCmd({
       }
 
       async function pickAgent(sdk: OpencodeClient) {
-        if (!args.agent) return undefined
+        const name = requestedAgent()
+        if (!name) return undefined
         if (args.attach) {
-          return attachAgent(sdk)
+          return attachAgent(sdk, name)
         }
 
-        return localAgent()
+        return localAgent(name)
       }
 
       async function execute(sdk: OpencodeClient) {
@@ -667,7 +688,7 @@ export const RunCommand = effectCmd({
 
               if (
                 part.type === "tool" &&
-                part.tool === "task" &&
+                (part.tool === "task" || part.tool === "subagent") &&
                 part.state.status === "running" &&
                 args.format !== "json"
               ) {
@@ -795,13 +816,16 @@ export const RunCommand = effectCmd({
           }
 
           const model = pick(args.model)
-          const result = await client.session.prompt({
+          const promptText = message.trim().length === 0 && goalText ? goalText : message
+          const promptInput: Parameters<typeof client.session.prompt>[0] = {
             sessionID,
             agent,
             model,
             variant: args.variant,
-            parts: [...files, { type: "text", text: message }],
-          })
+            goal: goalText,
+            parts: [...files, { type: "text", text: promptText }],
+          }
+          const result = await client.session.prompt(promptInput)
           if (result.error) {
             if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
             process.exitCode = 1

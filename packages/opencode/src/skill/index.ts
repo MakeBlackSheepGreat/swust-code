@@ -17,6 +17,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@swust-code/core/util/glob"
 import { Discovery } from "./discovery"
 import { isRecord } from "@/util/record"
+import { extractComposeBundle } from "./compose/extract"
 
 const CLAUDE_EXTERNAL_DIR = ".claude"
 const AGENTS_EXTERNAL_DIR = ".agents"
@@ -24,14 +25,14 @@ const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
 const SWUST_CODE_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
 const SKILL_PATTERN = "**/SKILL.md"
 
-// Built-in skill that ships with opencode. The model's intuition for what an
-// swust-code.json should look like is often wrong, and opencode hard-fails on
+// Built-in skill that ships with SWUST Code. The model's intuition for what a
+// swust-code.json should look like is often wrong, and SWUST Code hard-fails on
 // invalid config, so users hit cryptic startup errors. Loading this skill
-// when the model is asked to touch opencode's own config files gives it the
+// when the model is asked to touch SWUST Code's own config files gives it the
 // actual schemas instead of guesses.
-const CUSTOMIZE_SWUST_CODE_SKILL_NAME = "customize-opencode"
+const CUSTOMIZE_SWUST_CODE_SKILL_NAME = "customize-swust-code"
 const CUSTOMIZE_SWUST_CODE_SKILL_DESCRIPTION =
-  "Use ONLY when the user is editing or creating swust-code's own configuration: swust-code.json, swust-code.jsonc, files under .swust-code/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring swust-code itself."
+  "Use ONLY when the user is editing or creating SWUST Code's own configuration: swust-code.json, swust-code.jsonc, files under .swust-code/, or files under ~/.config/swust-code/. Also use when creating or fixing SWUST Code agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring SWUST Code itself."
 const CUSTOMIZE_SWUST_CODE_SKILL_BODY = SkillPlugin.CustomizeOpencodeContent
 
 export const Info = Schema.Struct({
@@ -39,6 +40,7 @@ export const Info = Schema.Struct({
   description: Schema.optional(Schema.String),
   location: Schema.String,
   content: Schema.String,
+  hidden: Schema.optional(Schema.Boolean),
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
@@ -50,11 +52,12 @@ const Issue = Schema.StructWithRest(
   [Schema.Record(Schema.String, Schema.Unknown)],
 )
 
-function isSkillFrontmatter(data: unknown): data is { name: string; description?: string } {
+function isSkillFrontmatter(data: unknown): data is { name: string; description?: string; hidden?: boolean } {
   return (
     isRecord(data) &&
     typeof data.name === "string" &&
-    (data.description === undefined || typeof data.description === "string")
+    (data.description === undefined || typeof data.description === "string") &&
+    (data.hidden === undefined || typeof data.hidden === "boolean")
   )
 }
 
@@ -136,6 +139,7 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
     description: md.data.description,
     location: match,
     content: md.content,
+    hidden: md.data.hidden,
   }
 })
 
@@ -200,6 +204,15 @@ const discoverSkills = Effect.fnUntraced(function* (
     for (const root of upDirs) {
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "project" })
     }
+  }
+
+  const composeSkillRoot = yield* extractComposeBundle(fsys).pipe(
+    Effect.catch((error) =>
+      Effect.logError("failed to extract compose skills", { error }).pipe(Effect.as(undefined)),
+    ),
+  )
+  if (composeSkillRoot && (yield* fsys.isDir(composeSkillRoot))) {
+    yield* scan(state, composeSkillRoot, SKILL_PATTERN, { scope: "compose" })
   }
 
   const configDirs = yield* config.directories()
@@ -309,7 +322,9 @@ export const layer = Layer.effect(
 
     const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
       const s = yield* InstanceState.get(state)
-      const list = Object.values(s.skills).toSorted((a, b) => a.name.localeCompare(b.name))
+      const list = Object.values(s.skills)
+        .filter((skill) => !skill.hidden)
+        .toSorted((a, b) => a.name.localeCompare(b.name))
       if (!agent) return list
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
     })

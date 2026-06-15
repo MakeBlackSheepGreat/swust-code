@@ -60,6 +60,8 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
       },
       buffer: info.compaction.reserved,
     },
+    dream: info.dream,
+    distill: info.distill,
     skills: info.skills && [...(info.skills.paths ?? []), ...(info.skills.urls ?? [])],
     commands: info.command,
     instructions: info.instructions,

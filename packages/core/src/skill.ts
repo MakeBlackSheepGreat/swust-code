@@ -49,17 +49,19 @@ export type Source = typeof Source.Type
 export class Info extends Schema.Class<Info>("SkillV2.Info")({
   name: Schema.String,
   description: Schema.String.pipe(Schema.optional),
+  hidden: Schema.Boolean.pipe(Schema.optional),
   slash: Schema.Boolean.pipe(Schema.optional),
   location: AbsolutePath,
   content: Schema.String,
 }) {}
 
 export const available = (skills: ReadonlyArray<Info>, agent: AgentV2.Info) =>
-  skills.filter((skill) => PermissionV2.evaluate("skill", skill.name, agent.permissions).effect !== "deny")
+  skills.filter((skill) => !skill.hidden && PermissionV2.evaluate("skill", skill.name, agent.permissions).effect !== "deny")
 
 const Frontmatter = Schema.Struct({
   name: Schema.String.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
+  hidden: Schema.Boolean.pipe(Schema.optional),
   slash: Schema.Boolean.pipe(Schema.optional),
 })
 const decodeFrontmatter = Schema.decodeUnknownOption(Frontmatter)
@@ -124,6 +126,7 @@ export const layer = Layer.effect(
             new Info({
               name,
               description: frontmatter.description,
+              hidden: frontmatter.hidden,
               slash: frontmatter.slash,
               location: AbsolutePath.make(filepath),
               content: markdown.content,

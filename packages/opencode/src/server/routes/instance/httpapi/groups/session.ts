@@ -74,6 +74,9 @@ export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput
 export const PermissionResponsePayload = Schema.Struct({
   response: PermissionV1.Reply,
 })
+export const PredictOutput = Schema.Struct({
+  prediction: Schema.String,
+})
 
 export const SessionPaths = {
   list: root,
@@ -92,6 +95,7 @@ export const SessionPaths = {
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
   summarize: `${root}/:sessionID/summarize`,
+  predict: `${root}/:sessionID/predict`,
   prompt: `${root}/:sessionID/message`,
   promptAsync: `${root}/:sessionID/prompt_async`,
   command: `${root}/:sessionID/command`,
@@ -115,7 +119,7 @@ export const SessionApi = HttpApi.make("session")
           OpenApi.annotations({
             identifier: "session.list",
             summary: "List sessions",
-            description: "Get a list of all OpenCode sessions, sorted by most recently updated.",
+            description: "Get a list of all SWUST Code sessions, sorted by most recently updated.",
           }),
         ),
         HttpApiEndpoint.get("status", SessionPaths.status, {
@@ -138,7 +142,7 @@ export const SessionApi = HttpApi.make("session")
           OpenApi.annotations({
             identifier: "session.get",
             summary: "Get session",
-            description: "Retrieve detailed information about a specific OpenCode session.",
+            description: "Retrieve detailed information about a specific SWUST Code session.",
           }),
         ),
         HttpApiEndpoint.get("children", SessionPaths.children, {
@@ -209,7 +213,7 @@ export const SessionApi = HttpApi.make("session")
           OpenApi.annotations({
             identifier: "session.create",
             summary: "Create session",
-            description: "Create a new OpenCode session for interacting with AI assistants and managing conversations.",
+            description: "Create a new SWUST Code session for interacting with AI assistants and managing conversations.",
           }),
         ),
         HttpApiEndpoint.delete("remove", SessionPaths.remove, {
@@ -311,6 +315,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.summarize",
             summary: "Summarize session",
             description: "Generate a concise summary of the session using AI compaction to preserve key information.",
+          }),
+        ),
+        HttpApiEndpoint.post("predict", SessionPaths.predict, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(PredictOutput, "Predicted next prompt"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.predict",
+            summary: "Predict next prompt",
+            description: "Predict the user's likely next message for the SWUST Code TUI ghost suggestion.",
           }),
         ),
         HttpApiEndpoint.post("prompt", SessionPaths.prompt, {
@@ -455,7 +471,7 @@ export const SessionApi = HttpApi.make("session")
   )
   .annotateMerge(
     OpenApi.annotations({
-      title: "opencode experimental HttpApi",
+      title: "SWUST Code experimental HttpApi",
       version: "0.0.1",
       description: "Experimental HttpApi surface for selected instance routes.",
     }),

@@ -1,46 +1,50 @@
-import { effectCmd } from "../effect-cmd"
 import { Effect } from "effect"
-import { UI } from "../ui"
-import * as prompts from "@clack/prompts"
+import { DREAM_TASK } from "@/session/auto-dream"
+import { effectCmd, fail } from "../effect-cmd"
+import { runAutonomyTask } from "./autonomy-task"
 
 export const DreamCommand = effectCmd({
   command: "dream",
   describe: "run memory consolidation (dream) for the current project",
+  instance: false,
   builder: (yargs) =>
-    yargs.option("dry-run", {
-      type: "boolean",
-      describe: "show what would be consolidated without making changes",
-      default: false,
-    }),
-  handler: Effect.fn("Cli.dream")(function* () {
-    UI.empty()
-    prompts.intro("Dream: Memory Consolidation")
-
-    prompts.log.info("Dream consolidates durable project memory from:")
-    prompts.log.info("  1. Memory files under the data directory")
-    prompts.log.info("  2. Raw trajectory in the SQLite database")
-    prompts.log.info("")
-    prompts.log.info("This will create/update MEMORY.md with verified project knowledge.")
-
-    const shouldRun = yield* Effect.promise(() =>
-      prompts.confirm({
-        message: "Start memory consolidation?",
-        initialValue: true,
+    yargs
+      .option("dry-run", {
+        type: "boolean",
+        describe: "show the dream task without starting an agent",
+        default: false,
+      })
+      .option("yes", {
+        alias: "y",
+        type: "boolean",
+        describe: "start without confirmation",
+        default: false,
+      })
+      .option("model", {
+        alias: "m",
+        type: "string",
+        describe: "model to use in the format of provider/model",
+      })
+      .option("agent", {
+        type: "string",
+        describe: "primary agent to use",
+      })
+      .option("dir", {
+        type: "string",
+        describe: "project directory to run in",
       }),
-    )
-
-    if (prompts.isCancel(shouldRun) || !shouldRun) {
-      prompts.outro("Cancelled")
-      return
-    }
-
-    prompts.log.info("")
-    prompts.log.info("Dream agent will now review the last 7 days of sessions,")
-    prompts.log.info("verify facts against the trajectory database, and")
-    prompts.log.info("consolidate durable knowledge into MEMORY.md.")
-    prompts.log.info("")
-    prompts.log.info("The agent has access to: read, write, edit, glob, grep, memory, bash")
-    prompts.log.info("with read-only access to the SQLite database.")
-    prompts.outro("Dream started (agent will run autonomously)")
+  handler: Effect.fn("Cli.dream")(function* (args) {
+    const code = yield* runAutonomyTask({
+      intro: "Dream: Memory Consolidation",
+      title: "Auto Dream",
+      goal: "Consolidate verified durable project knowledge into SWUST Code memory and report what changed.",
+      task: DREAM_TASK,
+      dryRun: args.dryRun,
+      yes: args.yes,
+      model: args.model,
+      agent: args.agent,
+      dir: args.dir,
+    })
+    if (code !== 0) return yield* fail(`Dream run exited with code ${code}`)
   }),
 })

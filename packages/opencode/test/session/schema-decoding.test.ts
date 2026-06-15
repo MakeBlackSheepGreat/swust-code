@@ -279,6 +279,7 @@ describe("SessionPrompt input schemas", () => {
     const decode = decodeUnknown(SessionPrompt.PromptInput)
     const expected = {
       sessionID,
+      goal: "finish the requested change and verify it",
       parts: [
         { type: "text" as const, text: "hello" },
         { type: "file" as const, mime: "image/png", url: "data:image/png;base64,AAAA" },
@@ -286,6 +287,7 @@ describe("SessionPrompt input schemas", () => {
     }
     const input: unknown = expected
     const decoded = decode(input)
+    expect(decoded.goal).toBe(expected.goal)
     expect(decoded.parts).toHaveLength(2)
     expect(decoded.parts[0]).toMatchObject({ type: "text", text: "hello" })
     expect(decoded.parts[1]).toMatchObject({ type: "file", mime: "image/png" })

@@ -219,6 +219,86 @@ export type ProviderHook = {
 /** @deprecated Use AuthOAuthResult instead. */
 export type AuthOuathResult = AuthOAuthResult
 
+// ----- Actor lifecycle hook types -----
+
+/**
+ * Agent types excluded from actor.preStop / actor.postStop by default.
+ * Includes built-in agents plus runtime-only pseudo-agents that are not meant
+ * to be matched by generic lifecycle hooks unless a matcher explicitly opts in.
+ */
+export const BUILT_IN_AGENTS = [
+  "main",
+  "general",
+  "build",
+  "explore",
+  "summary",
+  "title",
+  "checkpoint-writer",
+  "dream",
+  "distill",
+  "compaction",
+] as const
+
+export type BuiltInAgent = (typeof BUILT_IN_AGENTS)[number]
+export type ActorMode = "subagent" | "peer"
+export type ActorLifecycle = "ephemeral" | "persistent"
+export type ActorOutcome = "success" | "failure" | "cancelled"
+
+export type ActorMatcher = {
+  mode?: ActorMode
+  agentType?:
+    | string
+    | string[]
+    | { include: string[]; exclude?: string[] }
+    | { excludeOnly: string[] }
+}
+
+export type ActorStopBaseInput = {
+  sessionID: string
+  parentSessionID?: string
+  actorID: string
+  parentActorID?: string
+  agentType: string
+  mode: ActorMode
+  lifecycle: ActorLifecycle
+  task: string
+  description?: string
+  finalText?: string
+  task_id?: string
+  iteration: number
+}
+
+export type ActorPreStopInput = ActorStopBaseInput
+
+export type ActorPostStopInput = ActorStopBaseInput & {
+  outcome: ActorOutcome
+  error?: string
+  canWrite?: boolean
+}
+
+export type ActorStopOutput = {
+  continue?: boolean
+  reason?: string
+}
+
+export type ActorPreStopHook = (
+  input: ActorPreStopInput,
+  output: ActorStopOutput,
+) => Promise<void>
+
+export type ActorPostStopHook = (
+  input: ActorPostStopInput,
+  output: ActorStopOutput,
+) => Promise<void>
+
+export type ActorPreStopRegistration =
+  | ActorPreStopHook
+  | { matcher?: ActorMatcher; run: ActorPreStopHook }
+
+export type ActorPostStopRegistration =
+  | ActorPostStopHook
+  | { matcher?: ActorMatcher; run: ActorPostStopHook }
+
 export interface Hooks {
   dispose?: () => Promise<void>
   event?: (input: { event: Event }) => Promise<void>
@@ -332,4 +412,16 @@ export interface Hooks {
    * Modify tool definitions (description and parameters) sent to LLM
    */
   "tool.definition"?: (input: { toolID: string }, output: { description: string; parameters: any }) => Promise<void>
+  /**
+   * Fires when an actor is about to deliver finalText to its caller. Set
+   * output.continue = true with output.reason to inject one more actor turn.
+   * Default matcher excludes BUILT_IN_AGENTS.
+   */
+  "actor.preStop"?: ActorPreStopRegistration
+  /**
+   * Fires after an actor delivered finalText to its caller. A continuation may
+   * run extra cleanup/validation turns, but the caller's delivered text is
+   * already locked.
+   */
+  "actor.postStop"?: ActorPostStopRegistration
 }

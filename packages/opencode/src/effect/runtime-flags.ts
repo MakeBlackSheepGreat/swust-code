@@ -46,6 +46,7 @@ export class Service extends ConfigService.Service<Service>()("@swust-code/Runti
   experimentalOxfmt: enabledByExperimental("SWUST_CODE_EXPERIMENTAL_OXFMT"),
   experimentalPlanMode: enabledByExperimental("SWUST_CODE_EXPERIMENTAL_PLAN_MODE"),
   experimentalEventSystem: enabledByExperimental("SWUST_CODE_EXPERIMENTAL_EVENT_SYSTEM"),
+  experimentalWorkflowTool: enabledByExperimental("SWUST_CODE_EXPERIMENTAL_WORKFLOW_TOOL"),
   experimentalWorkspaces: enabledByExperimental("SWUST_CODE_EXPERIMENTAL_WORKSPACES"),
   experimentalIconDiscovery: enabledByExperimental("SWUST_CODE_EXPERIMENTAL_ICON_DISCOVERY"),
   outputTokenMax: positiveInteger("SWUST_CODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),

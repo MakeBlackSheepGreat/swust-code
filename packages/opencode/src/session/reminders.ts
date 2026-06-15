@@ -11,6 +11,9 @@ import { Session } from "./session"
 import PROMPT_PLAN from "./prompt/plan.txt"
 import BUILD_SWITCH from "./prompt/build-switch.txt"
 import PLAN_MODE from "./prompt/plan-mode.txt"
+import PROMPT_COMPOSE from "./prompt/compose.txt"
+import GOAL_MODE from "./prompt/goal-mode.txt"
+import { composeSkillsBlock } from "@/skill/compose/extract"
 
 export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   messages: SessionV1.WithParts[]
@@ -22,6 +25,31 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   const sessions = yield* Session.Service
   const userMessage = input.messages.findLast((msg) => msg.info.role === "user")
   if (!userMessage) return input.messages
+
+  const composeModeMsg = input.messages.find((msg) => msg.info.role === "user" && msg.info.agent === "compose")
+  if (composeModeMsg) {
+    const composeBlock = composeSkillsBlock()
+    composeModeMsg.parts.unshift({
+      id: PartID.ascending(),
+      messageID: composeModeMsg.info.id,
+      sessionID: composeModeMsg.info.sessionID,
+      type: "text",
+      text: PROMPT_COMPOSE + (composeBlock ? "\n\n" + composeBlock : ""),
+      synthetic: true,
+    })
+  }
+
+  const goalModeMsg = input.messages.findLast((msg) => msg.info.role === "user" && msg.info.agent === "goal")
+  if (goalModeMsg) {
+    goalModeMsg.parts.unshift({
+      id: PartID.ascending(),
+      messageID: goalModeMsg.info.id,
+      sessionID: goalModeMsg.info.sessionID,
+      type: "text",
+      text: GOAL_MODE,
+      synthetic: true,
+    })
+  }
 
   if (!flags.experimentalPlanMode) {
     if (input.agent.name === "plan") {

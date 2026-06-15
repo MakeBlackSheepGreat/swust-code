@@ -83,9 +83,9 @@ export function estimateCacheSavings(ctx: ForkContext): {
   readonly totalSaved: number
 } {
   // Rough estimate: ~4 chars per token
-  const promptTokens = ctx.systemPrompts.reduce((sum, p) => sum + Math.ceil(p.length / 4), 0)
-  const toolTokens = ctx.toolSchemas.reduce((sum, t) => sum + Math.ceil(JSON.stringify(t).length / 4), 0)
-  const messageTokens = ctx.parentMessages.reduce((sum, m) => sum + Math.ceil(JSON.stringify(m).length / 4), 0)
+  const promptTokens = ctx.systemPrompts.reduce<number>((sum, p) => sum + Math.ceil(p.length / 4), 0)
+  const toolTokens = ctx.toolSchemas.reduce<number>((sum, t) => sum + Math.ceil(JSON.stringify(t).length / 4), 0)
+  const messageTokens = ctx.parentMessages.reduce<number>((sum, m) => sum + Math.ceil(JSON.stringify(m).length / 4), 0)
 
   return {
     promptTokens,

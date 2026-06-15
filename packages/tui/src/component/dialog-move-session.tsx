@@ -16,6 +16,7 @@ import { useCommandShortcut } from "../keymap"
 import { useProject } from "../context/project"
 import { Spinner } from "./spinner"
 import { DialogWorkspaceFileChanges } from "./dialog-workspace-file-changes"
+import { useLanguage } from "../context/language"
 
 export type MoveSessionSelection = { type: "directory"; directory: string; subdirectory: boolean } | { type: "new" }
 
@@ -30,6 +31,7 @@ export function DialogMoveSession(props: {
   const sdk = useSDK()
   const dimensions = useTerminalDimensions()
   const { theme } = useTheme()
+  const { t } = useLanguage()
   const sync = useSync()
   const projectContext = useProject()
   const toast = useToast()
@@ -74,10 +76,10 @@ export function DialogMoveSession(props: {
   const options = createMemo<DialogSelectOption<MoveSessionSelection | undefined>[]>(() => {
     const data = directories()
     const main = project()
-    if (directories.loading && !data && !main) return [{ title: "Loading project directories...", value: undefined }]
-    if (directories.error && !data && !main) return [{ title: "Failed to load project directories", value: undefined }]
+    if (directories.loading && !data && !main) return [{ title: t("tui.dialog.move_session.loading"), value: undefined }]
+    if (directories.error && !data && !main) return [{ title: t("tui.dialog.move_session.load_failed"), value: undefined }]
     const roots = [...new Set(main ? [main, ...(data ?? [])] : (data ?? []))]
-    if (roots.length === 0) return [{ title: "No project directories found", value: undefined }]
+    if (roots.length === 0) return [{ title: t("tui.dialog.move_session.empty"), value: undefined }]
     const subdirectories = sync.data.session
       .filter((session) => session.projectID === props.projectID && session.path && ![".", "/"].includes(session.path))
       .map((session) => session.directory)
@@ -109,9 +111,13 @@ export function DialogMoveSession(props: {
       const deleting = toDelete() === item.location
       const isRemoving = removing() === item.location
       return {
-        title: isRemoving ? `Deleting ${item.location}` : deleting ? `Press ${deleteHint()} again to confirm` : title,
+        title: isRemoving
+          ? t("tui.dialog.move_session.deleting", { path: item.location })
+          : deleting
+            ? t("tui.dialog.session_list.delete_confirm", { keybind: deleteHint() })
+            : title,
         titleView: isRemoving ? (
-          <span style={{ fg: theme.error }}>Deleting {item.location}</span>
+          <span style={{ fg: theme.error }}>{t("tui.dialog.move_session.deleting", { path: item.location })}</span>
         ) : !deleting && suffix ? (
           <>
             {visible.slice(0, split)}
@@ -120,7 +126,7 @@ export function DialogMoveSession(props: {
         ) : undefined,
         bg: deleting ? theme.error : undefined,
         value: { type: "directory", directory: item.location, subdirectory: item.location !== item.root } as const,
-        category: item.root === main ? "Project" : "Working copies",
+        category: item.root === main ? t("tui.dialog.move_session.project") : t("tui.dialog.move_session.working_copies"),
         titleWidth,
         truncateTitle: "left" as const,
       }
@@ -155,8 +161,8 @@ export function DialogMoveSession(props: {
       if ("data" in result.error && result.error.data.forceRequired) {
         const status = await sdk.client.vcs.status({ directory: option.value.directory }).catch(() => undefined)
         const choice = await DialogWorkspaceFileChanges.show(dialog, status?.data ?? [], {
-          title: "Delete working copy?",
-          message: "This working copy has file changes. Do you want to delete it anyway?",
+          title: t("tui.dialog.move_session.delete_working_copy.title"),
+          message: t("tui.dialog.move_session.delete_working_copy.message"),
         })
         if (choice !== "yes") {
           reopen()
@@ -169,7 +175,7 @@ export function DialogMoveSession(props: {
         if (forced.error) {
           toast.show({
             variant: "error",
-            title: "Failed to delete project copy",
+            title: t("tui.dialog.move_session.delete_failed"),
             message: errorMessage(forced.error),
           })
         }
@@ -178,7 +184,7 @@ export function DialogMoveSession(props: {
       }
       toast.show({
         variant: "error",
-        title: "Failed to delete project copy",
+        title: t("tui.dialog.move_session.delete_failed"),
         message: errorMessage(result.error),
       })
       return
@@ -192,11 +198,11 @@ export function DialogMoveSession(props: {
   return (
     <box minHeight={Math.max(8, Math.min(16, dimensions().height - Math.floor(dimensions().height / 4) - 2))}>
       <DialogSelect
-        title="Move session"
+        title={t("tui.dialog.move_session.title")}
         titleView={
           <box flexDirection="row" gap={1}>
             <text fg={theme.text} attributes={TextAttributes.BOLD}>
-              Move session
+              {t("tui.dialog.move_session.title")}
             </text>
             <Show when={working()}>
               <Spinner />
@@ -213,12 +219,12 @@ export function DialogMoveSession(props: {
         actions={[
           {
             command: "dialog.move_session.new",
-            title: "new",
+            title: t("tui.dialog.move_session.new"),
             onTrigger: () => props.onSelect({ type: "new" }),
           },
           {
             command: "dialog.move_session.delete",
-            title: "delete",
+            title: t("tui.dialog.session_list.delete"),
             disabled: (option) =>
               !option?.value ||
               option.value.type !== "directory" ||
@@ -228,7 +234,7 @@ export function DialogMoveSession(props: {
           },
           {
             command: "dialog.move_session.refresh",
-            title: "refresh",
+            title: t("tui.dialog.move_session.refresh"),
             onTrigger: () => void refetch(),
           },
         ]}

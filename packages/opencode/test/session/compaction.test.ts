@@ -364,6 +364,10 @@ function plugin(ready: Deferred.Deferred<void>) {
     },
     list: () => Effect.succeed([]),
     init: () => Effect.void,
+    triggerActorPreStop: () =>
+      Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
+    triggerActorPostStop: () =>
+      Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
   })
 }
 
@@ -378,6 +382,10 @@ function autocontinue(enabled: boolean) {
     },
     list: () => Effect.succeed([]),
     init: () => Effect.void,
+    triggerActorPreStop: () =>
+      Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
+    triggerActorPostStop: () =>
+      Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
   })
 }
 

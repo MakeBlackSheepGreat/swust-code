@@ -49,6 +49,9 @@ import { SystemContext } from "@swust-code/core/system-context"
 import { SystemContextRegistry } from "@swust-code/core/system-context/registry"
 import { SkillGuidance } from "@swust-code/core/skill/guidance"
 import { ReferenceGuidance } from "@swust-code/core/reference/guidance"
+import { MemoryContext } from "@swust-code/core/memory/context"
+import { Goal } from "@swust-code/core/session/goal"
+import { GoalJudge } from "@swust-code/core/session/goal-judge"
 import { ModelV2 } from "@swust-code/core/model"
 import { Location } from "@swust-code/core/location"
 import { ProviderV2 } from "@swust-code/core/provider"
@@ -217,6 +220,9 @@ const skillGuidance = Layer.mock(SkillGuidance.Service, {
     ),
 })
 const referenceGuidance = Layer.mock(ReferenceGuidance.Service, { load: () => Effect.succeed(SystemContext.empty) })
+const memoryContext = Layer.mock(MemoryContext.Service, { load: () => Effect.succeed(SystemContext.empty) })
+const goal = Goal.layer
+const goalJudge = GoalJudge.layer
 const config = Layer.succeed(
   Config.Service,
   Config.Service.of({
@@ -246,6 +252,9 @@ const runner = SessionRunnerLLM.layer.pipe(
   Layer.provide(agents),
   Layer.provide(skillGuidance),
   Layer.provide(referenceGuidance),
+  Layer.provide(memoryContext),
+  Layer.provide(goal),
+  Layer.provide(goalJudge),
   Layer.provide(config),
 )
 const coordinator = SessionRunCoordinator.layer.pipe(Layer.provide(runner))
@@ -285,6 +294,10 @@ const it = testEffect(
     systemContext,
     location,
     skillGuidance,
+    referenceGuidance,
+    memoryContext,
+    goal,
+    goalJudge,
     config,
     runner,
     coordinator,

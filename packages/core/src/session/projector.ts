@@ -79,7 +79,7 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
 function messageData(
   info: (typeof SessionV1.Event.MessageUpdated.Type)["data"]["info"],
 ): typeof MessageTable.$inferInsert.data {
-  const { id: _, sessionID: __, ...rest } = info
+  const { id: _, sessionID: __, agentID: ___, ...rest } = info
   return rest as DeepMutable<typeof rest>
 }
 
@@ -266,11 +266,12 @@ export const layer = Layer.effectDiscard(
         const time_created = event.data.info.time.created
         const id = event.data.info.id
         const sessionID = event.data.info.sessionID
+        const agentID = event.data.info.agentID ?? "main"
         const data = messageData(event.data.info)
         yield* db
           .insert(MessageTable)
-          .values({ id, session_id: sessionID, time_created, data })
-          .onConflictDoUpdate({ target: MessageTable.id, set: { data } })
+          .values({ id, session_id: sessionID, agent_id: agentID, time_created, data })
+          .onConflictDoUpdate({ target: MessageTable.id, set: { agent_id: agentID, data } })
           .run()
           .pipe(Effect.orDie)
       }),

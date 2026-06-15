@@ -3,20 +3,32 @@ import { httpClient } from "@swust-code/core/effect/layer-node-platform"
 import { Ripgrep } from "@swust-code/core/ripgrep"
 import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
+import { SessionCheckpoint } from "@/session/checkpoint"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
+import { ActorTool } from "./actor"
 import { TaskTool } from "./task"
+import { SubagentTool } from "./subagent"
+import { MemoryTool } from "./memory"
+import { HistoryTool } from "./history"
+import { WorkflowTool } from "./workflow"
 import { Database } from "@swust-code/core/database/database"
+import { Memory } from "@swust-code/core/memory/service"
+import { History } from "@/history"
+import { listBuiltinWorkflows } from "@/workflow/builtin"
+import { Workflow } from "@/workflow/runtime"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import * as Tool from "./tool"
+import { resolveInvocationStyle } from "./invocation-style"
+import { shellWrap } from "./shell-wrap"
 import { Config } from "@/config/config"
 import { type ToolContext as PluginToolContext, type ToolDefinition } from "@swust-code/plugin"
 import type { JSONSchema7, JSONSchema7Definition } from "@ai-sdk/provider"
@@ -52,25 +64,58 @@ import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@swust-code/core/provider"
 import { ModelV2 } from "@swust-code/core/model"
+import * as ActorRegistry from "@/actor/registry"
+import { TaskRegistry } from "@/task/registry"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
 }
 
+export function renderWorkflowCatalog(): string {
+  const list = listBuiltinWorkflows()
+  if (list.length === 0) return ""
+  const entries = list.map((workflow) => {
+    const phases = workflow.phases?.length ? "\n  Phases: " + workflow.phases.map((phase) => phase.title).join(" -> ") : ""
+    const when = workflow.whenToUse ? `\n  When to use: ${workflow.whenToUse}` : ""
+    return `- ${workflow.name}: ${workflow.description}${when}${phases}`
+  })
+  return [
+    "",
+    "## Built-in workflows",
+    'These named workflows are available via operation "run" with `name`. When a request matches one, invoke it instead of writing a script from scratch:',
+    "",
+    ...entries,
+    "",
+    'Invoke a built-in: workflow({ operation: "run", name: "deep-research", args: "<the refined request>" })',
+  ].join("\n")
+}
+
+const fallbackWarned = new Set<string>()
+
+function warnShellFallbackOnce(id: string) {
+  if (fallbackWarned.has(id)) return Effect.void
+  fallbackWarned.add(id)
+  return Effect.logWarning(`tool '${id}' configured with invocation_style='shell' but has no shell field`)
+}
+
 type TaskDef = Tool.InferDef<typeof TaskTool>
+type SubagentDef = Tool.InferDef<typeof SubagentTool>
+type ActorDef = Tool.InferDef<typeof ActorTool>
 type ReadDef = Tool.InferDef<typeof ReadTool>
 
 type State = {
   custom: Tool.Def[]
   builtin: Tool.Def[]
+  actor: ActorDef
   task: TaskDef
+  subagent: SubagentDef
   read: ReadDef
 }
 
 export interface Interface {
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
-  readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
+  readonly named: () => Effect.Effect<{ actor: ActorDef; task: TaskDef; subagent: SubagentDef; read: ReadDef }>
   readonly tools: (model: {
     providerID: ProviderV2.ID
     modelID: ModelV2.ID
@@ -80,17 +125,23 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@swust-code/ToolRegistry") {}
 
-export const layer = Layer.effect(
+const live = Layer.effect(
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
     const plugin = yield* Plugin.Service
     const agents = yield* Agent.Service
+    const skill = yield* Skill.Service
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
 
     const invalid = yield* InvalidTool
+    const actorTool = yield* ActorTool
     const task = yield* TaskTool
+    const subagent = yield* SubagentTool
+    const memorytool = yield* MemoryTool
+    const historytool = yield* HistoryTool
+    const workflowtool = yield* WorkflowTool
     const read = yield* ReadTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
@@ -203,7 +254,9 @@ export const layer = Layer.effect(
           grep: Tool.init(greptool),
           edit: Tool.init(edit),
           write: Tool.init(writetool),
+          actor: Tool.init(actorTool),
           task: Tool.init(task),
+          subagent: Tool.init(subagent),
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
@@ -212,6 +265,9 @@ export const layer = Layer.effect(
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          memory: Tool.init(memorytool),
+          history: Tool.init(historytool),
+          workflow: Tool.init(workflowtool),
         })
 
         return {
@@ -225,7 +281,7 @@ export const layer = Layer.effect(
             tool.grep,
             tool.edit,
             tool.write,
-            tool.task,
+            tool.actor,
             tool.fetch,
             tool.todo,
             tool.search,
@@ -233,8 +289,15 @@ export const layer = Layer.effect(
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+            tool.memory,
+            tool.history,
+            ...(flags.experimentalWorkflowTool ? [tool.workflow] : []),
+            tool.task,
+            tool.subagent,
           ],
+          actor: tool.actor,
           task: tool.task,
+          subagent: tool.subagent,
           read: tool.read,
         }
       }),
@@ -249,10 +312,29 @@ export const layer = Layer.effect(
       return (yield* all()).map((tool) => tool.id)
     })
 
-    const describeTask = Effect.fn("ToolRegistry.describeTask")(function* (agent: Agent.Info) {
-      const items = (yield* agents.list()).filter((item) => item.mode !== "primary")
+    const describeSkill = Effect.fn("ToolRegistry.describeSkill")(function* (agent: Agent.Info) {
+      const list = yield* skill.available(agent)
+      if (list.length === 0) return "No skills are currently available."
+      return [
+        "Load a specialized skill that provides domain-specific instructions and workflows.",
+        "",
+        "When you recognize that a task matches one of the available skills listed below, use this tool to load the full skill instructions.",
+        "",
+        "The skill will inject detailed instructions, workflows, and access to bundled resources (scripts, references, templates) into the conversation context.",
+        "",
+        'Tool output includes a `<skill_content name="...">` block with the loaded content.',
+        "",
+        "The following skills provide specialized sets of instructions for particular tasks",
+        "Invoke this tool to load a skill when a task matches one of the available skills listed below:",
+        "",
+        Skill.fmt(list, { verbose: false }),
+      ].join("\n")
+    })
+
+    const describeSubagents = Effect.fn("ToolRegistry.describeSubagents")(function* (agent: Agent.Info, permission: string) {
+      const items = (yield* agents.list()).filter((item) => item.mode !== "primary" && item.hidden !== true)
       const filtered = items.filter(
-        (item) => Permission.evaluate("task", item.name, agent.permission).action !== "deny",
+        (item) => Permission.evaluate(permission, item.name, agent.permission).action !== "deny",
       )
       const list = filtered.toSorted((a, b) => a.name.localeCompare(b.name))
       const description = list
@@ -287,19 +369,37 @@ export const layer = Layer.effect(
             jsonSchema: tool.jsonSchema,
           }
           yield* plugin.trigger("tool.definition", { toolID: tool.id }, output)
-          const jsonSchema =
-            output.parameters === tool.parameters || output.jsonSchema !== tool.jsonSchema
+          const style = resolveInvocationStyle((yield* config.get()).tool, tool.id)
+          const useShell = style === "shell" && tool.shell !== undefined
+          if (style === "shell" && !tool.shell) yield* warnShellFallbackOnce(tool.id)
+          const effective: Tool.Def = useShell ? shellWrap(tool) : tool
+          const description = useShell ? tool.shell!.description : output.description
+          const parameters = useShell ? effective.parameters : output.parameters
+          const jsonSchema = useShell
+            ? effective.jsonSchema
+            : output.parameters === tool.parameters || output.jsonSchema !== tool.jsonSchema
               ? output.jsonSchema
               : undefined
           return {
             id: tool.id,
-            description: [output.description, tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined]
+            description: [
+              description,
+              tool.id === ActorTool.id
+                ? yield* describeSubagents(input.agent, ActorTool.id)
+                : tool.id === SubagentTool.id
+                  ? yield* describeSubagents(input.agent, SubagentTool.id)
+                  : tool.id === SkillTool.id
+                    ? yield* describeSkill(input.agent)
+                    : tool.id === WorkflowTool.id
+                      ? renderWorkflowCatalog()
+                      : undefined,
+            ]
               .filter(Boolean)
               .join("\n"),
-            parameters: output.parameters,
+            parameters,
             jsonSchema,
-            execute: tool.execute,
-            formatValidationError: tool.formatValidationError,
+            execute: effective.execute,
+            formatValidationError: effective.formatValidationError,
           }
         }),
         { concurrency: "unbounded" },
@@ -308,11 +408,20 @@ export const layer = Layer.effect(
 
     const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {
       const s = yield* InstanceState.get(state)
-      return { task: s.task, read: s.read }
+      return { actor: s.actor, task: s.task, subagent: s.subagent, read: s.read }
     })
 
     return Service.of({ ids, all, named, tools })
   }),
+)
+
+export const layer = live.pipe(
+  Layer.provide(SessionCheckpoint.defaultLayer),
+  Layer.provide(ActorRegistry.defaultLayer),
+  Layer.provide(TaskRegistry.layer),
+  Layer.provide(Memory.defaultLayer),
+  Layer.provide(History.defaultLayer),
+  Layer.provide(Workflow.defaultLayer),
 )
 
 export const defaultLayer = Layer.suspend(() =>
@@ -334,6 +443,7 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
       Layer.provide(CrossSpawnSpawner.defaultLayer),
+      Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
     )
     .pipe(Layer.provide(Database.defaultLayer), Layer.provide(RuntimeFlags.defaultLayer)),

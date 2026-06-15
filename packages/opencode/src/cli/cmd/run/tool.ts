@@ -1,4 +1,4 @@
-// Per-tool display rules shared across `opencode run` output paths.
+// Per-tool display rules shared across `swust-code run` output paths.
 //
 // Each known tool (bash, edit, write, task, etc.) has a ToolRule that controls
 // five display hooks:
@@ -28,6 +28,7 @@ import type { PlanExitTool } from "@/tool/plan"
 import type { QuestionTool } from "@/tool/question"
 import type { ReadTool } from "@/tool/read"
 import type { SkillTool } from "@/tool/skill"
+import type { SubagentTool } from "@/tool/subagent"
 import type { TaskTool } from "@/tool/task"
 import type { TodoWriteTool } from "@/tool/todo"
 import type { WebFetchTool } from "@/tool/webfetch"
@@ -99,6 +100,7 @@ type ToolDefs = {
   apply_patch: typeof ApplyPatchTool
   batch: Tool.Info
   task: typeof TaskTool
+  subagent: typeof SubagentTool
   todowrite: typeof TodoWriteTool
   question: typeof QuestionTool
   read: typeof ReadTool
@@ -363,15 +365,35 @@ function runWebSearch(p: ToolProps<typeof WebSearchTool>): ToolInline {
   }
 }
 
-function runTask(p: ToolProps<typeof TaskTool>): ToolInline {
-  const kind = Locale.titlecase(p.input.subagent_type || "unknown")
-  const desc = p.input.description
+function runSubagentLike(p: ToolProps): ToolInline {
+  const input = dict(p.frame.input)
+  const kind = Locale.titlecase(text(input.subagent_type) || "unknown")
+  const desc = text(input.description)
   const icon = p.frame.status === "error" ? "✗" : p.frame.status === "running" ? "•" : "✓"
   return {
     icon,
     title: desc || `${kind} Task`,
     description: desc ? `${kind} Agent` : undefined,
   }
+}
+
+function runTask(p: ToolProps<typeof TaskTool>): ToolInline {
+  const input = dict(p.frame.input)
+  if (text(input.subagent_type)) return runSubagentLike(p)
+  const op = dict(input.operation)
+  const action = text(op.action) || "task"
+  const taskID = text(op.id) || text(p.metadata.id)
+  const summary = text(op.summary) || text(op.event_summary)
+  const icon = p.frame.status === "error" ? "✗" : p.frame.status === "running" ? "•" : "✓"
+  return {
+    icon,
+    title: taskID ? `Task ${action} ${taskID}` : `Task ${action}`,
+    description: summary || undefined,
+  }
+}
+
+function runSubagent(p: ToolProps<typeof SubagentTool>): ToolInline {
+  return runSubagentLike(p)
 }
 
 function runTodo(p: ToolProps<typeof TodoWriteTool>): ToolInline {
@@ -568,9 +590,10 @@ function snapPatch(p: ToolProps<typeof ApplyPatchTool>): ToolSnapshot | undefine
   }
 }
 
-function snapTask(p: ToolProps<typeof TaskTool>): ToolSnapshot {
-  const kind = Locale.titlecase(p.input.subagent_type || "general")
-  const desc = p.input.description
+function snapSubagentLike(p: ToolProps): ToolSnapshot {
+  const input = dict(p.frame.input)
+  const kind = Locale.titlecase(text(input.subagent_type) || "general")
+  const desc = text(input.description)
   const title = text(p.frame.state.title)
   const rows = [desc || title].filter((item): item is string => Boolean(item))
 
@@ -580,6 +603,25 @@ function snapTask(p: ToolProps<typeof TaskTool>): ToolSnapshot {
     rows,
     tail: "",
   }
+}
+
+function snapTask(p: ToolProps<typeof TaskTool>): ToolSnapshot {
+  const input = dict(p.frame.input)
+  if (text(input.subagent_type)) return snapSubagentLike(p)
+  const op = dict(input.operation)
+  const action = text(op.action) || "task"
+  const taskID = text(op.id) || text(p.metadata.id)
+  const summary = text(op.summary) || text(op.event_summary) || text(p.frame.state.title)
+  return {
+    kind: "task",
+    title: taskID ? `# Task ${action} ${taskID}` : `# Task ${action}`,
+    rows: [summary].filter(Boolean),
+    tail: "",
+  }
+}
+
+function snapSubagent(p: ToolProps<typeof SubagentTool>): ToolSnapshot {
+  return snapSubagentLike(p)
 }
 
 function snapTodo(p: ToolProps<typeof TodoWriteTool>): ToolSnapshot {
@@ -758,6 +800,10 @@ function scrollTaskStart(_: ToolProps<typeof TaskTool>): string {
   return ""
 }
 
+function scrollSubagentStart(_: ToolProps<typeof SubagentTool>): string {
+  return ""
+}
+
 function taskResult(output: string): string | undefined {
   if (!output.trim()) {
     return undefined
@@ -781,8 +827,28 @@ function scrollTaskFinal(p: ToolProps<typeof TaskTool>): string {
     return fail(p.frame)
   }
 
-  const kind = Locale.titlecase(p.input.subagent_type || "general")
-  const row = p.input.description || text(p.frame.state.title)
+  const input = dict(p.frame.input)
+  if (text(input.subagent_type)) return scrollSubagentFinal(p)
+  const op = dict(input.operation)
+  const action = text(op.action) || "task"
+  const taskID = text(op.id) || text(p.metadata.id)
+  const row = text(op.summary) || text(op.event_summary) || text(p.frame.state.title)
+  const title = taskID ? `# Task ${action} ${taskID}` : `# Task ${action}`
+  if (!row) {
+    return title
+  }
+
+  return `${title}\n${row}`
+}
+
+function scrollSubagentFinal(p: ToolProps): string {
+  if (p.frame.status === "error") {
+    return fail(p.frame)
+  }
+
+  const input = dict(p.frame.input)
+  const kind = Locale.titlecase(text(input.subagent_type) || "general")
+  const row = text(input.description) || text(p.frame.state.title)
   if (!row) {
     return `# ${kind} Task`
   }
@@ -977,14 +1043,32 @@ function permBash(p: ToolPermissionProps<typeof BashTool>): ToolPermissionInfo {
   }
 }
 
-function permTask(p: ToolPermissionProps<typeof TaskTool>): ToolPermissionInfo {
-  const type = p.input.subagent_type || "general"
-  const desc = p.input.description
+function permSubagentLike(p: ToolPermissionProps): ToolPermissionInfo {
+  const input = dict(p.input)
+  const type = text(input.subagent_type) || "general"
+  const desc = text(input.description)
   return {
     icon: "#",
     title: `${Locale.titlecase(type)} Task`,
     lines: desc ? [`◉ ${desc}`] : [],
   }
+}
+
+function permTask(p: ToolPermissionProps<typeof TaskTool>): ToolPermissionInfo {
+  const input = dict(p.input)
+  if (text(input.subagent_type)) return permSubagentLike(p)
+  const op = dict(input.operation)
+  const action = text(op.action) || "task"
+  const taskID = text(op.id)
+  return {
+    icon: "#",
+    title: taskID ? `Task ${action} ${taskID}` : `Task ${action}`,
+    lines: [],
+  }
+}
+
+function permSubagent(p: ToolPermissionProps<typeof SubagentTool>): ToolPermissionInfo {
+  return permSubagentLike(p)
 }
 
 function permWebfetch(p: ToolPermissionProps<typeof WebFetchTool>): ToolPermissionInfo {
@@ -1107,6 +1191,20 @@ const TOOL_RULES = {
       final: scrollTaskFinal,
     },
     permission: permTask,
+  },
+  subagent: {
+    view: {
+      output: false,
+      final: true,
+      snap: "structured",
+    },
+    run: runSubagent,
+    snap: snapSubagent,
+    scroll: {
+      start: scrollSubagentStart,
+      final: scrollSubagentFinal,
+    },
+    permission: permSubagent,
   },
   todowrite: {
     view: {

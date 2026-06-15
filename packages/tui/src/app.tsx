@@ -41,12 +41,15 @@ import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogThemeList } from "./component/dialog-theme-list"
+import { DialogLogoDesign } from "./component/dialog-logo-design"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogAgent } from "./component/dialog-agent"
 import { DialogSessionList } from "./component/dialog-session-list"
 import { DialogWorkspaceList } from "./component/dialog-workspace-list"
 import { DialogConsoleOrg } from "./component/dialog-console-org"
 import { ThemeProvider, useTheme } from "./context/theme"
+import { LanguageProvider, useLanguage } from "./context/language"
+import { DialogLanguageList } from "./component/dialog-language-list"
 import { Home } from "./routes/home"
 import { Session } from "./routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
@@ -114,10 +117,12 @@ const appBindingCommands = [
   "console.org.switch",
   "opencode.status",
   "theme.switch",
+  "logo.switch",
   "theme.switch_mode",
   "theme.mode.lock",
   "help.show",
   "docs.open",
+  "language.switch",
   "workspace.list",
   "app.debug",
   "app.console",
@@ -272,57 +277,59 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                           <OpencodeKeymapProvider keymap={keymap}>
                             <ArgsProvider {...input.args}>
                               <KVProvider>
-                                <ToastProvider>
-                                  <RouteProvider
-                                    initialRoute={
-                                      input.args.continue
-                                        ? {
-                                            type: "session",
-                                            sessionID: "dummy",
-                                          }
-                                        : undefined
-                                    }
-                                  >
-                                    <TuiConfigProvider config={input.config}>
-                                      <PluginRuntimeProvider value={pluginRuntime}>
-                                        <SDKProvider
-                                          url={input.url}
-                                          directory={input.directory}
-                                          fetch={input.fetch}
-                                          headers={input.headers}
-                                          events={input.events}
-                                        >
-                                          <ProjectProvider>
-                                            <SyncProvider>
-                                              <DataProvider>
-                                                <ThemeProvider mode={mode}>
-                                                  <LocalProvider>
-                                                    <PromptStashProvider>
-                                                      <DialogProvider>
-                                                        <FrecencyProvider>
-                                                          <PromptHistoryProvider>
-                                                            <PromptRefProvider>
-                                                              <EditorContextProvider>
-                                                                <App
-                                                                  onSnapshot={input.onSnapshot}
-                                                                  pluginHost={input.pluginHost}
-                                                                />
-                                                              </EditorContextProvider>
-                                                            </PromptRefProvider>
-                                                          </PromptHistoryProvider>
-                                                        </FrecencyProvider>
-                                                      </DialogProvider>
-                                                    </PromptStashProvider>
-                                                  </LocalProvider>
-                                                </ThemeProvider>
-                                              </DataProvider>
-                                            </SyncProvider>
-                                          </ProjectProvider>
-                                        </SDKProvider>
-                                      </PluginRuntimeProvider>
-                                    </TuiConfigProvider>
-                                  </RouteProvider>
-                                </ToastProvider>
+                                <LanguageProvider>
+                                  <ToastProvider>
+                                    <RouteProvider
+                                      initialRoute={
+                                        input.args.continue
+                                          ? {
+                                              type: "session",
+                                              sessionID: "dummy",
+                                            }
+                                          : undefined
+                                      }
+                                    >
+                                      <TuiConfigProvider config={input.config}>
+                                        <PluginRuntimeProvider value={pluginRuntime}>
+                                          <SDKProvider
+                                            url={input.url}
+                                            directory={input.directory}
+                                            fetch={input.fetch}
+                                            headers={input.headers}
+                                            events={input.events}
+                                          >
+                                            <ProjectProvider>
+                                              <SyncProvider>
+                                                <DataProvider>
+                                                  <ThemeProvider mode={mode}>
+                                                    <LocalProvider>
+                                                      <PromptStashProvider>
+                                                        <DialogProvider>
+                                                          <FrecencyProvider>
+                                                            <PromptHistoryProvider>
+                                                              <PromptRefProvider>
+                                                                <EditorContextProvider>
+                                                                  <App
+                                                                    onSnapshot={input.onSnapshot}
+                                                                    pluginHost={input.pluginHost}
+                                                                  />
+                                                                </EditorContextProvider>
+                                                              </PromptRefProvider>
+                                                            </PromptHistoryProvider>
+                                                          </FrecencyProvider>
+                                                        </DialogProvider>
+                                                      </PromptStashProvider>
+                                                    </LocalProvider>
+                                                  </ThemeProvider>
+                                                </DataProvider>
+                                              </SyncProvider>
+                                            </ProjectProvider>
+                                          </SDKProvider>
+                                        </PluginRuntimeProvider>
+                                      </TuiConfigProvider>
+                                    </RouteProvider>
+                                  </ToastProvider>
+                                </LanguageProvider>
                               </KVProvider>
                             </ArgsProvider>
                           </OpencodeKeymapProvider>
@@ -363,6 +370,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   const toast = useToast()
   const themeState = useTheme()
   const { theme, mode, setMode, locked, lock, unlock } = themeState
+  const { t } = useLanguage()
   const sync = useSync()
   const project = useProject()
   const exit = useExit()
@@ -440,24 +448,24 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (!terminalTitleEnabled() || Flag.SWUST_CODE_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("OpenCode")
+      renderer.setTerminalTitle("SWUST Code")
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("OpenCode")
+        renderer.setTerminalTitle("SWUST Code")
         return
       }
 
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
-      renderer.setTerminalTitle(`OC | ${title}`)
+      renderer.setTerminalTitle(`SC | ${title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.id}`)
+      renderer.setTerminalTitle(`SC | ${route.data.id}`)
     }
   })
 
@@ -556,7 +564,8 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "session.list",
         title: "Switch session",
-        category: "Session",
+        desc: t("tui.command.session.list.title"),
+        category: t("tui.command.category.session"),
         suggested: sync.data.session.length > 0,
         slashName: "sessions",
         slashAliases: ["resume", "continue"],
@@ -567,8 +576,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "session.new",
         title: "New session",
+        desc: t("tui.command.session.new.title"),
         suggested: route.data.type === "session",
-        category: "Session",
+        category: t("tui.command.category.session"),
         slashName: "new",
         slashAliases: ["clear"],
         run: () => {
@@ -581,14 +591,15 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "workspace.copy_path",
         title: "Copy worktree path",
-        category: "Workspace",
+        desc: t("tui.command.workspace.copy_path.title"),
+        category: t("tui.command.category.workspace"),
         enabled: () => currentWorktreeWorkspace() !== undefined,
         run: async () => {
           const workspace = currentWorktreeWorkspace()
           if (!workspace?.directory) return
           await clipboard
             .write?.(workspace.directory)
-            .then(() => toast.show({ message: "Copied worktree path", variant: "info" }))
+            .then(() => toast.show({ message: t("tui.command.workspace.copy_path.toast"), variant: "info" }))
             .catch(toast.error)
           dialog.clear()
         },
@@ -596,7 +607,8 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "workspace.list",
         title: "Manage workspaces",
-        category: "Workspace",
+        desc: t("tui.command.workspace.list.title"),
+        category: t("tui.command.category.workspace"),
         hidden: !Flag.SWUST_CODE_EXPERIMENTAL_WORKSPACES,
         slashName: "workspaces",
         run: () => {
@@ -605,8 +617,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       ...Array.from({ length: 9 }, (_, i) => ({
         name: `session.quick_switch.${i + 1}`,
-        title: `Switch to session in quick slot ${i + 1}`,
-        category: "Session",
+        title: `Switch quick session ${i + 1}`,
+        desc: t("tui.command.session.quick_switch.title", { slot: i + 1 }),
+        category: t("tui.command.category.session"),
         hidden: true,
         run: () => {
           local.session.quickSwitch(i + 1)
@@ -615,8 +628,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "model.list",
         title: "Switch model",
+        desc: t("tui.command.model.list.title"),
         suggested: true,
-        category: "Agent",
+        category: t("tui.command.category.agent"),
         slashName: "models",
         // Bias /mo toward /models over /move without changing global fuzzy scoring.
         slashAliases: ["mo"],
@@ -626,8 +640,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "model.cycle_recent",
-        title: "Model cycle",
-        category: "Agent",
+        title: "Cycle recent model",
+        desc: t("tui.command.model.cycle_recent.title"),
+        category: t("tui.command.category.agent"),
         hidden: true,
         run: () => {
           local.model.cycle(1)
@@ -635,8 +650,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "model.cycle_recent_reverse",
-        title: "Model cycle reverse",
-        category: "Agent",
+        title: "Cycle recent model reverse",
+        desc: t("tui.command.model.cycle_recent_reverse.title"),
+        category: t("tui.command.category.agent"),
         hidden: true,
         run: () => {
           local.model.cycle(-1)
@@ -644,8 +660,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "model.cycle_favorite",
-        title: "Favorite cycle",
-        category: "Agent",
+        title: "Cycle favorite model",
+        desc: t("tui.command.model.cycle_favorite.title"),
+        category: t("tui.command.category.agent"),
         hidden: true,
         run: () => {
           local.model.cycleFavorite(1)
@@ -653,8 +670,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "model.cycle_favorite_reverse",
-        title: "Favorite cycle reverse",
-        category: "Agent",
+        title: "Cycle favorite model reverse",
+        desc: t("tui.command.model.cycle_favorite_reverse.title"),
+        category: t("tui.command.category.agent"),
         hidden: true,
         run: () => {
           local.model.cycleFavorite(-1)
@@ -663,7 +681,8 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "agent.list",
         title: "Switch agent",
-        category: "Agent",
+        desc: t("tui.command.agent.list.title"),
+        category: t("tui.command.category.agent"),
         slashName: "agents",
         run: () => {
           dialog.replace(() => <DialogAgent />)
@@ -672,7 +691,8 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "mcp.list",
         title: "Toggle MCPs",
-        category: "Agent",
+        desc: t("tui.command.mcp.list.title"),
+        category: t("tui.command.category.agent"),
         slashName: "mcps",
         run: () => {
           dialog.replace(() => <DialogMcp />)
@@ -680,8 +700,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "agent.cycle",
-        title: "Agent cycle",
-        category: "Agent",
+        title: "Cycle agent",
+        desc: t("tui.command.agent.cycle.title"),
+        category: t("tui.command.category.agent"),
         hidden: true,
         run: () => {
           local.agent.move(1)
@@ -689,8 +710,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "variant.cycle",
-        title: "Variant cycle",
-        category: "Agent",
+        title: "Cycle model variant",
+        desc: t("tui.command.variant.cycle.title"),
+        category: t("tui.command.category.agent"),
         run: () => {
           local.model.variant.cycle()
         },
@@ -698,14 +720,15 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "variant.list",
         title: "Switch model variant",
-        category: "Agent",
+        desc: t("tui.command.variant.list.title"),
+        category: t("tui.command.category.agent"),
         hidden: local.model.variant.list().length === 0,
         slashName: "variants",
         run: () => {
           if (local.model.variant.list().length === 0) {
             return toast.show({
-              title: "No variants available",
-              message: "The current model does not support any variants.",
+              title: t("tui.command.variant.list.none.title"),
+              message: t("tui.command.variant.list.none.message"),
               variant: "info",
             })
           }
@@ -714,8 +737,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "agent.cycle.reverse",
-        title: "Agent cycle reverse",
-        category: "Agent",
+        title: "Cycle agent reverse",
+        desc: t("tui.command.agent.cycle.reverse.title"),
+        category: t("tui.command.category.agent"),
         hidden: true,
         run: () => {
           local.agent.move(-1)
@@ -724,95 +748,130 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "provider.connect",
         title: "Connect provider",
+        desc: t("tui.command.provider.connect.title"),
         suggested: !connected(),
         slashName: "connect",
         run: () => {
           dialog.replace(() => <DialogProviderList />)
         },
-        category: "Provider",
+        category: t("tui.command.category.provider"),
       },
       ...(sync.data.console_state.switchableOrgCount > 1
         ? [
             {
               name: "console.org.switch",
               title: "Switch org",
+              desc: t("tui.command.console.org.switch.title"),
               suggested: Boolean(sync.data.console_state.activeOrgName),
               slashName: "org",
               slashAliases: ["orgs", "switch-org"],
               run: () => {
                 dialog.replace(() => <DialogConsoleOrg />)
               },
-              category: "Provider",
+              category: t("tui.command.category.provider"),
             },
           ]
         : []),
       {
         name: "opencode.status",
         title: "View status",
+        desc: t("tui.command.opencode.status.title"),
         slashName: "status",
         run: () => {
           dialog.replace(() => <DialogStatus />)
         },
-        category: "System",
+        category: t("tui.command.category.system"),
       },
       {
         name: "theme.switch",
         title: "Switch theme",
+        desc: t("tui.command.theme.switch.title"),
         slashName: "themes",
         run: () => {
           dialog.replace(() => <DialogThemeList />)
         },
-        category: "System",
+        category: t("tui.command.category.system"),
+      },
+      {
+        name: "logo.switch",
+        title: "Switch logo design",
+        desc: t("tui.command.logo.switch.title"),
+        slashName: "logo",
+        slashAliases: ["logos"],
+        run: () => {
+          dialog.replace(() => <DialogLogoDesign />)
+        },
+        category: t("tui.command.category.system"),
       },
       {
         name: "theme.switch_mode",
-        title: mode() === "dark" ? "Switch to light mode" : "Switch to dark mode",
+        title: "Toggle theme mode",
+        desc:
+          mode() === "dark" ? t("tui.command.theme.switch_mode.to_light") : t("tui.command.theme.switch_mode.to_dark"),
         run: () => {
           setMode(mode() === "dark" ? "light" : "dark")
           dialog.clear()
         },
-        category: "System",
+        category: t("tui.command.category.system"),
       },
       {
         name: "theme.mode.lock",
-        title: locked() ? "Unlock theme mode" : "Lock theme mode",
+        title: "Toggle theme lock",
+        desc: locked() ? t("tui.command.theme.mode.unlock") : t("tui.command.theme.mode.lock"),
         run: () => {
           if (locked()) unlock()
           else lock()
           dialog.clear()
         },
-        category: "System",
+        category: t("tui.command.category.system"),
       },
       {
         name: "help.show",
         title: "Help",
+        desc: t("tui.command.help.show.title"),
         slashName: "help",
         run: () => {
           dialog.replace(() => <DialogHelp />)
         },
-        category: "System",
+        category: t("tui.command.category.system"),
       },
       {
         name: "docs.open",
         title: "Open docs",
+        desc: t("tui.command.docs.open.title"),
+        slashName: "docs",
+        slashAliases: ["doc"],
         run: () => {
-          open("https://opencode.ai/docs").catch(() => {})
+          open("https://swust-code-docs.pages.dev").catch(() => {})
           dialog.clear()
         },
-        category: "System",
+        category: t("tui.command.category.system"),
+      },
+      {
+        name: "language.switch",
+        title: "Switch language",
+        desc: t("tui.command.language.switch.description"),
+        slashName: "language",
+        slashAliases: ["locale", "lang"],
+        run: () => {
+          dialog.replace(() => <DialogLanguageList />)
+        },
+        category: t("tui.command.category.system"),
       },
       {
         name: "app.exit",
-        title: "Exit the app",
+        title: "Exit",
+        desc: t("tui.command.app.exit.title"),
         slashName: "exit",
         slashAliases: ["quit", "q"],
         run: () => exit(),
-        category: "System",
+        category: t("tui.command.category.system"),
       },
       {
         name: "app.debug",
         title: "Toggle debug panel",
-        category: "System",
+        desc: t("tui.command.app.debug.title"),
+        category: t("tui.command.category.system"),
         run: () => {
           renderer.toggleDebugOverlay()
           dialog.clear()
@@ -821,7 +880,8 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "app.console",
         title: "Toggle console",
-        category: "System",
+        desc: t("tui.command.app.console.title"),
+        category: t("tui.command.category.system"),
         run: () => {
           renderer.console.toggle()
           dialog.clear()
@@ -830,12 +890,13 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "app.heap_snapshot",
         title: "Write heap snapshot",
-        category: "System",
+        desc: t("tui.command.app.heap_snapshot.title"),
+        category: t("tui.command.category.system"),
         run: async () => {
           const files = await props.onSnapshot?.()
           toast.show({
             variant: "info",
-            message: `Heap snapshot written to ${files?.join(", ")}`,
+            message: t("tui.command.app.heap_snapshot.toast", { files: files?.join(", ") ?? "" }),
             duration: 5000,
           })
           dialog.clear()
@@ -844,7 +905,8 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       {
         name: "terminal.suspend",
         title: "Suspend terminal",
-        category: "System",
+        desc: t("tui.command.terminal.suspend.title"),
+        category: t("tui.command.category.system"),
         hidden: true,
         enabled: process.platform !== "win32",
         run: () => {
@@ -855,8 +917,11 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "terminal.title.toggle",
-        title: terminalTitleEnabled() ? "Disable terminal title" : "Enable terminal title",
-        category: "System",
+        title: "Toggle terminal title",
+        desc: terminalTitleEnabled()
+          ? t("tui.command.terminal.title.disable")
+          : t("tui.command.terminal.title.enable"),
+        category: t("tui.command.category.system"),
         run: () => {
           setTerminalTitleEnabled((prev) => {
             const next = !prev
@@ -869,8 +934,11 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "app.toggle.animations",
-        title: kv.get("animations_enabled", true) ? "Disable animations" : "Enable animations",
-        category: "System",
+        title: "Toggle animations",
+        desc: kv.get("animations_enabled", true)
+          ? t("tui.command.app.toggle.animations.disable")
+          : t("tui.command.app.toggle.animations.enable"),
+        category: t("tui.command.category.system"),
         run: () => {
           kv.set("animations_enabled", !kv.get("animations_enabled", true))
           dialog.clear()
@@ -878,8 +946,11 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "app.toggle.file_context",
-        title: kv.get("file_context_enabled", true) ? "Disable file context" : "Enable file context",
-        category: "System",
+        title: "Toggle file context",
+        desc: kv.get("file_context_enabled", true)
+          ? t("tui.command.app.toggle.file_context.disable")
+          : t("tui.command.app.toggle.file_context.enable"),
+        category: t("tui.command.category.system"),
         run: () => {
           kv.set("file_context_enabled", !kv.get("file_context_enabled", true))
           dialog.clear()
@@ -887,8 +958,12 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "app.toggle.diffwrap",
-        title: kv.get("diff_wrap_mode", "word") === "word" ? "Disable diff wrapping" : "Enable diff wrapping",
-        category: "System",
+        title: "Toggle diff wrapping",
+        desc:
+          kv.get("diff_wrap_mode", "word") === "word"
+            ? t("tui.command.app.toggle.diffwrap.disable")
+            : t("tui.command.app.toggle.diffwrap.enable"),
+        category: t("tui.command.category.system"),
         run: () => {
           const current = kv.get("diff_wrap_mode", "word")
           kv.set("diff_wrap_mode", current === "word" ? "none" : "word")
@@ -897,8 +972,11 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "app.toggle.paste_summary",
-        title: pasteSummaryEnabled() ? "Disable paste summary" : "Enable paste summary",
-        category: "System",
+        title: "Toggle paste summary",
+        desc: pasteSummaryEnabled()
+          ? t("tui.command.app.toggle.paste_summary.disable")
+          : t("tui.command.app.toggle.paste_summary.enable"),
+        category: t("tui.command.category.system"),
         run: () => {
           setPasteSummaryEnabled((prev) => {
             const next = !prev
@@ -910,10 +988,11 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "app.toggle.session_directory_filter",
-        title: kv.get("session_directory_filter_enabled", true)
-          ? "Disable session directory filtering"
-          : "Enable session directory filtering",
-        category: "System",
+        title: "Toggle session directory filter",
+        desc: kv.get("session_directory_filter_enabled", true)
+          ? t("tui.command.app.toggle.session_directory_filter.disable")
+          : t("tui.command.app.toggle.session_directory_filter.enable"),
+        category: t("tui.command.category.system"),
         run: async () => {
           kv.set("session_directory_filter_enabled", !kv.get("session_directory_filter_enabled", true))
           await sync.session.refresh()
@@ -977,7 +1056,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       route.navigate({ type: "home" })
       toast.show({
         variant: "info",
-        message: "The current session was deleted",
+        message: t("tui.session.deleted.toast"),
       })
     }
   })
@@ -1004,9 +1083,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
 
     const choice = await DialogConfirm.show(
       dialog,
-      `Update Available`,
-      `A new release v${version} is available. Would you like to update now?`,
-      "skip",
+      t("tui.update.available.title"),
+      t("tui.update.available.message", { version }),
+      t("tui.update.skip"),
     )
 
     if (choice === false) {
@@ -1018,7 +1097,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
 
     toast.show({
       variant: "info",
-      message: `Updating to v${version}...`,
+      message: t("tui.update.running", { version }),
       duration: 30000,
     })
 
@@ -1027,8 +1106,8 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (result.error || !result.data?.success) {
       toast.show({
         variant: "error",
-        title: "Update Failed",
-        message: "Update failed",
+        title: t("tui.update.failed.title"),
+        message: t("tui.update.failed.message"),
         duration: 10000,
       })
       return
@@ -1036,8 +1115,8 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
 
     await DialogAlert.show(
       dialog,
-      "Update Complete",
-      `Successfully updated to OpenCode v${result.data.version}. Please restart the application.`,
+      t("tui.update.complete.title"),
+      t("tui.update.complete.message", { version: result.data.version }),
     )
 
     void exit()

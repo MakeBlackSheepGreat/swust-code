@@ -487,7 +487,11 @@ export interface Interface {
   readonly setShare: (input: { sessionID: SessionID; share: Info["share"] }) => Effect.Effect<void>
   readonly setWorkspace: (input: { sessionID: SessionID; workspaceID: Info["workspaceID"] }) => Effect.Effect<void>
   readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
-  readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<SessionV1.WithParts[], NotFound>
+  readonly messages: (input: {
+    sessionID: SessionID
+    limit?: number
+    agentID?: string
+  }) => Effect.Effect<SessionV1.WithParts[], NotFound>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
   readonly updateMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
@@ -510,6 +514,7 @@ export interface Interface {
   readonly findMessage: (
     sessionID: SessionID,
     predicate: (msg: SessionV1.WithParts) => boolean,
+    options?: { agentID?: string },
   ) => Effect.Effect<Option.Option<SessionV1.WithParts>, NotFound>
 }
 
@@ -856,7 +861,7 @@ export const layer: Layer.Layer<
 
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
       if (input.limit) {
-        return (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit }).pipe(
+        return (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit, agentID: input.agentID }).pipe(
           Effect.provideService(Database.Service, database),
         )).items
       }
@@ -865,7 +870,12 @@ export const layer: Layer.Layer<
       const result = [] as SessionV1.WithParts[]
       let before: string | undefined
       while (true) {
-        const page = yield* MessageV2.page({ sessionID: input.sessionID, limit: size, before }).pipe(
+        const page = yield* MessageV2.page({
+          sessionID: input.sessionID,
+          limit: size,
+          before,
+          agentID: input.agentID,
+        }).pipe(
           Effect.provideService(Database.Service, database),
         )
         if (page.items.length === 0) break
@@ -914,11 +924,15 @@ export const layer: Layer.Layer<
     })
 
     /** Finds the first message matching the predicate, searching newest-first. */
-    const findMessage: Interface["findMessage"] = Effect.fn("Session.findMessage")(function* (sessionID, predicate) {
+    const findMessage: Interface["findMessage"] = Effect.fn("Session.findMessage")(function* (
+      sessionID,
+      predicate,
+      options,
+    ) {
       const size = 50
       let before: string | undefined
       while (true) {
-        const page = yield* MessageV2.page({ sessionID, limit: size, before }).pipe(
+        const page = yield* MessageV2.page({ sessionID, limit: size, before, agentID: options?.agentID }).pipe(
           Effect.provideService(Database.Service, database),
         )
         if (page.items.length === 0) break

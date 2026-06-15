@@ -26,6 +26,7 @@ import { SessionStatus } from "@/session/status"
 import { SessionRunState } from "@/session/run-state"
 import { SessionProcessor } from "@/session/processor"
 import { SessionCompaction } from "@/session/compaction"
+import { SessionCheckpoint } from "@/session/checkpoint"
 import { SessionRevert } from "@/session/revert"
 import { SessionSummary } from "@/session/summary"
 import { SessionPrompt } from "@/session/prompt"
@@ -54,61 +55,76 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Goal } from "@/session/goal"
 import { GoalJudge } from "@/session/goal-judge"
 import { Memory } from "@swust-code/core/memory/service"
+import { History } from "@/history"
+import * as ActorRegistry from "@/actor/registry"
+import * as ActorSpawn from "@/actor/spawn"
+import { Inbox } from "@/inbox"
+import { TaskRegistry } from "@/task/registry"
+import { Workflow } from "@/workflow/runtime"
 
-export const AppLayer = Layer.mergeAll(
-  Npm.defaultLayer,
-  FSUtil.defaultLayer,
-  Database.defaultLayer,
-  Auth.defaultLayer,
-  Account.defaultLayer,
-  Config.defaultLayer,
-  Git.defaultLayer,
-  Storage.defaultLayer,
-  Snapshot.defaultLayer,
-  Plugin.defaultLayer,
-  ModelsDev.defaultLayer,
-  Provider.defaultLayer,
-  ProviderAuth.defaultLayer,
-  Agent.defaultLayer,
-  Skill.defaultLayer,
-  Discovery.defaultLayer,
-  Question.defaultLayer,
-  Permission.defaultLayer,
-  Todo.defaultLayer,
-  Session.defaultLayer,
-  SessionStatus.defaultLayer,
-  BackgroundJob.defaultLayer,
-  RuntimeFlags.defaultLayer,
-  EventV2Bridge.defaultLayer,
-  SessionRunState.defaultLayer,
-  SessionProcessor.defaultLayer,
-  SessionCompaction.defaultLayer,
-  SessionRevert.defaultLayer,
-  SessionSummary.defaultLayer,
-  SessionPrompt.defaultLayer,
-  Instruction.defaultLayer,
-  LLM.defaultLayer,
-  LSP.defaultLayer,
-  MCP.defaultLayer,
-  McpAuth.defaultLayer,
-  Command.defaultLayer,
-  Truncate.defaultLayer,
-  ToolRegistry.defaultLayer,
-  Format.defaultLayer,
-  Project.defaultLayer,
-  Vcs.defaultLayer,
-  Workspace.defaultLayer,
-  Worktree.appLayer,
-  Installation.defaultLayer,
-  ShareNext.defaultLayer,
-  SessionShare.defaultLayer,
-  Goal.defaultLayer,
-  GoalJudge.defaultLayer,
-  Memory.defaultLayer,
-).pipe(
-  Layer.provideMerge(Ripgrep.defaultLayer),
-  Layer.provideMerge(InstanceLayer.layer),
-  Layer.provideMerge(Observability.layer),
+export const AppLayer = Layer.suspend(() =>
+  Layer.mergeAll(
+    Npm.defaultLayer,
+    FSUtil.defaultLayer,
+    Database.defaultLayer,
+    Auth.defaultLayer,
+    Account.defaultLayer,
+    Config.defaultLayer,
+    Git.defaultLayer,
+    Storage.defaultLayer,
+    Snapshot.defaultLayer,
+    Plugin.defaultLayer,
+    ModelsDev.defaultLayer,
+    Provider.defaultLayer,
+    ProviderAuth.defaultLayer,
+    Agent.defaultLayer,
+    Skill.defaultLayer,
+    Discovery.defaultLayer,
+    Question.defaultLayer,
+    Permission.defaultLayer,
+    Todo.defaultLayer,
+    Session.defaultLayer,
+    SessionStatus.defaultLayer,
+    BackgroundJob.defaultLayer,
+    RuntimeFlags.defaultLayer,
+    EventV2Bridge.defaultLayer,
+    SessionRunState.defaultLayer,
+    SessionProcessor.defaultLayer,
+    SessionCompaction.defaultLayer,
+    SessionCheckpoint.defaultLayer,
+    SessionRevert.defaultLayer,
+    SessionSummary.defaultLayer,
+    SessionPrompt.defaultLayer,
+    Instruction.defaultLayer,
+    LLM.defaultLayer,
+    LSP.defaultLayer,
+    MCP.defaultLayer,
+    McpAuth.defaultLayer,
+    Command.defaultLayer,
+    Truncate.defaultLayer,
+    ToolRegistry.defaultLayer,
+    Format.defaultLayer,
+    Project.defaultLayer,
+    Vcs.defaultLayer,
+    Workspace.defaultLayer,
+    Worktree.appLayer,
+    Installation.defaultLayer,
+    ShareNext.defaultLayer,
+    SessionShare.defaultLayer,
+    Goal.defaultLayer,
+    GoalJudge.defaultLayer,
+    ActorRegistry.defaultLayer,
+    ActorSpawn.defaultLayer,
+    Inbox.defaultLayer,
+    TaskRegistry.defaultLayer,
+    Workflow.defaultLayer,
+    Memory.defaultLayer,
+    History.defaultLayer,
+  ).pipe(
+    Layer.provideMerge(Ripgrep.defaultLayer),
+    Layer.provideMerge(InstanceLayer.layer),
+    Layer.provideMerge(Observability.layer),
+  ),
 )
 
 const rt = ManagedRuntime.make(AppLayer, { memoMap })

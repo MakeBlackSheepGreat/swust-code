@@ -24,6 +24,10 @@ const preparationIt = testEffect(
         }),
       list: () => Effect.succeed([]),
       init: () => Effect.void,
+      triggerActorPreStop: () =>
+        Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
+      triggerActorPostStop: () =>
+        Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
     }),
   ),
 )

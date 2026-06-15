@@ -1,25 +1,27 @@
 import { Prompt, type PromptRef } from "../component/prompt"
-import { createEffect, createMemo, createSignal, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, onMount, Show } from "solid-js"
 import { Logo } from "../component/logo"
+import { logos, type LogoKey } from "../logo"
+import { StarryBackground } from "../component/starry-background"
 import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
 import { useArgs } from "../context/args"
 import { useRouteData } from "../context/route"
 import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
+import { useKV } from "../context/kv"
 import { usePluginRuntime } from "../plugin/runtime"
 import { useEditorContext } from "../context/editor"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTuiConfig } from "../config"
 import { HomeSessionDestinationProvider } from "./home/session-destination"
+import { useLanguage } from "../context/language"
+import { isPlainTerminal } from "../util/terminal"
 
 let once = false
-const placeholder = {
-  normal: ["Fix a TODO in the codebase", "What is the tech stack of this project?", "Fix broken tests"],
-  shell: ["ls -la", "git status", "pwd"],
-}
 
 export function Home() {
+  const { t } = useLanguage()
   const pluginRuntime = usePluginRuntime()
   const sync = useSync()
   const route = useRouteData("home")
@@ -27,13 +29,28 @@ export function Home() {
   const [ref, setRef] = createSignal<PromptRef | undefined>()
   const args = useArgs()
   const local = useLocal()
+  const kv = useKV()
   const editor = useEditorContext()
   const dimensions = useTerminalDimensions()
   const tuiConfig = useTuiConfig()
+  const plainTerminal = isPlainTerminal()
+  const horizontalPadding = createMemo(() => (dimensions().width >= 96 ? 8 : 2))
   const promptMaxWidth = createMemo(() => {
     const configured = tuiConfig.prompt?.max_width
     if (configured === "auto") return Math.max(75, Math.floor(dimensions().width * 0.7))
     return configured ?? 75
+  })
+  const placeholder = createMemo(() => ({
+    normal: [
+      t("tui.home.placeholder.example.todo"),
+      t("tui.home.placeholder.example.stack"),
+      t("tui.home.placeholder.example.tests"),
+    ],
+    shell: ["ls -la", "git status", "pwd"],
+  }))
+  const logoKey = createMemo<LogoKey>(() => {
+    const key = kv.get("logo_design")
+    return typeof key === "string" && key in logos ? (key as LogoKey) : "thin"
   })
   let sent = false
 
@@ -69,18 +86,27 @@ export function Home() {
 
   return (
     <HomeSessionDestinationProvider>
-      <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
+      <Show when={!plainTerminal}>
+        <StarryBackground />
+      </Show>
+      <box
+        flexGrow={1}
+        alignItems="center"
+        paddingLeft={horizontalPadding()}
+        paddingRight={horizontalPadding()}
+        zIndex={1}
+      >
         <box flexGrow={1} minHeight={0} />
         <box height={4} minHeight={0} flexShrink={1} />
         <box flexShrink={0}>
           <pluginRuntime.Slot name="home_logo" mode="replace">
-            <Logo />
+            <Logo shape={logos[logoKey()]} />
           </pluginRuntime.Slot>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />
         <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
           <pluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>
-            <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder} />
+            <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder()} />
           </pluginRuntime.Slot>
         </box>
         <pluginRuntime.Slot name="home_bottom" />

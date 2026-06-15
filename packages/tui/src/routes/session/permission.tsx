@@ -16,11 +16,13 @@ import { getScrollAcceleration } from "../../util/scroll"
 import { useTuiConfig } from "../../config"
 import { SWUST_CODE_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
+import { useLanguage } from "../../context/language"
 
 type PermissionStage = "permission" | "always" | "reject"
 
 function EditBody(props: { request: PermissionRequest }) {
   const themeState = useTheme()
+  const { t } = useLanguage()
   const theme = themeState.theme
   const syntax = themeState.syntax
   const config = useTuiConfig()
@@ -80,7 +82,7 @@ function EditBody(props: { request: PermissionRequest }) {
       </Show>
       <Show when={!diff()}>
         <box paddingLeft={1}>
-          <text fg={theme.textMuted}>No diff provided</text>
+          <text fg={theme.textMuted}>{t("tui.permission.edit.no_diff")}</text>
         </box>
       </Show>
     </box>
@@ -112,6 +114,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
   const sdk = useSDK()
   const project = useProject()
   const sync = useSync()
+  const { t } = useLanguage()
   const [store, setStore] = createStore({
     stage: "permission" as PermissionStage,
   })
@@ -137,15 +140,15 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
     <Switch>
       <Match when={store.stage === "always"}>
         <Prompt
-          title="Always allow"
+          title={t("tui.permission.always.title")}
           body={
             <Switch>
               <Match when={props.request.always.length === 1 && props.request.always[0] === "*"}>
-                <TextBody title={"This will allow " + props.request.permission + " until OpenCode is restarted."} />
+                <TextBody title={t("tui.permission.always.allow_until_restart", { permission: props.request.permission })} />
               </Match>
               <Match when={true}>
                 <box paddingLeft={1} gap={1}>
-                  <text fg={theme.textMuted}>This will allow the following patterns until OpenCode is restarted</text>
+                  <text fg={theme.textMuted}>{t("tui.permission.always.patterns_until_restart")}</text>
                   <box>
                     <For each={props.request.always}>
                       {(pattern) => (
@@ -160,7 +163,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               </Match>
             </Switch>
           }
-          options={{ confirm: "Confirm", cancel: "Cancel" }}
+          options={{ confirm: t("tui.dialog.confirm.confirm"), cancel: t("tui.dialog.confirm.cancel") }}
           escapeKey="cancel"
           onSelect={(option) => {
             setStore("stage", "permission")
@@ -201,7 +204,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               const filepath = typeof raw === "string" ? raw : ""
               return {
                 icon: "→",
-                title: `Edit ${pathFormatter.format(filepath)}`,
+                title: t("tui.permission.tool.edit", { path: pathFormatter.format(filepath) }),
                 body: <EditBody request={props.request} />,
               }
             }
@@ -211,11 +214,11 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               const filePath = typeof raw === "string" ? raw : ""
               return {
                 icon: "→",
-                title: `Read ${pathFormatter.format(filePath)}`,
+                title: t("tui.permission.tool.read", { path: pathFormatter.format(filePath) }),
                 body: (
                   <Show when={filePath}>
                     <box paddingLeft={1}>
-                      <text fg={theme.textMuted}>{"Path: " + pathFormatter.format(filePath)}</text>
+                      <text fg={theme.textMuted}>{t("tui.permission.field.path", { path: pathFormatter.format(filePath) })}</text>
                     </box>
                   </Show>
                 ),
@@ -226,11 +229,11 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               const pattern = typeof data.pattern === "string" ? data.pattern : ""
               return {
                 icon: "✱",
-                title: `Glob "${pattern}"`,
+                title: t("tui.permission.tool.glob", { pattern }),
                 body: (
                   <Show when={pattern}>
                     <box paddingLeft={1}>
-                      <text fg={theme.textMuted}>{"Pattern: " + pattern}</text>
+                      <text fg={theme.textMuted}>{t("tui.permission.field.pattern", { pattern })}</text>
                     </box>
                   </Show>
                 ),
@@ -241,11 +244,11 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               const pattern = typeof data.pattern === "string" ? data.pattern : ""
               return {
                 icon: "✱",
-                title: `Grep "${pattern}"`,
+                title: t("tui.permission.tool.grep", { pattern }),
                 body: (
                   <Show when={pattern}>
                     <box paddingLeft={1}>
-                      <text fg={theme.textMuted}>{"Pattern: " + pattern}</text>
+                      <text fg={theme.textMuted}>{t("tui.permission.field.pattern", { pattern })}</text>
                     </box>
                   </Show>
                 ),
@@ -257,11 +260,11 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               const dir = typeof raw === "string" ? raw : ""
               return {
                 icon: "→",
-                title: `List ${pathFormatter.format(dir)}`,
+                title: t("tui.permission.tool.list", { path: pathFormatter.format(dir) }),
                 body: (
                   <Show when={dir}>
                     <box paddingLeft={1}>
-                      <text fg={theme.textMuted}>{"Path: " + pathFormatter.format(dir)}</text>
+                      <text fg={theme.textMuted}>{t("tui.permission.field.path", { path: pathFormatter.format(dir) })}</text>
                     </box>
                   </Show>
                 ),
@@ -270,7 +273,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
 
             if (permission === "bash") {
               const title =
-                typeof data.description === "string" && data.description ? data.description : "Shell command"
+                typeof data.description === "string" && data.description ? data.description : t("tui.permission.tool.shell")
               const command = typeof data.command === "string" ? data.command : ""
               return {
                 icon: "#",
@@ -290,7 +293,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               const desc = typeof data.description === "string" ? data.description : ""
               return {
                 icon: "#",
-                title: `${Locale.titlecase(type)} Task`,
+                title: t("tui.permission.tool.task", { type: Locale.titlecase(type) }),
                 body: (
                   <Show when={desc}>
                     <box paddingLeft={1}>
@@ -305,11 +308,11 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               const url = typeof data.url === "string" ? data.url : ""
               return {
                 icon: "%",
-                title: `WebFetch ${url}`,
+                title: t("tui.permission.tool.webfetch", { url }),
                 body: (
                   <Show when={url}>
                     <box paddingLeft={1}>
-                      <text fg={theme.textMuted}>{"URL: " + url}</text>
+                      <text fg={theme.textMuted}>{t("tui.permission.field.url", { url })}</text>
                     </box>
                   </Show>
                 ),
@@ -324,7 +327,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
                 body: (
                   <Show when={query}>
                     <box paddingLeft={1}>
-                      <text fg={theme.textMuted}>{"Query: " + query}</text>
+                      <text fg={theme.textMuted}>{t("tui.permission.field.query", { query })}</text>
                     </box>
                   </Show>
                 ),
@@ -345,11 +348,11 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
 
               return {
                 icon: "←",
-                title: `Access external directory ${dir}`,
+                title: t("tui.permission.tool.external_directory", { path: dir ?? "" }),
                 body: (
                   <Show when={patterns.length > 0}>
                     <box paddingLeft={1} gap={1}>
-                      <text fg={theme.textMuted}>Patterns</text>
+                      <text fg={theme.textMuted}>{t("tui.permission.field.patterns")}</text>
                       <box>
                         <For each={patterns}>{(p) => <text fg={theme.text}>{"- " + p}</text>}</For>
                       </box>
@@ -362,10 +365,10 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
             if (permission === "doom_loop") {
               return {
                 icon: "⟳",
-                title: "Continue after repeated failures",
+                title: t("tui.permission.tool.doom_loop"),
                 body: (
                   <box paddingLeft={1}>
-                    <text fg={theme.textMuted}>This keeps the session running despite repeated failures.</text>
+                    <text fg={theme.textMuted}>{t("tui.permission.tool.doom_loop.description")}</text>
                   </box>
                 ),
               }
@@ -373,10 +376,10 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
 
             return {
               icon: "⚙",
-              title: `Call tool ${permission}`,
+              title: t("tui.permission.tool.call", { tool: permission }),
               body: (
                 <box paddingLeft={1}>
-                  <text fg={theme.textMuted}>{"Tool: " + permission}</text>
+                  <text fg={theme.textMuted}>{t("tui.permission.field.tool", { tool: permission })}</text>
                 </box>
               ),
             }
@@ -388,7 +391,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
             <box flexDirection="column" gap={0}>
               <box flexDirection="row" gap={1} flexShrink={0}>
                 <text fg={theme.warning}>{"△"}</text>
-                <text fg={theme.text}>Permission required</text>
+                <text fg={theme.text}>{t("tui.permission.required")}</text>
               </box>
               <box flexDirection="row" gap={1} paddingLeft={2} flexShrink={0}>
                 <text fg={theme.textMuted} flexShrink={0}>
@@ -401,10 +404,14 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
 
           const body = (
             <Prompt
-              title="Permission required"
+              title={t("tui.permission.required")}
               header={header()}
               body={current.body}
-              options={{ once: "Allow once", always: "Allow always", reject: "Reject" }}
+              options={{
+                once: t("tui.permission.option.once"),
+                always: t("tui.permission.option.always"),
+                reject: t("tui.permission.option.reject"),
+              }}
               escapeKey="reject"
               fullscreen
               onSelect={(option) => {
@@ -445,6 +452,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
 function RejectPrompt(props: { onConfirm: (message: string) => void; onCancel: () => void }) {
   let input: TextareaRenderable
   const { theme } = useTheme()
+  const { t } = useLanguage()
   const tuiConfig = useTuiConfig()
   const dimensions = useTerminalDimensions()
   const narrow = createMemo(() => dimensions().width < 80)
@@ -453,20 +461,20 @@ function RejectPrompt(props: { onConfirm: (message: string) => void; onCancel: (
     commands: [
       {
         name: "app.exit",
-        title: "Cancel permission rejection",
-        category: "Permission",
+        title: t("tui.permission.reject.cancel"),
+        category: t("tui.command.category.permission"),
         run() {
           props.onCancel()
         },
       },
     ],
     bindings: [
-      { key: "escape", desc: "Cancel permission rejection", group: "Permission", cmd: () => props.onCancel() },
+      { key: "escape", desc: t("tui.permission.reject.cancel"), group: t("tui.command.category.permission"), cmd: () => props.onCancel() },
       ...tuiConfig.keybinds.get("app.exit"),
       {
         key: "return",
-        desc: "Confirm permission rejection",
-        group: "Permission",
+        desc: t("tui.permission.reject.confirm"),
+        group: t("tui.command.category.permission"),
         cmd: () => props.onConfirm(input.plainText),
       },
     ],
@@ -482,10 +490,10 @@ function RejectPrompt(props: { onConfirm: (message: string) => void; onCancel: (
       <box gap={1} paddingLeft={1} paddingRight={3} paddingTop={1} paddingBottom={1}>
         <box flexDirection="row" gap={1} paddingLeft={1}>
           <text fg={theme.error}>{"△"}</text>
-          <text fg={theme.text}>Reject permission</text>
+          <text fg={theme.text}>{t("tui.permission.reject.title")}</text>
         </box>
         <box paddingLeft={1}>
-          <text fg={theme.textMuted}>Tell OpenCode what to do differently</text>
+          <text fg={theme.textMuted}>{t("tui.permission.reject.prompt")}</text>
         </box>
       </box>
       <box
@@ -512,10 +520,10 @@ function RejectPrompt(props: { onConfirm: (message: string) => void; onCancel: (
         />
         <box flexDirection="row" gap={2} flexShrink={0}>
           <text fg={theme.text}>
-            enter <span style={{ fg: theme.textMuted }}>confirm</span>
+            enter <span style={{ fg: theme.textMuted }}>{t("tui.dialog.confirm.confirm")}</span>
           </text>
           <text fg={theme.text}>
-            esc <span style={{ fg: theme.textMuted }}>cancel</span>
+            esc <span style={{ fg: theme.textMuted }}>{t("tui.dialog.confirm.cancel")}</span>
           </text>
         </box>
       </box>
@@ -533,6 +541,7 @@ function Prompt<const T extends Record<string, string>>(props: {
   onSelect: (option: keyof T) => void
 }) {
   const { theme } = useTheme()
+  const { t } = useLanguage()
   const tuiConfig = useTuiConfig()
   const dimensions = useTerminalDimensions()
   const keys = Object.keys(props.options) as (keyof T)[]
@@ -548,8 +557,8 @@ function Prompt<const T extends Record<string, string>>(props: {
     commands: [
       {
         name: "app.exit",
-        title: "Reject permission",
-        category: "Permission",
+        title: t("tui.permission.reject.title"),
+        category: t("tui.command.category.permission"),
         run() {
           if (!props.escapeKey) return
           props.onSelect(props.escapeKey)
@@ -557,8 +566,8 @@ function Prompt<const T extends Record<string, string>>(props: {
       },
       {
         name: "permission.prompt.fullscreen",
-        title: "Toggle permission fullscreen",
-        category: "Permission",
+        title: t("tui.permission.fullscreen.toggle"),
+        category: t("tui.command.category.permission"),
         run() {
           if (!props.fullscreen) return
           setStore("expanded", (v) => !v)
@@ -568,8 +577,8 @@ function Prompt<const T extends Record<string, string>>(props: {
     bindings: [
       {
         key: "left",
-        desc: "Previous permission option",
-        group: "Permission",
+        desc: t("tui.permission.option.previous"),
+        group: t("tui.command.category.permission"),
         cmd: () => {
           const idx = keys.indexOf(store.selected)
           const next = keys[(idx - 1 + keys.length) % keys.length]
@@ -578,8 +587,8 @@ function Prompt<const T extends Record<string, string>>(props: {
       },
       {
         key: "h",
-        desc: "Previous permission option",
-        group: "Permission",
+        desc: t("tui.permission.option.previous"),
+        group: t("tui.command.category.permission"),
         cmd: () => {
           const idx = keys.indexOf(store.selected)
           const next = keys[(idx - 1 + keys.length) % keys.length]
@@ -588,8 +597,8 @@ function Prompt<const T extends Record<string, string>>(props: {
       },
       {
         key: "right",
-        desc: "Next permission option",
-        group: "Permission",
+        desc: t("tui.permission.option.next"),
+        group: t("tui.command.category.permission"),
         cmd: () => {
           const idx = keys.indexOf(store.selected)
           const next = keys[(idx + 1) % keys.length]
@@ -598,8 +607,8 @@ function Prompt<const T extends Record<string, string>>(props: {
       },
       {
         key: "l",
-        desc: "Next permission option",
-        group: "Permission",
+        desc: t("tui.permission.option.next"),
+        group: t("tui.command.category.permission"),
         cmd: () => {
           const idx = keys.indexOf(store.selected)
           const next = keys[(idx + 1) % keys.length]
@@ -608,16 +617,16 @@ function Prompt<const T extends Record<string, string>>(props: {
       },
       {
         key: "return",
-        desc: "Select permission option",
-        group: "Permission",
+        desc: t("tui.permission.option.select"),
+        group: t("tui.command.category.permission"),
         cmd: () => props.onSelect(store.selected),
       },
       ...(props.escapeKey
         ? [
             {
               key: "escape",
-              desc: "Reject permission",
-              group: "Permission",
+              desc: t("tui.permission.reject.title"),
+              group: t("tui.command.category.permission"),
               cmd: () => props.onSelect(props.escapeKey!),
             },
           ]
@@ -627,7 +636,9 @@ function Prompt<const T extends Record<string, string>>(props: {
     ],
   }))
 
-  const hint = createMemo(() => (store.expanded ? "minimize" : "fullscreen"))
+  const hint = createMemo(() =>
+    store.expanded ? t("tui.permission.fullscreen.minimize") : t("tui.permission.fullscreen.expand"),
+  )
   useRenderer()
 
   const content = () => (
@@ -702,10 +713,10 @@ function Prompt<const T extends Record<string, string>>(props: {
             </text>
           </Show>
           <text fg={theme.text}>
-            {"⇆"} <span style={{ fg: theme.textMuted }}>select</span>
+            {"⇆"} <span style={{ fg: theme.textMuted }}>{t("tui.permission.option.select.short")}</span>
           </text>
           <text fg={theme.text}>
-            enter <span style={{ fg: theme.textMuted }}>confirm</span>
+            enter <span style={{ fg: theme.textMuted }}>{t("tui.dialog.confirm.confirm")}</span>
           </text>
         </box>
       </box>

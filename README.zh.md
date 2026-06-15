@@ -18,7 +18,7 @@
 
 SWUST Code 基于 Anomaly Co. 的 [OpenCode](https://github.com/anomalyco/opencode) 构建，核心能力移植自小米的 [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)、nicognaW 的 [DevEco Code](https://github.com/nicognaW/deveco-code) 和 esengine 的 [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix)。保留了 OpenCode 的全部核心能力（多 Provider、TUI、LSP、MCP、插件），并在此基础上增加了持久化记忆、目标驱动自治、自我进化、多智能体编排、工作流引擎、分层安全和缓存优先架构。
 
-从 MiMo-Code 移植：持久化记忆（FTS5）、Dream/Distill 自我进化、Actor/Spawn 子智能体编排、检查点系统、上下文压缩、工作流引擎、重试策略、死循环检测。
+从 MiMo-Code 移植：持久化记忆和原始历史搜索（FTS5）、Dream/Distill 自我进化、Compose 技能、Actor/Spawn 兼容子智能体编排、检查点系统、上下文压缩、工作流引擎、重试策略、死循环检测。
 
 从 DevEco Code 移植：NAPI 原生工具桥接、Workspace 适配器模式、文档验证系统、Tool Output 裁剪。
 
@@ -50,12 +50,24 @@ bun run --cwd packages/opencode src/index.ts
 
 ## 核心特性
 
+### 0.3 版本重点
+
+SWUST Code 0.3 新增两个主智能体模式，以及 MiMo 兼容 actor、memory 和 history 工具入口：
+
+- **compose** — 主编排智能体，注入 MiMo Compose 提示和内置 `compose:*` 技能目录。
+- **goal** — 目标驱动主智能体，自动把用户请求设为会话停止条件，并启用独立目标 gate。
+- **actor** — 兼容 MiMo `operation` API 和可选 shell-style 调用的工具，支持 `run`、`spawn`、`status`、`wait`、`cancel`、`send`，底层接入同会话 `ActorSpawn` 运行时。
+- **memory** — 兼容 MiMo 的 LLM 工具，可基于 core FTS5 记忆索引对 SWUST 全局、项目、会话记忆执行 BM25 搜索。
+- **history** — MiMo 风格的原始会话轨迹回查工具，支持 `search` 片段检索和基于 `message_id` 的 `around` 上下文展开。
+
 ### 多智能体
 
 | 智能体 | 说明 |
 |--------|------|
 | **build** | 默认。完整工具权限，用于开发 |
 | **plan** | 只读分析模式，适合代码探索和方案设计 |
+| **compose** | 使用内置 `compose:*` 技能的工作流编排模式 |
+| **goal** | 持续工作到请求完成、完成验证或明确受阻的目标模式 |
 | **explore** | 快速只读搜索智能体，用于定位代码 |
 
 按 `Tab` 在主智能体间切换。子智能体由系统按需生成。
@@ -72,9 +84,13 @@ bun run --cwd packages/opencode src/index.ts
 
 记忆文件支持 `@path` 导入实现交叉引用。记忆自动在会话恢复时注入上下文。
 
+内置 `memory` 工具向智能体暴露 MiMo `operation: "search"` API：`query`、`scope`、`scope_id`、`type`、`limit`。SWUST 会将 MiMo 的 `global`、`projects`、`sessions` scope 映射到当前记忆索引；`cc` scope 和 `type` 过滤作为兼容字段接收，在对应索引实现前会返回明确说明。
+
+内置 `history` 工具遵循 MiMo 的升级查询模式：智能体先查 `memory`，需要精确原文或逐字回忆时再查 `history`。MiMo 风格 history writer 会监听 `message.part.updated` / `message.part.removed`，后台 backfill 会索引旧的 `message` / `part` 行。`history.search` 支持 project/global scope，以及 session、kind、tool、time 过滤。`history.around` 可用命中结果中的 `message_id` 展开前后消息上下文。可通过 `history.kinds` 配置进入索引的 part 类型。
+
 ### 目标驱动自治
 
-通过 `--goal` 参数设定停止条件：
+`goal` 智能体模式和 `--goal` 参数都会设定会话停止条件：
 
 ```bash
 swust-code run --goal "修复所有 TypeScript 错误" "开始工作"
@@ -82,18 +98,28 @@ swust-code run --goal "修复所有 TypeScript 错误" "开始工作"
 
 当 agent 尝试停止时，独立的 judge 模型会评估对话，判断条件是否真正满足——防止自治工作中的过早停止。每个目标最多重入 12 次。
 
+在交互模式中，`/goal <condition>` 会通过 `goal` 智能体模式执行本轮请求，并将该条件设为停止条件；可使用 `/goal clear` 或 `/goal reset` 清除当前目标。
+
 ### Dream & Distill
 
-- **`swust-code dream`** — 扫描近期会话轨迹，将持久知识提炼到项目记忆，移除过时条目（每 7 天自动触发）
-- **`swust-code distill`** — 发现重复的手动工作流，将高置信度候选打包为可复用技能（每 30 天自动触发）
+- **`swust-code dream`** — 扫描近期会话轨迹，将持久知识提炼到项目记忆，移除过时条目。
+- **`swust-code distill`** — 发现重复的手动工作流，将高置信度候选打包为可复用技能。
+
+自动 Dream/Distill 采用 MiMo 同名配置形态：`dream.auto` / `distill.auto` 设为 `false` 时关闭后台触发，`dream.interval_days` / `distill.interval_days` 控制两次运行的最小间隔。默认值分别为 Dream 7 天、Distill 30 天。
 
 ### 子智能体系统
 
-主智能体可按需生成子智能体，两种派生模式：
-- **peer** — 创建新子会话（完全隔离）
-- **subagent** — 共享父会话上下文（不同 actorID）
+主智能体可通过原生 `task` 工具或 MiMo 兼容 `actor` 工具按需生成子智能体。`actor` 工具使用 MiMo 的 `operation` 调用结构：
 
-子智能体复用父智能体的 prompt cache 前缀（Fork Cache 对齐），降低 token 成本。
+- **run** — 启动子智能体，并以内联结果返回。
+- **spawn** — 启动后台 actor，并返回 `actor_id`。
+- **status / wait / cancel / send** — 查询、等待、取消已启动的 actor，或向 actor inbox 发送消息。
+- **model / output_schema** — 将模型覆盖和结构化输出 schema 透传给目标子智能体。
+- **shell invocation** — 设置 `tool.invocation_style_by_tool.actor = "shell"` 后，暴露 MiMo 风格的 `actor run ...`、`actor spawn ...`、`actor wait ...` 脚本调用。
+
+当前 actor 实现使用 MiMo 风格的 `ActorSpawn` 路径：子智能体消息保留在父会话内，并写入 `general-1` 这类独立 `agentID` 分片；主对话仍是默认视图。Actor 生命周期状态会写入 `actor_registry` 表。Actor `send` 现在会写入持久化 inbox 记录，在 `SessionPrompt` 在线时调度接收者唤醒，并由 prompt loop 将 inbox 消息投递到接收者 actor 分片。可进入 gate 的子智能体还会在最终返回前执行 MiMo 风格 TaskGate 完成检查。插件驱动的 actor `preStop`/`postStop` hook 聚合已接入 actor 生命周期，hook ReAct 重入事件会通过 SWUST Code 的 EventV2 事件流发布。MiMo 风格内置 hook 插件已启用：`checkpoint-splitover` 会在 `checkpoint-writer` 停止前校验 checkpoint 输出，`subagent-progress-checker` 会校验绑定 `task_id` 的可写子智能体是否按五段模板写入 `tasks/<task_id>/progress.md`。
+
+隐藏的 MiMo 风格 `checkpoint-writer` 子智能体已注册为 system-spawned actor 类型。SWUST 也加入了 MiMo 的 `checkpoint-progress-reconcile` 扫描器，可通过 `written-at` frontmatter 和 checkpoint 中的 `last-reconciled-written-at` 标记识别 NEW/CHANGED 的 `tasks/<task_id>/progress.md`。
 
 ### 工作流引擎
 
@@ -119,7 +145,7 @@ TUI 内交互式命令：
 | 命令 | 说明 |
 |------|------|
 | `/memory <query>` | 搜索持久记忆 |
-| `/goal <condition>` | 设定自治目标 |
+| `/goal <condition>` | 进入 goal 智能体模式并设定自治停止条件 |
 | `/dream` | 触发记忆整合 |
 | `/distill` | 触发技能发现 |
 | `/help` | 显示可用命令 |

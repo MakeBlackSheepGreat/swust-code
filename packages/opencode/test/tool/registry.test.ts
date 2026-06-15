@@ -6,6 +6,7 @@ import { Effect, Layer, Result, Schema } from "effect"
 import { LayerNode } from "@swust-code/core/effect/layer-node"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
+import { parseActorScript, recoverActorArgs } from "@/tool/actor"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
@@ -24,6 +25,18 @@ const configLayer = TestConfig.layer({
   directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".swust-code")])),
 })
 
+const actorShellConfigLayer = TestConfig.layer({
+  get: () =>
+    Effect.succeed({
+      tool: {
+        invocation_style_by_tool: {
+          actor: "shell" as const,
+        },
+      },
+    }),
+  directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".swust-code")])),
+})
+
 // Fake Plugin.Service that returns a single plugin whose `tool` map contains
 // one definition with `args: undefined`. Used to exercise the plugin entry
 // point of `fromPlugin` for the #27451 / #27630 regression.
@@ -33,6 +46,10 @@ const brokenPluginLayer = Layer.succeed(
     init: () => Effect.void,
     trigger: ((_name: unknown, _input: unknown, output: unknown) =>
       Effect.succeed(output)) as Plugin.Interface["trigger"],
+    triggerActorPreStop: () =>
+      Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
+    triggerActorPostStop: () =>
+      Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
     list: () =>
       Effect.succeed([
         {
@@ -60,6 +77,22 @@ const withBrokenPlugin = testEffect(
     replacements: [...replacements, LayerNode.replace(Plugin.node, brokenPluginLayer)],
   }),
 )
+const withActorShellStyle = testEffect(
+  LayerNode.buildLayer(root, {
+    replacements: [
+      LayerNode.replace(Config.node, actorShellConfigLayer),
+      LayerNode.replace(RuntimeFlags.node, RuntimeFlags.layer()),
+    ],
+  }),
+)
+const withWorkflowTool = testEffect(
+  LayerNode.buildLayer(root, {
+    replacements: [
+      LayerNode.replace(Config.node, configLayer),
+      LayerNode.replace(RuntimeFlags.node, RuntimeFlags.layer({ experimentalWorkflowTool: true })),
+    ],
+  }),
+)
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -75,7 +108,193 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("hides task background parameter unless experimental background subagents are enabled", () =>
+  it.instance("hides workflow unless the MiMo-compatible workflow flag is enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).not.toContain("workflow")
+    }),
+  )
+
+  it.instance("exposes the MiMo-compatible actor tool", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      if (!build) throw new Error("build agent not found")
+
+      const actor = (yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent: build,
+      })).find((tool) => tool.id === "actor")
+
+      expect(actor).toBeDefined()
+      expect(actor?.description).toContain("Launch a new actor")
+      expect(actor?.description).toContain("Available agent types")
+      expect(actor?.description).not.toContain("- dream:")
+      expect((actor?.jsonSchema?.properties as Record<string, unknown> | undefined)?.operation).toBeDefined()
+      expect(
+        Result.isSuccess(
+          Schema.decodeUnknownResult(actor!.parameters)({
+            operation: {
+              action: "run",
+              subagent_type: "general",
+              description: "Check behavior",
+              prompt: "Report what changed.",
+              model: "openai/gpt-5",
+              output_schema: {
+                type: "object",
+                properties: {
+                  summary: { type: "string" },
+                },
+                required: ["summary"],
+              },
+            },
+          }),
+        ),
+      ).toBe(true)
+      expect(
+        Result.isSuccess(
+          Schema.decodeUnknownResult(actor!.parameters)({
+            operation: {
+              action: "run",
+              subagent_type: "dream",
+              description: "Hidden agent",
+              prompt: "This should not be callable from actor.",
+            },
+          }),
+        ),
+      ).toBe(false)
+    }),
+  )
+
+  it.instance("adds the MiMo-style available skill catalog to the skill tool description", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const visible = path.join(test.directory, ".swust-code", "skill", "visible-tool-skill")
+      const hidden = path.join(test.directory, ".swust-code", "skill", "hidden-tool-skill")
+      yield* Effect.promise(() => fs.mkdir(visible, { recursive: true }))
+      yield* Effect.promise(() => fs.mkdir(hidden, { recursive: true }))
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(visible, "SKILL.md"),
+          [
+            "---",
+            "name: visible-tool-skill",
+            "description: Visible in tool descriptions.",
+            "---",
+            "",
+            "Visible skill body.",
+            "",
+          ].join("\n"),
+        ),
+      )
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(hidden, "SKILL.md"),
+          [
+            "---",
+            "name: hidden-tool-skill",
+            "description: Hidden from tool descriptions.",
+            "hidden: true",
+            "---",
+            "",
+            "Hidden skill body.",
+            "",
+          ].join("\n"),
+        ),
+      )
+
+      const registry = yield* ToolRegistry.Service
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      if (!build) throw new Error("build agent not found")
+
+      const skill = (yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent: build,
+      })).find((tool) => tool.id === "skill")
+
+      expect(skill).toBeDefined()
+      expect(skill?.description).toContain("Load a specialized skill")
+      expect(skill?.description).toContain("visible-tool-skill")
+      expect(skill?.description).not.toContain("hidden-tool-skill")
+      expect(skill?.description).not.toContain("compose:brainstorm")
+    }),
+  )
+
+  it.effect("parses MiMo actor shell scripts and recovers JSON-shaped calls", () =>
+    Effect.gen(function* () {
+      const parsed = yield* parseActorScript(
+        [
+          'actor run explore "Find parser errors" "Scan parser.ts" --model lite --timeout 1000',
+          'actor wait explore-1 --timeout 50',
+        ].join("\n"),
+      )
+
+      expect(parsed[0]).toMatchObject({
+        operation: {
+          action: "run",
+          subagent_type: "explore",
+          description: "Find parser errors",
+          prompt: "Scan parser.ts",
+          model: "lite",
+          timeout_ms: 1000,
+        },
+      })
+      expect(parsed[1]).toEqual({
+        operation: {
+          action: "wait",
+          actor_id: "explore-1",
+          timeout_ms: 50,
+        },
+      })
+
+      expect(
+        recoverActorArgs({
+          subagent_type: "general",
+          description: "Review work",
+          prompt: "Check the patch",
+          background: true,
+        }),
+      ).toEqual({
+        operation: {
+          action: "spawn",
+          subagent_type: "general",
+          description: "Review work",
+          prompt: "Check the patch",
+        },
+      })
+    }),
+  )
+
+  withActorShellStyle.instance("wraps actor with the MiMo shell invocation style when configured", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      if (!build) throw new Error("build agent not found")
+
+      const actor = (yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent: build,
+      })).find((tool) => tool.id === "actor")
+
+      expect(actor).toBeDefined()
+      expect(actor?.description).toContain("Script structure")
+      expect((actor?.jsonSchema?.properties as Record<string, unknown> | undefined)?.operation).toBeUndefined()
+      expect((actor?.jsonSchema?.properties as Record<string, unknown> | undefined)?.script).toBeDefined()
+      expect(Result.isSuccess(Schema.decodeUnknownResult(actor!.parameters)({ script: 'actor status "general-1"' }))).toBe(
+        true,
+      )
+    }),
+  )
+
+  it.instance("exposes the MiMo-compatible task tree tool", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const agent = yield* Agent.Service
@@ -87,8 +306,156 @@ describe("tool.registry", () => {
         agent: build,
       })).find((tool) => tool.id === "task")
 
-      expect(task?.jsonSchema).toBeDefined()
-      expect((task?.jsonSchema?.properties as Record<string, unknown> | undefined)?.background).toBeUndefined()
+      expect(task).toBeDefined()
+      expect(task?.description).toContain("Persistent work-item tool")
+      expect((task?.jsonSchema?.properties as Record<string, unknown> | undefined)?.operation).toBeDefined()
+      expect(
+        Result.isSuccess(
+          Schema.decodeUnknownResult(task!.parameters)({
+            operation: {
+              action: "create",
+              summary: "Implement parser",
+            },
+          }),
+        ),
+      ).toBe(true)
+    }),
+  )
+
+  it.instance("exposes the MiMo-compatible memory tool", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+      expect(ids).toContain("memory")
+
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      if (!build) throw new Error("build agent not found")
+      const memory = (yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent: build,
+      })).find((tool) => tool.id === "memory")
+
+      expect(memory).toBeDefined()
+      expect(memory?.description).toContain("Search session/project/global memory")
+      const schema = ToolJsonSchema.fromTool(memory!)
+      expect(schema.properties).toMatchObject({
+        operation: expect.any(Object),
+        query: expect.any(Object),
+        scope: expect.any(Object),
+        scope_id: expect.any(Object),
+        type: expect.any(Object),
+        limit: expect.any(Object),
+      })
+      expect(
+        Result.isSuccess(
+          Schema.decodeUnknownResult(memory!.parameters)({
+            operation: "search",
+            query: "checkpoint",
+            scope: "projects",
+            scope_id: "project-1",
+            type: "snapshot",
+            limit: 5,
+          }),
+        ),
+      ).toBe(true)
+    }),
+  )
+
+  it.instance("exposes the MiMo-compatible history tool", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+      expect(ids).toContain("history")
+
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      if (!build) throw new Error("build agent not found")
+      const history = (yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent: build,
+      })).find((tool) => tool.id === "history")
+
+      expect(history).toBeDefined()
+      expect(history?.description).toContain("Search RAW conversation trajectory")
+      const schema = ToolJsonSchema.fromTool(history!)
+      expect(schema.properties).toMatchObject({
+        operation: expect.any(Object),
+        query: expect.any(Object),
+        scope: expect.any(Object),
+        message_id: expect.any(Object),
+        before: expect.any(Object),
+        after: expect.any(Object),
+      })
+      expect(
+        Result.isSuccess(
+          Schema.decodeUnknownResult(history!.parameters)({
+            operation: "around",
+            message_id: "msg_anchor",
+            before: 1,
+            after: 1,
+          }),
+        ),
+      ).toBe(true)
+    }),
+  )
+
+  withWorkflowTool.instance("exposes the MiMo-compatible workflow tool when enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+      expect(ids).toContain("workflow")
+
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      if (!build) throw new Error("build agent not found")
+      const workflow = (yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent: build,
+      })).find((tool) => tool.id === "workflow")
+
+      expect(workflow).toBeDefined()
+      expect(workflow?.description).toContain("Execute a workflow script")
+      expect(workflow?.description).toContain("## Built-in workflows")
+      expect(workflow?.description).toContain("deep-research")
+      const schema = ToolJsonSchema.fromTool(workflow!)
+      const schemaText = JSON.stringify(schema)
+      expect(schemaText).toContain("operation")
+      expect(schemaText).toContain("name")
+      expect(schemaText).toContain("script")
+      expect(schemaText).toContain("args")
+      expect(
+        Result.isSuccess(
+          Schema.decodeUnknownResult(workflow!.parameters)({
+            operation: "run",
+            name: "deep-research",
+            args: "research question",
+          }),
+        ),
+      ).toBe(true)
+    }),
+  )
+
+  it.instance("hides subagent background parameter unless experimental background subagents are enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      if (!build) throw new Error("build agent not found")
+      const subagent = (yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent: build,
+      })).find((tool) => tool.id === "subagent")
+
+      expect(subagent?.jsonSchema).toBeDefined()
+      const properties = subagent?.jsonSchema?.properties as Record<string, unknown> | undefined
+      expect(properties?.background).toBeUndefined()
+      expect(properties?.model).toBeDefined()
+      expect(properties?.output_schema).toBeDefined()
     }),
   )
 
@@ -282,7 +649,7 @@ describe("tool.registry", () => {
         const test = yield* TestInstance
         const opencode = path.join(test.directory, ".swust-code")
         const customTools = path.join(opencode, "tools")
-        const plugin = path.join(opencode, "node_modules", "@opencode-ai", "plugin")
+        const plugin = path.join(opencode, "node_modules", "@swust-code", "plugin")
         yield* Effect.promise(() => fs.mkdir(path.join(plugin, "dist"), { recursive: true }))
         yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
         yield* Effect.promise(() =>

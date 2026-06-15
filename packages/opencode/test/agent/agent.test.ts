@@ -55,11 +55,14 @@ it.instance("returns default native agents when no config", () =>
     const names = agents.map((a) => a.name)
     expect(names).toContain("build")
     expect(names).toContain("plan")
+    expect(names).toContain("compose")
+    expect(names).toContain("goal")
     expect(names).toContain("general")
     expect(names).toContain("explore")
     expect(names).toContain("compaction")
     expect(names).toContain("title")
     expect(names).toContain("summary")
+    expect(names).toContain("checkpoint-writer")
   }),
 )
 
@@ -92,6 +95,30 @@ it.instance("plan agent denies the general subagent by default", () =>
     expect(Permission.evaluate("task", "general", plan!.permission).action).toBe("deny")
     expect(Permission.evaluate("task", "explore", plan!.permission).action).toBe("allow")
     expect(Permission.evaluate("task", "custom", plan!.permission).action).toBe("allow")
+  }),
+)
+
+it.instance("compose agent is primary and can use actor and skill tools", () =>
+  Effect.gen(function* () {
+    const compose = yield* load((svc) => svc.get("compose"))
+    expect(compose).toBeDefined()
+    expect(compose?.mode).toBe("primary")
+    expect(compose?.native).toBe(true)
+    expect(evalPerm(compose, "actor")).toBe("allow")
+    expect(evalPerm(compose, "skill")).toBe("allow")
+    expect(evalPerm(compose, "question")).toBe("allow")
+  }),
+)
+
+it.instance("goal agent is primary and can use actor, skill, and plan_enter", () =>
+  Effect.gen(function* () {
+    const goal = yield* load((svc) => svc.get("goal"))
+    expect(goal).toBeDefined()
+    expect(goal?.mode).toBe("primary")
+    expect(goal?.native).toBe(true)
+    expect(evalPerm(goal, "actor")).toBe("allow")
+    expect(evalPerm(goal, "skill")).toBe("allow")
+    expect(evalPerm(goal, "plan_enter")).toBe("allow")
   }),
 )
 
@@ -183,6 +210,19 @@ it.instance("compaction agent denies all permissions", () =>
     expect(evalPerm(compaction, "bash")).toBe("deny")
     expect(evalPerm(compaction, "edit")).toBe("deny")
     expect(evalPerm(compaction, "read")).toBe("deny")
+  }),
+)
+
+it.instance("checkpoint-writer agent mirrors MiMo hidden subagent shape", () =>
+  Effect.gen(function* () {
+    const checkpointWriter = yield* load((svc) => svc.get("checkpoint-writer"))
+    expect(checkpointWriter).toBeDefined()
+    expect(checkpointWriter?.mode).toBe("subagent")
+    expect(checkpointWriter?.native).toBe(true)
+    expect(checkpointWriter?.hidden).toBe(true)
+    expect(checkpointWriter?.prompt).toBeUndefined()
+    expect(evalPerm(checkpointWriter, "read")).toBe("allow")
+    expect(evalPerm(checkpointWriter, "write")).toBe("allow")
   }),
 )
 
@@ -440,12 +480,15 @@ it.instance(
 )
 
 it.instance(
-  "Agent.list keeps the default agent first and sorts the rest by name",
+  "Agent.list keeps the default agent first and preserves MiMo primary ordering",
   () =>
     Effect.gen(function* () {
       const names = (yield* load((svc) => svc.list())).map((a) => a.name)
       expect(names[0]).toBe("plan")
-      expect(names.slice(1)).toEqual(names.slice(1).toSorted((a, b) => a.localeCompare(b)))
+      expect(names.indexOf("build")).toBeLessThan(names.indexOf("compose"))
+      expect(names.indexOf("compose")).toBeLessThan(names.indexOf("goal"))
+      expect(names.indexOf("goal")).toBeLessThan(names.indexOf("alpha"))
+      expect(names.indexOf("alpha")).toBeLessThan(names.indexOf("zebra"))
     }),
   {
     config: {
@@ -754,6 +797,8 @@ it.instance(
       agent: {
         build: { disable: true },
         plan: { disable: true },
+        compose: { disable: true },
+        goal: { disable: true },
       },
     },
   },

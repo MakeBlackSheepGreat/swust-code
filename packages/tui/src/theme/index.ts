@@ -149,6 +149,7 @@ export const DEFAULT_THEMES: Record<string, ThemeJson> = {
   nord,
   ["one-dark"]: onedark,
   ["osaka-jade"]: osakaJade,
+  ["swust-code"]: swustCode,
   swustCode,
   orng,
   ["lucent-orng"]: lucentOrng,

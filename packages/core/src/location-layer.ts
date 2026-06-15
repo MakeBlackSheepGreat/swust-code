@@ -32,6 +32,7 @@ import { SkillGuidance } from "./skill/guidance"
 import { MemoryContext } from "./memory/context"
 import { Memory } from "./memory/service"
 import { Goal } from "./session/goal"
+import { GoalJudge } from "./session/goal-judge"
 import { BuiltInTools } from "./tool/builtins"
 import { Image } from "./image"
 import { ToolRegistry } from "./tool/registry"
@@ -86,6 +87,7 @@ export class LocationServiceMap extends LayerMap.Service<LocationServiceMap>()("
     const referenceGuidance = ReferenceGuidance.locationLayer.pipe(Layer.provide(services))
     const memoryContext = MemoryContext.locationLayer.pipe(Layer.provide(services))
     const goalLayer = Goal.defaultLayer
+    const judgeLayer = GoalJudge.defaultLayer
     const todos = SessionTodo.layer.pipe(Layer.provide(services))
     const questions = QuestionV2.locationLayer.pipe(Layer.provide(services))
     const builtInTools = BuiltInTools.locationLayer.pipe(
@@ -104,6 +106,7 @@ export class LocationServiceMap extends LayerMap.Service<LocationServiceMap>()("
       Layer.provide(referenceGuidance),
       Layer.provide(memoryContext),
       Layer.provide(goalLayer),
+      Layer.provide(judgeLayer),
     )
     return Layer.mergeAll(
       boot,

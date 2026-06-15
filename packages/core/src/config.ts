@@ -8,7 +8,7 @@ import { Global } from "./global"
 import { Location } from "./location"
 import { PermissionSchema } from "./permission/schema"
 import { Policy } from "./policy"
-import { AbsolutePath } from "./schema"
+import { AbsolutePath, NonNegativeInt } from "./schema"
 import { ConfigAgent } from "./config/agent"
 import { ConfigAttachments } from "./config/attachments"
 import { ConfigCompaction } from "./config/compaction"
@@ -86,6 +86,26 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   compaction: ConfigCompaction.Info.pipe(Schema.optional).annotate({
     description: "Conversation compaction behavior",
   }),
+  dream: Schema.Struct({
+    auto: Schema.Boolean.pipe(Schema.optional).annotate({
+      description: "Auto-trigger dream memory consolidation on new session start. Default: true.",
+    }),
+    interval_days: NonNegativeInt.pipe(Schema.optional).annotate({
+      description: "Minimum days between automatic dream runs. Set to 0 to trigger on every new session. Default: 7.",
+    }),
+  })
+    .pipe(Schema.optional)
+    .annotate({ description: "Dream memory consolidation configuration." }),
+  distill: Schema.Struct({
+    auto: Schema.Boolean.pipe(Schema.optional).annotate({
+      description: "Auto-trigger distill workflow packaging on new session start. Default: true.",
+    }),
+    interval_days: NonNegativeInt.pipe(Schema.optional).annotate({
+      description: "Minimum days between automatic distill runs. Default: 30.",
+    }),
+  })
+    .pipe(Schema.optional)
+    .annotate({ description: "Distill workflow packaging configuration." }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
   }),

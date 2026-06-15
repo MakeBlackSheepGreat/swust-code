@@ -186,6 +186,15 @@ export const AgentPart = Schema.Struct({
 }).annotate({ identifier: "AgentPart" })
 export type AgentPart = Types.DeepMutable<Schema.Schema.Type<typeof AgentPart>>
 
+export const CheckpointPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("checkpoint"),
+  checkpointDir: Schema.String,
+  checkpointNumber: NonNegativeInt,
+  coveredUpTo: MessageID,
+}).annotate({ identifier: "CheckpointPart" })
+export type CheckpointPart = Types.DeepMutable<Schema.Schema.Type<typeof CheckpointPart>>
+
 export const CompactionPart = Schema.Struct({
   ...partBase,
   type: Schema.Literal("compaction"),
@@ -321,6 +330,9 @@ export type ToolPart = Omit<Types.DeepMutable<Schema.Schema.Type<typeof ToolPart
 const messageBase = {
   id: MessageID,
   sessionID: partBase.sessionID,
+  agentID: Schema.optional(Schema.String),
+  source: Schema.optional(Schema.Literals(["user", "spawn", "hook"])),
+  provenance: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
 }
 
 const FileDiff = Schema.Struct({
@@ -368,6 +380,7 @@ export const Part = Schema.Union([
   PatchPart,
   AgentPart,
   RetryPart,
+  CheckpointPart,
   CompactionPart,
 ]).annotate({ discriminator: "type", identifier: "Part" })
 export type Part =
@@ -382,6 +395,7 @@ export type Part =
   | PatchPart
   | AgentPart
   | RetryPart
+  | CheckpointPart
   | CompactionPart
 
 const AssistantErrorSchema = Schema.Union([

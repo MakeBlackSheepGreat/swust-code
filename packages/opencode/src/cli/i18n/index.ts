@@ -8,10 +8,10 @@
  * Ported from MiMo-Code's cli/i18n.ts.
  */
 
-import en, { type Keys } from "../../tui/src/i18n/en"
-import zh from "../../tui/src/i18n/zh"
-import { detectSystemLocale } from "../../tui/src/i18n/system-locale"
-import type { Locale } from "../../tui/src/i18n/locales"
+import en, { type Keys } from "../../../../tui/src/i18n/en"
+import zh from "../../../../tui/src/i18n/zh"
+import { detectSystemLocale } from "../../../../tui/src/i18n/system-locale"
+import type { Locale } from "../../../../tui/src/i18n/locales"
 
 // Static dictionary map (only languages with full translations)
 const DICTS: Record<string, Record<string, string>> = {

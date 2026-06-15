@@ -18,8 +18,10 @@ const effect = new SkillV2.Info({
 })
 const hidden = new SkillV2.Info({
   name: "hidden",
+  description: "Must not be shown",
+  hidden: true,
   location: AbsolutePath.make(path.resolve("/skills/hidden/SKILL.md")),
-  content: "Undescribed guidance",
+  content: "Hidden guidance",
 })
 const denied = new SkillV2.Info({
   name: "denied",

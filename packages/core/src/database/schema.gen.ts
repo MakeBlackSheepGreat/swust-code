@@ -127,6 +127,7 @@ export default {
         CREATE TABLE \`message\` (
           \`id\` text PRIMARY KEY,
           \`session_id\` text NOT NULL,
+          \`agent_id\` text DEFAULT 'main' NOT NULL,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
           \`data\` text NOT NULL,
@@ -238,6 +239,147 @@ export default {
           CONSTRAINT \`fk_session_share_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
+      yield* tx.run(`
+        CREATE TABLE \`task\` (
+          \`id\` text NOT NULL,
+          \`session_id\` text NOT NULL,
+          \`parent_task_id\` text,
+          \`status\` text NOT NULL,
+          \`summary\` text NOT NULL,
+          \`owner\` text,
+          \`created_at\` integer NOT NULL,
+          \`last_event_at\` integer NOT NULL,
+          \`ended_at\` integer,
+          \`cleanup_after\` integer,
+          CONSTRAINT \`task_pk\` PRIMARY KEY(\`session_id\`, \`id\`),
+          CONSTRAINT \`fk_task_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`task_event\` (
+          \`id\` integer PRIMARY KEY AUTOINCREMENT,
+          \`session_id\` text NOT NULL,
+          \`task_id\` text NOT NULL,
+          \`at\` integer NOT NULL,
+          \`kind\` text NOT NULL,
+          \`summary\` text,
+          CONSTRAINT \`fk_task_event_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE,
+          CONSTRAINT \`fk_task_event_task_fk\` FOREIGN KEY (\`session_id\`, \`task_id\`) REFERENCES \`task\`(\`session_id\`, \`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`inbox\` (
+          \`id\` text PRIMARY KEY,
+          \`receiver_session_id\` text NOT NULL,
+          \`receiver_actor_id\` text NOT NULL,
+          \`sender_session_id\` text,
+          \`sender_actor_id\` text,
+          \`type\` text NOT NULL,
+          \`content\` text NOT NULL,
+          \`created_at\` integer NOT NULL,
+          CONSTRAINT \`fk_inbox_receiver_session_id_session_id_fk\` FOREIGN KEY (\`receiver_session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`actor_registry\` (
+          \`session_id\` text NOT NULL,
+          \`actor_id\` text NOT NULL,
+          \`mode\` text NOT NULL,
+          \`parent_actor_id\` text,
+          \`status\` text NOT NULL,
+          \`last_outcome\` text,
+          \`lifecycle\` text NOT NULL,
+          \`agent\` text NOT NULL,
+          \`description\` text,
+          \`background\` integer NOT NULL,
+          \`last_turn_time\` integer NOT NULL,
+          \`turn_count\` integer DEFAULT 0 NOT NULL,
+          \`last_error\` text,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          \`time_completed\` integer,
+          CONSTRAINT \`actor_registry_pk\` PRIMARY KEY(\`session_id\`, \`actor_id\`),
+          CONSTRAINT \`fk_actor_registry_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`memory_doc\` (
+          \`path\` text PRIMARY KEY,
+          \`kind\` text NOT NULL,
+          \`scope_id\` text DEFAULT '' NOT NULL,
+          \`title\` text DEFAULT '' NOT NULL,
+          \`content\` text NOT NULL,
+          \`size\` integer NOT NULL,
+          \`mtime_ms\` integer NOT NULL,
+          \`time_indexed\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`history_fts\` (
+          \`part_id\` text PRIMARY KEY,
+          \`session_id\` text NOT NULL,
+          \`message_id\` text NOT NULL,
+          \`project_id\` text NOT NULL,
+          \`kind\` text NOT NULL,
+          \`tool_name\` text,
+          \`body\` text NOT NULL,
+          \`time_created\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE VIRTUAL TABLE \`memory_fts\` USING fts5(
+          \`path\`, \`title\`, \`content\`,
+          content="memory_doc",
+          content_rowid="rowid"
+        );
+      `)
+      yield* tx.run(`
+        CREATE TRIGGER \`memory_doc_ai\` AFTER INSERT ON \`memory_doc\` BEGIN
+          INSERT INTO memory_fts(rowid, path, title, content)
+            VALUES (new.rowid, new.path, new.title, new.content);
+        END;
+      `)
+      yield* tx.run(`
+        CREATE TRIGGER \`memory_doc_ad\` AFTER DELETE ON \`memory_doc\` BEGIN
+          INSERT INTO memory_fts(memory_fts, rowid, path, title, content)
+            VALUES ('delete', old.rowid, old.path, old.title, old.content);
+        END;
+      `)
+      yield* tx.run(`
+        CREATE TRIGGER \`memory_doc_au\` AFTER UPDATE ON \`memory_doc\` BEGIN
+          INSERT INTO memory_fts(memory_fts, rowid, path, title, content)
+            VALUES ('delete', old.rowid, old.path, old.title, old.content);
+          INSERT INTO memory_fts(rowid, path, title, content)
+            VALUES (new.rowid, new.path, new.title, new.content);
+        END;
+      `)
+      yield* tx.run(`
+        CREATE VIRTUAL TABLE \`history_fts_idx\` USING fts5(
+          \`body\`,
+          content="history_fts",
+          content_rowid="rowid"
+        );
+      `)
+      yield* tx.run(`
+        CREATE TRIGGER \`history_fts_ai\` AFTER INSERT ON \`history_fts\` BEGIN
+          INSERT INTO history_fts_idx(rowid, body)
+            VALUES (new.rowid, new.body);
+        END;
+      `)
+      yield* tx.run(`
+        CREATE TRIGGER \`history_fts_ad\` AFTER DELETE ON \`history_fts\` BEGIN
+          INSERT INTO history_fts_idx(history_fts_idx, rowid, body)
+            VALUES ('delete', old.rowid, old.body);
+        END;
+      `)
+      yield* tx.run(`
+        CREATE TRIGGER \`history_fts_au\` AFTER UPDATE ON \`history_fts\` BEGIN
+          INSERT INTO history_fts_idx(history_fts_idx, rowid, body)
+            VALUES ('delete', old.rowid, old.body);
+          INSERT INTO history_fts_idx(rowid, body)
+            VALUES (new.rowid, new.body);
+        END;
+      `)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
       yield* tx.run(
@@ -246,6 +388,7 @@ export default {
       yield* tx.run(
         `CREATE INDEX \`message_session_time_created_id_idx\` ON \`message\` (\`session_id\`,\`time_created\`,\`id\`);`,
       )
+      yield* tx.run(`CREATE INDEX \`message_session_agent_idx\` ON \`message\` (\`session_id\`,\`agent_id\`,\`id\`);`)
       yield* tx.run(`CREATE INDEX \`part_message_id_id_idx\` ON \`part\` (\`message_id\`,\`id\`);`)
       yield* tx.run(`CREATE INDEX \`part_session_idx\` ON \`part\` (\`session_id\`);`)
       yield* tx.run(
@@ -271,6 +414,28 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_workspace_idx\` ON \`session\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
+      yield* tx.run(`CREATE INDEX \`task_session_idx\` ON \`task\` (\`session_id\`);`)
+      yield* tx.run(`CREATE INDEX \`task_parent_idx\` ON \`task\` (\`session_id\`,\`parent_task_id\`);`)
+      yield* tx.run(`CREATE INDEX \`task_status_idx\` ON \`task\` (\`status\`);`)
+      yield* tx.run(`CREATE INDEX \`task_event_task_idx\` ON \`task_event\` (\`session_id\`,\`task_id\`,\`at\`);`)
+      yield* tx.run(`CREATE INDEX \`inbox_receiver_idx\` ON \`inbox\` (\`receiver_session_id\`,\`receiver_actor_id\`,\`id\`);`)
+      yield* tx.run(`CREATE INDEX \`inbox_created_idx\` ON \`inbox\` (\`created_at\`);`)
+      yield* tx.run(`CREATE INDEX \`actor_registry_session_agent_idx\` ON \`actor_registry\` (\`session_id\`,\`agent\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`actor_registry_session_parent_idx\` ON \`actor_registry\` (\`session_id\`,\`parent_actor_id\`);`,
+      )
+      yield* tx.run(`CREATE INDEX \`actor_registry_status_idx\` ON \`actor_registry\` (\`status\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`actor_registry_status_last_turn_idx\` ON \`actor_registry\` (\`status\`,\`last_turn_time\`);`,
+      )
+      yield* tx.run(`CREATE INDEX \`memory_doc_kind_scope_idx\` ON \`memory_doc\` (\`kind\`,\`scope_id\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`history_fts_session_idx\` ON \`history_fts\` (\`session_id\`,\`time_created\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`history_fts_project_idx\` ON \`history_fts\` (\`project_id\`,\`time_created\`);`,
+      )
+      yield* tx.run(`CREATE INDEX \`history_fts_message_idx\` ON \`history_fts\` (\`message_id\`);`)
     })
   },
 } satisfies Omit<DatabaseMigration.Migration, "id">

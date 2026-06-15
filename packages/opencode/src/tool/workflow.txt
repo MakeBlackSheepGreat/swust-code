@@ -1,0 +1,17 @@
+Execute a workflow script that orchestrates multiple subagents deterministically. The script is plain JavaScript that runs in a sandbox and fans out subagents via agent(), parallel(), and pipeline(). This tool returns immediately with a run_id and runs in the background.
+
+operation "run": start a workflow. Provide either `name` (a built-in workflow, see the catalog below) or `script` (inline JS; must begin with `export const meta = { name, description }`). Returns a run_id immediately.
+operation "status": check a run's status by run_id.
+operation "wait": block until a run completes or times out, returning the run snapshot.
+operation "cancel": cancel a running workflow.
+operation "resume": re-launch a persisted workflow by run_id under the same run_id.
+
+Inside the script you can call:
+- agent(prompt, opts?) -> Promise: spawn one subagent.
+- parallel(thunks) -> Promise<any[]>: run thunks concurrently.
+- pipeline(items, ...stages) -> Promise<any[]>: run each item through all stages.
+- workflow(name, args?) -> Promise: run a built-in child workflow and await its result.
+- phase(title), log(message): progress reporting.
+- args: the JSON value passed when starting the workflow.
+
+Concurrency is capped by the host.

@@ -331,7 +331,7 @@ function taskSessionID(part: ToolPart) {
 }
 
 function syncTaskTab(data: SubagentData, part: ToolPart, children?: Set<string>) {
-  if (part.tool !== "task") {
+  if (part.tool !== "subagent" && !(part.tool === "task" && text(part.state.input.subagent_type))) {
     return false
   }
 

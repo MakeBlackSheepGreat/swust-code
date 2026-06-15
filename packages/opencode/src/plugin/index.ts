@@ -1,5 +1,9 @@
 import { LayerNode } from "@swust-code/core/effect/layer-node"
 import type {
+  ActorMatcher,
+  ActorPostStopInput,
+  ActorPreStopInput,
+  ActorStopOutput,
   Hooks,
   PluginInput,
   Plugin as PluginInstance,
@@ -17,7 +21,10 @@ import { CloudflareAIGatewayAuthPlugin, CloudflareWorkersAuthPlugin } from "./cl
 import { AzureAuthPlugin } from "./azure"
 import { DigitalOceanAuthPlugin } from "./digitalocean"
 import { XaiAuthPlugin } from "./xai"
-import { Effect, Layer, Context } from "effect"
+import { CheckpointSplitoverPlugin } from "./checkpoint-splitover"
+import { SubagentProgressCheckerPlugin } from "./subagent-progress-checker"
+import { Context, Effect, Layer, Schema } from "effect"
+import { EventV2 } from "@swust-code/core/event"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { errorMessage } from "@/util/error"
@@ -28,9 +35,59 @@ import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstallationChannel } from "@swust-code/core/installation/version"
+import { matchesActor } from "./matcher"
+import { SessionID } from "@/session/schema"
+
+export const HookEvent = {
+  Executed: EventV2.define({
+    type: "hook.executed",
+    schema: {
+      event: Schema.Literals(["actor.preStop", "actor.postStop"]),
+      hookID: Schema.String,
+      pluginName: Schema.String,
+      actorID: Schema.String,
+      agentType: Schema.String,
+      durationMs: Schema.Number,
+      outcome: Schema.Literals(["success", "error", "skipped"]),
+      continueRequested: Schema.Boolean,
+      reasonLength: Schema.Number,
+    },
+  }),
+  ReActReentered: EventV2.define({
+    type: "hook.react.reentered",
+    schema: {
+      phase: Schema.Literals(["pre", "post"]),
+      actorID: Schema.String,
+      agentType: Schema.String,
+      iteration: Schema.Number,
+      triggeredByPlugins: Schema.Array(Schema.String),
+      reasonPreview: Schema.String,
+    },
+  }),
+  ReActMaxReached: EventV2.define({
+    type: "hook.react.max_reached",
+    schema: {
+      phase: Schema.Literals(["pre", "post"]),
+      actorID: Schema.String,
+      agentType: Schema.String,
+    },
+  }),
+} as const
+
+type HookEntry = {
+  hook: Hooks
+  pluginName: string
+  hookIDFor: (eventName: string) => string
+}
 
 type State = {
   hooks: Hooks[]
+  hooksWithMeta: HookEntry[]
+}
+
+export type ActorStopAggregatedDecision = ActorStopOutput & {
+  contributingPluginNames: string[]
+  contributingHookIDs: string[]
 }
 
 // Hook names that follow the (input, output) => Promise<void> trigger pattern
@@ -50,6 +107,12 @@ export interface Interface {
   ) => Effect.Effect<Output>
   readonly list: () => Effect.Effect<Hooks[]>
   readonly init: () => Effect.Effect<void>
+  readonly triggerActorPreStop: (
+    input: ActorPreStopInput,
+  ) => Effect.Effect<ActorStopAggregatedDecision>
+  readonly triggerActorPostStop: (
+    input: ActorPostStopInput,
+  ) => Effect.Effect<ActorStopAggregatedDecision>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@swust-code/Plugin") {}
@@ -72,6 +135,8 @@ function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
     AzureAuthPlugin,
     DigitalOceanAuthPlugin,
     XaiAuthPlugin,
+    CheckpointSplitoverPlugin,
+    SubagentProgressCheckerPlugin,
   ]
 }
 
@@ -101,16 +166,36 @@ function getLegacyPlugins(mod: Record<string, unknown>) {
   return result
 }
 
-async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks: Hooks[]) {
+async function applyPlugin(
+  load: PluginLoader.Loaded,
+  input: PluginInput,
+  hooks: Hooks[],
+  hooksWithMeta: HookEntry[],
+) {
   const plugin = readV1Plugin(load.mod, load.spec, "server", "detect")
   if (plugin) {
     await resolvePluginId(load.source, load.spec, load.target, readPluginId(plugin.id, load.spec), load.pkg)
-    hooks.push(await (plugin as PluginModule).server(input, load.options))
+    const pluginName = readPluginId(plugin.id, load.spec) ?? load.pkg?.pkg ?? load.spec
+    const hookObj = await (plugin as PluginModule).server(input, load.options)
+    hooks.push(hookObj)
+    hooksWithMeta.push({
+      hook: hookObj,
+      pluginName,
+      hookIDFor: (event: string) => `${pluginName}#${event}`,
+    })
     return
   }
 
   for (const server of getLegacyPlugins(load.mod)) {
-    hooks.push(await server(input, load.options))
+    const fnName = (server as { name?: string }).name
+    const pluginName = fnName && fnName !== "default" && fnName !== "" ? fnName : (load.pkg?.pkg ?? load.spec)
+    const hookObj = await server(input, load.options)
+    hooks.push(hookObj)
+    hooksWithMeta.push({
+      hook: hookObj,
+      pluginName,
+      hookIDFor: (event: string) => `${pluginName}#${event}`,
+    })
   }
 }
 
@@ -124,6 +209,7 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make<State>(
       Effect.fn("Plugin.state")(function* (ctx) {
         const hooks: Hooks[] = []
+        const hooksWithMeta: HookEntry[] = []
         const bridge = yield* EffectBridge.make()
 
         function publishPluginError(message: string) {
@@ -164,7 +250,14 @@ export const layer = Layer.effect(
             Effect.tapError((error) => Effect.logError("failed to load internal plugin", { name: plugin.name, error })),
             Effect.option,
           )
-          if (init._tag === "Some") hooks.push(init.value)
+          if (init._tag === "Some") {
+            hooks.push(init.value)
+            hooksWithMeta.push({
+              hook: init.value,
+              pluginName: plugin.name,
+              hookIDFor: (event: string) => `${plugin.name}#${event}`,
+            })
+          }
         }
 
         const plugins = flags.pure ? [] : (cfg.plugin_origins ?? [])
@@ -211,7 +304,7 @@ export const layer = Layer.effect(
           // Keep plugin execution sequential so hook registration and execution
           // order remains deterministic across plugin runs.
           yield* Effect.tryPromise({
-            try: () => applyPlugin(load, input, hooks),
+            try: () => applyPlugin(load, input, hooks, hooksWithMeta),
             catch: (err) => {
               const message = errorMessage(err)
               return message
@@ -266,9 +359,109 @@ export const layer = Layer.effect(
           ),
         )
 
-        return { hooks }
+        return { hooks, hooksWithMeta }
       }),
     )
+
+    const aggregateDecision = (
+      input: ActorPreStopInput | ActorPostStopInput,
+      eventName: "actor.preStop" | "actor.postStop",
+    ) =>
+      Effect.gen(function* () {
+        const s = yield* InstanceState.get(state)
+        const reasons: string[] = []
+        const pluginNames: string[] = []
+        const hookIDs: string[] = []
+        let anyContinue = false
+
+        for (const entry of s.hooksWithMeta) {
+          const reg = entry.hook[eventName]
+          if (!reg) continue
+
+          const fn = typeof reg === "function" ? reg : reg.run
+          const matcher: ActorMatcher | undefined = typeof reg === "function" ? undefined : reg.matcher
+          if (!matchesActor(matcher, input)) {
+            yield* events.publish(HookEvent.Executed, {
+              event: eventName,
+              hookID: entry.hookIDFor(eventName),
+              pluginName: entry.pluginName,
+              actorID: input.actorID,
+              agentType: input.agentType,
+              durationMs: 0,
+              outcome: "skipped",
+              continueRequested: false,
+              reasonLength: 0,
+            })
+            continue
+          }
+
+          const startedAt = Date.now()
+          const output: ActorStopOutput = { continue: false }
+          let hookOutcome: "success" | "error" = "success"
+          yield* Effect.tryPromise({
+            try: () => fn(input as never, output),
+            catch: (err) => err,
+          }).pipe(
+            Effect.tapError((err) =>
+              Effect.gen(function* () {
+                hookOutcome = "error"
+                yield* Effect.logError(`${eventName} hook failed`, {
+                  pluginName: entry.pluginName,
+                  hookID: entry.hookIDFor(eventName),
+                  error: err,
+                })
+                yield* events.publish(Session.Event.Error, {
+                  sessionID: SessionID.make(input.sessionID),
+                  error: new NamedError.Unknown({
+                    message: `${eventName} hook (${entry.pluginName}) failed: ${errorMessage(err)}`,
+                  }).toObject(),
+                })
+              }),
+            ),
+            Effect.ignore,
+          )
+
+          yield* events.publish(HookEvent.Executed, {
+            event: eventName,
+            hookID: entry.hookIDFor(eventName),
+            pluginName: entry.pluginName,
+            actorID: input.actorID,
+            agentType: input.agentType,
+            durationMs: Date.now() - startedAt,
+            outcome: hookOutcome,
+            continueRequested: output.continue === true,
+            reasonLength: output.reason?.length ?? 0,
+          })
+
+          if (output.continue === true && output.reason && output.reason.length > 0) {
+            anyContinue = true
+            reasons.push(output.reason)
+            pluginNames.push(entry.pluginName)
+            hookIDs.push(entry.hookIDFor(eventName))
+            continue
+          }
+          if (output.continue === true) {
+            yield* Effect.logWarning(`${eventName} hook returned continue=true without reason; ignored`, {
+              pluginName: entry.pluginName,
+            })
+          }
+        }
+
+        return {
+          continue: anyContinue,
+          reason: reasons.length > 0 ? reasons.join("\n\n") : undefined,
+          contributingPluginNames: pluginNames,
+          contributingHookIDs: hookIDs,
+        } satisfies ActorStopAggregatedDecision
+      })
+
+    const triggerActorPreStop = Effect.fn("Plugin.triggerActorPreStop")(function* (input: ActorPreStopInput) {
+      return yield* aggregateDecision(input, "actor.preStop")
+    })
+
+    const triggerActorPostStop = Effect.fn("Plugin.triggerActorPostStop")(function* (input: ActorPostStopInput) {
+      return yield* aggregateDecision(input, "actor.postStop")
+    })
 
     const trigger = Effect.fn("Plugin.trigger")(function* <
       Name extends TriggerName,
@@ -294,7 +487,7 @@ export const layer = Layer.effect(
       yield* InstanceState.get(state)
     })
 
-    return Service.of({ trigger, list, init })
+    return Service.of({ trigger, list, init, triggerActorPreStop, triggerActorPostStop })
   }),
 )
 

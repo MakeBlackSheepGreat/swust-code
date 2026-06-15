@@ -1,6 +1,7 @@
 export * as GoalJudge from "./goal-judge"
 
 import { Context, Effect, Layer } from "effect"
+import { LLM, type Model } from "@swust-code/llm"
 import { Verdict } from "./goal"
 
 const JUDGE_SYSTEM = `You are an independent judge evaluating whether a coding task's goal has been met.
@@ -22,10 +23,11 @@ Output a JSON verdict with:
 - reason: brief explanation of what is still missing or why it's impossible`
 
 export interface Interface {
-  readonly evaluate: (
-    condition: string,
-    messages: ReadonlyArray<{ readonly role: string; readonly content: string }>,
-  ) => Effect.Effect<Verdict>
+  readonly evaluate: (input: {
+    readonly condition: string
+    readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>
+    readonly model: Model
+  }) => Effect.Effect<Verdict>
   readonly buildPrompt: (
     condition: string,
     messages: ReadonlyArray<{ readonly role: string; readonly content: string }>,
@@ -57,20 +59,28 @@ export const layer = Layer.effect(
       ].join("\n")
     }
 
-    const evaluate = (
-      condition: string,
-      messages: ReadonlyArray<{ readonly role: string; readonly content: string }>,
-    ): Effect.Effect<Verdict> =>
-      Effect.sync(() => {
-        // Default implementation: return "not satisfied" verdict
-        // The actual LLM call should be provided by the session runner
-        // which has access to the model configuration
-        return {
-          ok: false,
-          impossible: false,
-          reason: "Goal judge requires LLM integration - defaulting to continue",
-        } as Verdict
-      })
+    const evaluate = Effect.fn("GoalJudge.evaluate")(function* (input: {
+      readonly condition: string
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>
+      readonly model: Model
+    }) {
+      return yield* LLM.generateObject({
+        model: input.model,
+        system: JUDGE_SYSTEM,
+        prompt: buildPrompt(input.condition, input.messages),
+        schema: Verdict,
+        generation: { temperature: 0, maxTokens: 500 },
+      }).pipe(
+        Effect.map((result) => result.object),
+        Effect.catch(() =>
+          Effect.succeed({
+            ok: false,
+            impossible: false,
+            reason: "Goal judge could not evaluate the transcript; continue until stronger evidence is available.",
+          } satisfies Verdict),
+        ),
+      )
+    })
 
     return Service.of({ evaluate, buildPrompt })
   }),

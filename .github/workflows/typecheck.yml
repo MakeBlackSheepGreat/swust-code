@@ -2,9 +2,9 @@ name: typecheck
 
 on:
   push:
-    branches: [main]
+    branches: [dev, main]
   pull_request:
-    branches: [main]
+    branches: [dev, main]
   workflow_dispatch:
 
 jobs:
@@ -16,6 +16,9 @@ jobs:
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
+
+      - name: Run lint
+        run: bun lint
 
       - name: Run typecheck
         run: bun typecheck

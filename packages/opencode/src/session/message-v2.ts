@@ -8,6 +8,7 @@ import {
   Assistant,
   AuthError,
   CompactionPart,
+  CheckpointPart,
   ContextOverflowError,
   Info,
   OutputLengthError,
@@ -93,6 +94,7 @@ const info = (row: typeof MessageTable.$inferSelect) =>
     ...row.data,
     id: row.id,
     sessionID: row.session_id,
+    agentID: row.agent_id,
   }) as Info
 
 const part = (row: typeof PartTable.$inferSelect) =>
@@ -240,6 +242,12 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           userMessage.parts.push({
             type: "text",
             text: "What did we do so far?",
+          })
+        }
+        if (part.type === "checkpoint") {
+          userMessage.parts.push({
+            type: "text",
+            text: "Summary of previous conversation from checkpoint files:",
           })
         }
         if (part.type === "subtask") {
@@ -437,12 +445,15 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   sessionID: SessionID
   limit: number
   before?: string
+  agentID?: string
 }) {
   const { db } = yield* Database.Service
   const before = input.before ? cursor.decode(input.before) : undefined
-  const where = before
+  const base = before
     ? and(eq(MessageTable.session_id, input.sessionID), older(before))
     : eq(MessageTable.session_id, input.sessionID)
+  const agent = input.agentID === "*" ? undefined : eq(MessageTable.agent_id, input.agentID ?? "main")
+  const where = agent ? and(base, agent) : base
   const rows = yield* db
     .select()
     .from(MessageTable)
@@ -477,13 +488,13 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   }
 })
 
-export function stream(sessionID: SessionID) {
+export function stream(sessionID: SessionID, options?: { agentID?: string }) {
   const size = 50
   return Effect.gen(function* () {
     const result = [] as WithParts[]
     let before: string | undefined
     while (true) {
-      const next = yield* page({ sessionID, limit: size, before }).pipe(
+      const next = yield* page({ sessionID, limit: size, before, agentID: options?.agentID }).pipe(
         Effect.catchIf(NotFoundError.isInstance, () =>
           Effect.succeed({ items: [] as WithParts[], more: false, cursor: undefined }),
         ),
@@ -539,6 +550,8 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
       if (msg.info.id === retain) break
       continue
     }
+    if (msg.info.role === "user" && msg.parts.some((item): item is CheckpointPart => item.type === "checkpoint"))
+      break
     if (msg.info.role === "user" && completed.has(msg.info.id)) {
       const part = msg.parts.find((item): item is CompactionPart => item.type === "compaction")
       if (!part) continue
@@ -582,8 +595,11 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
   return result
 }
 
-export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID) {
-  return filterCompacted(yield* stream(sessionID))
+export const filterCompactedEffect = Effect.fnUntraced(function* (
+  sessionID: SessionID,
+  options?: { agentID?: string },
+) {
+  return filterCompacted(yield* stream(sessionID, options))
 })
 
 // filterCompacted reorders messages for model consumption

@@ -83,6 +83,33 @@ const addUser = Effect.fn("Test.addUser")(function* (sessionID: SessionID, text?
   return id
 })
 
+const addUserForAgent = Effect.fn("Test.addUserForAgent")(function* (
+  sessionID: SessionID,
+  agentID: string,
+  text: string,
+) {
+  const session = yield* SessionNs.Service
+  const id = MessageID.ascending()
+  yield* session.updateMessage({
+    id,
+    sessionID,
+    agentID,
+    role: "user",
+    time: { created: Date.now() },
+    agent: "test",
+    model: { providerID: "test", modelID: "test" },
+    tools: {},
+  } as unknown as SessionV1.Info)
+  yield* session.updatePart({
+    id: PartID.ascending(),
+    sessionID,
+    messageID: id,
+    type: "text",
+    text,
+  })
+  return id
+})
+
 const addAssistant = Effect.fn("Test.addAssistant")(function* (
   sessionID: SessionID,
   parentID: MessageID,
@@ -135,6 +162,26 @@ describe("MessageV2.page", () => {
         const result = yield* MessageV2.page({ sessionID, limit: 10 })
         expect(result).toBeDefined()
         expect(result.items).toBeArray()
+      }),
+    ),
+  )
+
+  it.instance("filters messages by agent slice", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const main = yield* addUserForAgent(sessionID, "main", "main")
+        const actor = yield* addUserForAgent(sessionID, "actor-a-1", "actor")
+
+        const defaultPage = yield* MessageV2.page({ sessionID, limit: 10 })
+        expect(defaultPage.items.map((item) => item.info.id)).toEqual([main])
+        expect(defaultPage.items.map((item) => item.info.agentID)).toEqual(["main"])
+
+        const actorPage = yield* MessageV2.page({ sessionID, limit: 10, agentID: "actor-a-1" })
+        expect(actorPage.items.map((item) => item.info.id)).toEqual([actor])
+        expect(actorPage.items.map((item) => item.info.agentID)).toEqual(["actor-a-1"])
+
+        const all = yield* session.messages({ sessionID, agentID: "*" })
+        expect(all.map((item) => item.info.id)).toEqual([main, actor])
       }),
     ),
   )

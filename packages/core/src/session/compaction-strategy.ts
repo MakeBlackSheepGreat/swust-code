@@ -9,7 +9,8 @@
  * Ported from MiMo-Code's checkpoint.ts patterns.
  */
 
-import { roughTokenCount as estimateTokens } from "./token-estimation"
+import { roughTokenCount } from "./token-estimation"
+export { roughTokenCount as estimateTokens } from "./token-estimation"
 
 import {
   TAIL_MIN_TOKENS,
@@ -65,7 +66,7 @@ export function computeBoundary(messages: ReadonlyArray<Message>): BoundaryResul
   let tailTokens = 0
   let tailMessages = 0
   for (let i = boundary; i < messages.length; i++) {
-    tailTokens += estimateTokens(messages[i].content)
+    tailTokens += roughTokenCount(messages[i].content)
     if (messages[i].role !== "tool") tailMessages++
   }
 
@@ -81,7 +82,7 @@ export function computeBoundary(messages: ReadonlyArray<Message>): BoundaryResul
     tailTokens < TAIL_MAX_TOKENS
   ) {
     boundary--
-    tailTokens += estimateTokens(messages[boundary].content)
+    tailTokens += roughTokenCount(messages[boundary].content)
     if (messages[boundary].role !== "tool") tailMessages++
   }
 

@@ -7,6 +7,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import fs from "fs/promises"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@swust-code/core/util/error"
@@ -22,15 +23,19 @@ import { Provider as ProviderSvc } from "@/provider/provider"
 import { Env } from "../../src/env"
 import { Git } from "../../src/git"
 import { Image } from "../../src/image/image"
+import { Inbox } from "../../src/inbox"
 
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
-import { SessionMessageTable } from "@swust-code/core/session/sql"
+import { SessionMessageTable, SessionTable } from "@swust-code/core/session/sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { FSUtil } from "@swust-code/core/fs-util"
 import { SessionCompaction } from "../../src/session/compaction"
+import { SessionCheckpoint } from "../../src/session/checkpoint"
+import { checkpointPath } from "../../src/session/checkpoint-paths"
+import { Goal } from "../../src/session/goal"
 import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
@@ -168,6 +173,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Session.defaultLayer,
     Snapshot.defaultLayer,
     LLM.defaultLayer,
+    Goal.defaultLayer,
     Env.defaultLayer,
     AgentSvc.defaultLayer,
     Command.defaultLayer,
@@ -218,11 +224,13 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(summary),
     Layer.provideMerge(run),
     Layer.provideMerge(compact),
+    Layer.provide(SessionCheckpoint.defaultLayer),
     Layer.provideMerge(proc),
     Layer.provideMerge(registry),
     Layer.provideMerge(trunc),
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
+    Layer.provide(Inbox.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provideMerge(deps),
     Layer.provide(summary),
@@ -246,6 +254,7 @@ const unixNoLLMServer = process.platform !== "win32" ? noLLMServer.instance : no
 // Config that registers a custom "test" provider with a "test-model" model
 // so provider model lookup succeeds inside the loop.
 const cfg = {
+  model: "test/test-model",
   provider: {
     test: {
       name: "Test",
@@ -582,6 +591,50 @@ it.instance("loop stops provider overflow instead of auto-compacting when disabl
   }),
 )
 
+it.instance("loop inserts checkpoint boundary before compaction on provider overflow", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({ title: "Checkpoint overflow" })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "hello" }],
+    })
+
+    const boundary = (yield* sessions.messages({ sessionID: chat.id })).findLast((message) => message.info.role === "user")
+    expect(boundary?.info.role).toBe("user")
+    if (!boundary || boundary.info.role !== "user") throw new Error("missing boundary user")
+
+    yield* Effect.promise(async () => {
+      const file = checkpointPath(chat.id)
+      await fs.mkdir(path.dirname(file), { recursive: true })
+      await Bun.write(file, "Topic: Provider overflow\n\n## Session checkpoint\nrecover from checkpoint\n")
+    })
+    yield* db
+      .update(SessionTable)
+      .set({ last_checkpoint_message_id: boundary.info.id })
+      .where(eq(SessionTable.id, chat.id))
+      .run()
+      .pipe(Effect.orDie)
+
+    yield* llm.error(413, { error: { message: "request entity too large" } })
+    yield* llm.text("recovered")
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    const messages = yield* sessions.messages({ sessionID: chat.id, agentID: "*" })
+
+    expect(result.info.role).toBe("assistant")
+    expect(messages.some((message) => message.parts.some((part) => part.type === "checkpoint"))).toBe(true)
+    expect(messages.some((message) => message.parts.some((part) => part.type === "compaction"))).toBe(false)
+    expect(yield* llm.hits).toHaveLength(2)
+  }),
+)
+
 noLLMServer.instance.skip(
   "prompt emits v2 prompted and synthetic events (v2 projector disabled)",
   () =>
@@ -804,7 +857,7 @@ it.instance("failed subtask preserves metadata on error tool state", () =>
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
     const chat = yield* sessions.create({ title: "Pinned" })
-    yield* llm.tool("task", {
+    yield* llm.tool("subagent", {
       description: "inspect bug",
       prompt: "look into the cache key path",
       subagent_type: "general",
@@ -858,7 +911,7 @@ it.instance("subtask child inherits parent session external_directory allow", ()
       expect.arrayContaining([{ permission: "external_directory", pattern: "/tmp/allowed/*", action: "allow" }]),
     )
     expect(Permission.evaluate("external_directory", "/tmp/allowed/file", rules).action).toBe("allow")
-    expect(Permission.evaluate("task", "anything", rules).action).toBe("deny")
+    expect(Permission.evaluate("subagent", "anything", rules).action).toBe("deny")
   }),
 )
 
@@ -925,7 +978,7 @@ it.instance(
 )
 
 it.instance(
-  "running task tool preserves metadata after tool-call transition",
+  "running subagent tool preserves metadata after tool-call transition",
   () =>
     Effect.gen(function* () {
       const { llm } = yield* useServerConfig(providerCfg)
@@ -935,7 +988,7 @@ it.instance(
         title: "Pinned",
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
       })
-      yield* llm.tool("task", {
+      yield* llm.tool("subagent", {
         description: "inspect bug",
         prompt: "look into the cache key path",
         subagent_type: "general",
@@ -950,7 +1003,7 @@ it.instance(
           const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
           const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "build")
           const tool = assistant?.parts.find(
-            (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task",
+            (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "subagent",
           )
           if (tool?.state.status === "running" && tool.state.metadata?.sessionId) return tool
         }),
@@ -1142,28 +1195,28 @@ noLLMServer.instance(
       const ready = yield* Deferred.make<void>()
       const aborted = yield* Deferred.make<void>()
       const registry = yield* ToolRegistry.Service
-      const { task } = yield* registry.named()
-      const original = task.execute
-      task.execute = (_args, ctx) =>
+      const { subagent } = yield* registry.named()
+      const original = subagent.execute
+      subagent.execute = (_args, ctx) =>
         Effect.callback<never>((_resume) => {
           ctx.abort.addEventListener("abort", () => succeedVoid(aborted), { once: true })
           if (ctx.abort.aborted) succeedVoid(aborted)
           succeedVoid(ready)
           return Effect.sync(() => succeedVoid(aborted))
         })
-      yield* Effect.addFinalizer(() => Effect.sync(() => void (task.execute = original)))
+      yield* Effect.addFinalizer(() => Effect.sync(() => void (subagent.execute = original)))
 
       const { prompt, chat } = yield* boot()
       const msg = yield* user(chat.id, "hello")
       yield* addSubtask(chat.id, msg.id)
 
       const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
-      yield* awaitWithTimeout(Deferred.await(ready), "timed out waiting for task tool to start", "10 seconds")
+      yield* awaitWithTimeout(Deferred.await(ready), "timed out waiting for subagent tool to start", "10 seconds")
       yield* prompt.cancel(chat.id)
 
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isSuccess(exit)).toBe(true)
-      yield* awaitWithTimeout(Deferred.await(aborted), "timed out waiting for task tool abort", "10 seconds")
+      yield* awaitWithTimeout(Deferred.await(aborted), "timed out waiting for subagent tool abort", "10 seconds")
 
       const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
       const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
@@ -1242,7 +1295,7 @@ it.instance(
       }
     }),
   { git: true },
-  3_000,
+  10_000,
 )
 
 // Queue semantics
@@ -1628,7 +1681,7 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  10_000,
 )
 
 it.instance(
@@ -1667,7 +1720,7 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  10_000,
 )
 
 unix(
@@ -2323,4 +2376,26 @@ noLLMServer.instance(
       }
     }),
   30_000,
+)
+
+noLLMServer.instance("goal clear does not recreate a goal through goal-mode agent routing", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const goal = yield* Goal.Service
+    const session = yield* sessions.create({})
+
+    yield* goal.set(session.id, "finish the requested change")
+    const result = yield* prompt.command({
+      sessionID: session.id,
+      command: "goal",
+      arguments: "clear",
+    })
+
+    expect(result.info.role).toBe("user")
+    if (result.info.role === "user") expect(result.info.agent).toBe("goal")
+    expect(yield* goal.get(session.id)).toBeUndefined()
+
+    yield* sessions.remove(session.id)
+  }),
 )

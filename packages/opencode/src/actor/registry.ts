@@ -1,14 +1,15 @@
 /**
- * Actor Registry - persistent lifecycle tracking for subagents.
+ * Actor Registry - MiMo-compatible lifecycle tracking for actors.
  *
- * Tracks actor status (pending/running/idle/cancelled/failed),
- * provides orphan recovery on restart, and stuck detection.
- *
- * Ported from MiMo-Code's actor/registry.ts patterns.
+ * Actor rows are persisted in SQLite so actor status, wait/cancel lookup, and
+ * inbox receiver validation survive process restarts.
  */
 
+import { and, asc, eq, or, sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
-import { Global } from "@swust-code/core/global"
+import { Database } from "@swust-code/core/database/database"
+import { LayerNode } from "@swust-code/core/effect/layer-node"
+import { ActorRegistryTable, type ActorRegistryRow } from "./actor.sql"
 
 export type ActorStatus = "pending" | "running" | "idle" | "cancelled" | "failed"
 export type ActorMode = "peer" | "subagent"
@@ -35,7 +36,13 @@ export interface Actor {
 
 export interface Interface {
   readonly register: (actor: Omit<Actor, "turnCount" | "lastTurnTime" | "timeCreated">) => Effect.Effect<void>
-  readonly updateStatus: (sessionID: string, actorID: string, status: ActorStatus, outcome?: ActorOutcome, error?: string) => Effect.Effect<void>
+  readonly updateStatus: (
+    sessionID: string,
+    actorID: string,
+    status: ActorStatus,
+    outcome?: ActorOutcome,
+    error?: string,
+  ) => Effect.Effect<void>
   readonly updateTurn: (sessionID: string, actorID: string) => Effect.Effect<void>
   readonly get: (sessionID: string, actorID: string) => Effect.Effect<Actor | undefined>
   readonly listBySession: (sessionID: string) => Effect.Effect<ReadonlyArray<Actor>>
@@ -47,104 +54,198 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@swust-code/ActorRegistry") {}
 
-const STUCK_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
+function fromRow(row: ActorRegistryRow): Actor {
+  return {
+    sessionID: row.session_id,
+    actorID: row.actor_id,
+    mode: row.mode,
+    ...(row.parent_actor_id ? { parentActorID: row.parent_actor_id } : {}),
+    status: row.status,
+    ...(row.last_outcome ? { lastOutcome: row.last_outcome } : {}),
+    lifecycle: row.lifecycle,
+    agent: row.agent,
+    ...(row.description ? { description: row.description } : {}),
+    background: row.background,
+    turnCount: row.turn_count,
+    lastTurnTime: row.last_turn_time,
+    ...(row.last_error ? { lastError: row.last_error } : {}),
+    timeCreated: row.time_created,
+    ...(row.time_completed ? { timeCompleted: row.time_completed } : {}),
+  }
+}
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const actors = new Map<string, Actor>()
+    const { db } = yield* Database.Service
 
-    const key = (sessionID: string, actorID: string) => `${sessionID}:${actorID}`
-
-    const register = (actor: Omit<Actor, "turnCount" | "lastTurnTime" | "timeCreated">): Effect.Effect<void> =>
-      Effect.sync(() => {
-        actors.set(key(actor.sessionID, actor.actorID), {
-          ...actor,
-          turnCount: 0,
-          lastTurnTime: Date.now(),
-          timeCreated: Date.now(),
+    const register = Effect.fn("ActorRegistry.register")(function* (
+      actor: Omit<Actor, "turnCount" | "lastTurnTime" | "timeCreated">,
+    ) {
+      const now = Date.now()
+      yield* db
+        .delete(ActorRegistryTable)
+        .where(and(eq(ActorRegistryTable.session_id, actor.sessionID), eq(ActorRegistryTable.actor_id, actor.actorID)))
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(ActorRegistryTable)
+        .values({
+          session_id: actor.sessionID,
+          actor_id: actor.actorID,
+          mode: actor.mode,
+          parent_actor_id: actor.parentActorID ?? null,
+          status: actor.status,
+          last_outcome: actor.lastOutcome ?? null,
+          lifecycle: actor.lifecycle,
+          agent: actor.agent,
+          description: actor.description ?? null,
+          background: actor.background,
+          last_turn_time: now,
+          turn_count: 0,
+          last_error: actor.lastError ?? null,
+          time_created: now,
+          time_updated: now,
+          time_completed: actor.timeCompleted ?? null,
         })
-      })
+        .run()
+        .pipe(Effect.orDie)
+    })
 
-    const updateStatus = (
+    const updateStatus = Effect.fn("ActorRegistry.updateStatus")(function* (
       sessionID: string,
       actorID: string,
       status: ActorStatus,
       outcome?: ActorOutcome,
       error?: string,
-    ): Effect.Effect<void> =>
-      Effect.sync(() => {
-        const existing = actors.get(key(sessionID, actorID))
-        if (!existing) return
-        actors.set(key(sessionID, actorID), {
-          ...existing,
+    ) {
+      const now = Date.now()
+      const terminal = status === "idle" || status === "failed" || status === "cancelled"
+      yield* db
+        .update(ActorRegistryTable)
+        .set({
           status,
-          lastOutcome: outcome ?? existing.lastOutcome,
-          lastError: error ?? existing.lastError,
-          timeCompleted: status === "idle" || status === "failed" || status === "cancelled"
-            ? Date.now()
-            : existing.timeCompleted,
+          time_updated: now,
+          ...(terminal ? { time_completed: now } : {}),
+          ...(outcome !== undefined ? { last_outcome: outcome } : {}),
+          ...(error !== undefined
+            ? { last_error: error }
+            : outcome !== undefined && outcome !== "failure"
+              ? { last_error: null }
+              : {}),
         })
-      })
+        .where(and(eq(ActorRegistryTable.session_id, sessionID), eq(ActorRegistryTable.actor_id, actorID)))
+        .run()
+        .pipe(Effect.orDie)
+    })
 
-    const updateTurn = (sessionID: string, actorID: string): Effect.Effect<void> =>
-      Effect.sync(() => {
-        const existing = actors.get(key(sessionID, actorID))
-        if (!existing) return
-        actors.set(key(sessionID, actorID), {
-          ...existing,
-          turnCount: existing.turnCount + 1,
-          lastTurnTime: Date.now(),
+    const updateTurn = Effect.fn("ActorRegistry.updateTurn")(function* (sessionID: string, actorID: string) {
+      const now = Date.now()
+      yield* db
+        .update(ActorRegistryTable)
+        .set({
+          last_turn_time: now,
+          turn_count: sql`${ActorRegistryTable.turn_count} + 1`,
+          time_updated: now,
         })
-      })
+        .where(and(eq(ActorRegistryTable.session_id, sessionID), eq(ActorRegistryTable.actor_id, actorID)))
+        .run()
+        .pipe(Effect.orDie)
+    })
 
-    const get = (sessionID: string, actorID: string): Effect.Effect<Actor | undefined> =>
-      Effect.sync(() => actors.get(key(sessionID, actorID)))
+    const get = Effect.fn("ActorRegistry.get")(function* (sessionID: string, actorID: string) {
+      const row = yield* db
+        .select()
+        .from(ActorRegistryTable)
+        .where(and(eq(ActorRegistryTable.session_id, sessionID), eq(ActorRegistryTable.actor_id, actorID)))
+        .get()
+        .pipe(Effect.orDie)
+      return row ? fromRow(row) : undefined
+    })
 
-    const listBySession = (sessionID: string): Effect.Effect<ReadonlyArray<Actor>> =>
-      Effect.sync(() => [...actors.values()].filter((a) => a.sessionID === sessionID))
+    const listBySession = Effect.fn("ActorRegistry.listBySession")(function* (sessionID: string) {
+      const rows = yield* db
+        .select()
+        .from(ActorRegistryTable)
+        .where(eq(ActorRegistryTable.session_id, sessionID))
+        .orderBy(asc(ActorRegistryTable.actor_id))
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map(fromRow)
+    })
 
-    const listActive = (): Effect.Effect<ReadonlyArray<Actor>> =>
-      Effect.sync(() =>
-        [...actors.values()].filter(
-          (a) => (a.status === "pending" || a.status === "running") && a.background,
-        ),
-      )
-
-    const listByParent = (sessionID: string, parentActorID: string): Effect.Effect<ReadonlyArray<Actor>> =>
-      Effect.sync(() =>
-        [...actors.values()].filter(
-          (a) => a.sessionID === sessionID && a.parentActorID === parentActorID,
-        ),
-      )
-
-    const allocateActorID = (sessionID: string, agentType: string): Effect.Effect<string> =>
-      Effect.sync(() => {
-        const existing = [...actors.values()]
-          .filter((a) => a.sessionID === sessionID && a.agent === agentType)
-          .map((a) => a.actorID)
-        let counter = 1
-        while (existing.includes(`${agentType}-${counter}`)) counter++
-        return `${agentType}-${counter}`
-      })
-
-    const renderForAgent = (sessionID: string): Effect.Effect<string> =>
-      Effect.sync(() => {
-        const active = [...actors.values()].filter(
-          (a) => a.sessionID === sessionID && (a.status === "pending" || a.status === "running"),
+    const listActive = Effect.fn("ActorRegistry.listActive")(function* () {
+      const rows = yield* db
+        .select()
+        .from(ActorRegistryTable)
+        .where(
+          and(
+            or(eq(ActorRegistryTable.status, "pending"), eq(ActorRegistryTable.status, "running")),
+            eq(ActorRegistryTable.background, true),
+          ),
         )
-        if (active.length === 0) return ""
-        const lines = ["## Active Background Agents\n"]
-        for (const a of active) {
-          const idle = Date.now() - a.lastTurnTime
-          const idleStr = idle > 60_000 ? ` (idle ${Math.round(idle / 60_000)}m)` : ""
-          lines.push(`- **${a.actorID}** [${a.agent}]${idleStr}: ${a.description ?? "working"}`)
-        }
-        return lines.join("\n")
-      })
+        .orderBy(asc(ActorRegistryTable.last_turn_time))
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map(fromRow)
+    })
 
-    return Service.of({ register, updateStatus, updateTurn, get, listBySession, listActive, listByParent, allocateActorID, renderForAgent })
+    const listByParent = Effect.fn("ActorRegistry.listByParent")(function* (sessionID: string, parentActorID: string) {
+      const rows = yield* db
+        .select()
+        .from(ActorRegistryTable)
+        .where(
+          and(eq(ActorRegistryTable.session_id, sessionID), eq(ActorRegistryTable.parent_actor_id, parentActorID)),
+        )
+        .orderBy(asc(ActorRegistryTable.actor_id))
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map(fromRow)
+    })
+
+    const allocateActorID = Effect.fn("ActorRegistry.allocateActorID")(function* (sessionID: string, agentType: string) {
+      const rows = yield* db
+        .select({ actorID: ActorRegistryTable.actor_id })
+        .from(ActorRegistryTable)
+        .where(and(eq(ActorRegistryTable.session_id, sessionID), eq(ActorRegistryTable.agent, agentType)))
+        .all()
+        .pipe(Effect.orDie)
+      const existing = new Set(rows.map((row) => row.actorID))
+      let counter = 1
+      while (existing.has(`${agentType}-${counter}`)) counter++
+      return `${agentType}-${counter}`
+    })
+
+    const renderForAgent = Effect.fn("ActorRegistry.renderForAgent")(function* (sessionID: string) {
+      const active = yield* listBySession(sessionID).pipe(
+        Effect.map((actors) => actors.filter((actor) => actor.status === "pending" || actor.status === "running")),
+      )
+      if (active.length === 0) return ""
+      const lines = ["## Active Background Agents\n"]
+      for (const actor of active) {
+        const idle = Date.now() - actor.lastTurnTime
+        const idleStr = idle > 60_000 ? ` (idle ${Math.round(idle / 60_000)}m)` : ""
+        lines.push(`- **${actor.actorID}** [${actor.agent}]${idleStr}: ${actor.description ?? "working"}`)
+      }
+      return lines.join("\n")
+    })
+
+    return Service.of({
+      register,
+      updateStatus,
+      updateTurn,
+      get,
+      listBySession,
+      listActive,
+      listByParent,
+      allocateActorID,
+      renderForAgent,
+    })
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Global.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer))
+
+export const node = LayerNode.make(layer, [Database.node])
+
+export * as ActorRegistry from "./registry"

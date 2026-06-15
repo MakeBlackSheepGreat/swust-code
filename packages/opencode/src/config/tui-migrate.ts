@@ -27,8 +27,8 @@ interface MigrateInput {
  * skips only locations where a tui.json already exists.
  */
 export async function migrateTuiConfig(input: MigrateInput) {
-  const opencode = await opencodeFiles(input)
-  for (const file of opencode) {
+  const swustCode = await swustCodeFiles(input)
+  for (const file of swustCode) {
     const source = await Filesystem.readText(file).catch(() => undefined)
     if (!source) continue
     const errors: JsoncParseError[] = []
@@ -112,13 +112,13 @@ async function backupAndStripLegacy(file: string, source: string) {
     .catch(() => false)
 }
 
-async function opencodeFiles(input: { directories: string[]; cwd: string }) {
+async function swustCodeFiles(input: { directories: string[]; cwd: string }) {
   const files = [
-    ...ConfigPaths.fileInDirectory(Global.Path.config, "opencode"),
+    ...ConfigPaths.fileInDirectory(Global.Path.config, "swust-code"),
     ...(await Filesystem.findUp(["swust-code.json", "swust-code.jsonc"], input.cwd, undefined, { rootFirst: true })),
   ]
   for (const dir of unique(input.directories)) {
-    files.push(...ConfigPaths.fileInDirectory(dir, "opencode"))
+    files.push(...ConfigPaths.fileInDirectory(dir, "swust-code"))
   }
   if (Flag.SWUST_CODE_CONFIG) files.push(Flag.SWUST_CODE_CONFIG)
 

@@ -1,0 +1,53 @@
+Launch a subagent for complex multi-step tasks autonomously.
+
+Available subagent types are listed below this description; the registry appends them at request time per agent.
+
+# Script structure
+#   - Multi-line: one command per non-blank line, stop on first failure
+#   - "double" quotes preserve literal LF and process \" \\ escapes
+#   - 'single' quotes are verbatim
+#   - <<EOF heredoc body is fully verbatim (no escape, no $vars)
+#   - # starts a line comment to end-of-line (quoted # is literal text)
+#   - $vars are preserved as literal text (no expansion)
+
+# block until done, return the subagent's final message inline:
+    actor run <subagent_type> "<description>" "<prompt>" [--model <ref>] [--actor <id>] [--timeout <ms>] [--command <cmd>] [--context none|state|full] [--output-schema '<json>']
+    # bind it to one of your task tool tasks, e.g. T4:
+    actor run <subagent_type> "<description>" "<prompt>" --task <TID>
+
+# return actor_id immediately, run independently:
+    actor spawn <subagent_type> "<description>" "<prompt>" [--model <ref>] [--actor <id>] [--command <cmd>] [--context none|state|full] [--output-schema '<json>']
+    # bind it to one of your task tool tasks, e.g. T4:
+    actor spawn <subagent_type> "<description>" "<prompt>" --task <TID>
+
+# block on a previously-spawned actor's result:
+    actor wait <actor_id> [--timeout <ms>]
+
+# inspect / control:
+    actor status <actor_id>
+    actor cancel <actor_id>
+
+# deliver a message to another actor's inbox:
+    actor send <to_actor_id> "<content>" [--session <id>] [--type <t>]
+
+Examples:
+    actor run explore "Find error recovery" "Scan src/parser.ts for catch blocks. Return file:line."
+    actor run explore "Quick scan" "find catch blocks" --model lite
+    actor spawn general "Implement auth" "build the login flow" --task T1
+
+# any multi-line prompt:
+    actor run general "Type checker review" <<EOF
+    Read docs/spec.md section 3, then read src/types.ts.
+    Report missing implementations and coverage gaps.
+    Format: { missing_implementation: [...], coverage_gaps: [...] }.
+    EOF
+
+# parallel investigations:
+    actor spawn explore "Q1" "search for catch blocks"
+    actor spawn explore "Q2" "search for type narrowing"
+    actor spawn explore "Q3" "search for test fixtures"
+
+When to use what:
+    run    - single delegation where the result drives your next step
+    spawn  - fan-out for parallel work, or background work
+    wait   - pick up a previously-spawned actor's result on demand

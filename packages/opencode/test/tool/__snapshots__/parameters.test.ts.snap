@@ -315,7 +315,7 @@ exports[`tool parameters JSON Schema (wire shape) skill 1`] = `
 }
 `;
 
-exports[`tool parameters JSON Schema (wire shape) task 1`] = `
+exports[`tool parameters JSON Schema (wire shape) subagent 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
@@ -330,6 +330,14 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
     "description": {
       "description": "A short (3-5 words) description of the task",
       "type": "string",
+    },
+    "model": {
+      "description": "Optional model override for this subagent. Use provider/model for a provider override, or a model id to keep the parent provider.",
+      "type": "string",
+    },
+    "output_schema": {
+      "description": "Optional JSON schema that forces the subagent to return structured output.",
+      "type": "object",
     },
     "prompt": {
       "description": "The task for the agent to perform",
@@ -348,6 +356,272 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
     "description",
     "prompt",
     "subagent_type",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) task 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "operation": {
+      "anyOf": [
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "create",
+              ],
+              "type": "string",
+            },
+            "parent_id": {
+              "description": "Parent task id for sub-tasks.",
+              "type": "string",
+            },
+            "session_id": {
+              "description": "Session id to act on. Defaults to current session.",
+              "type": "string",
+            },
+            "summary": {
+              "description": "Task summary for a single task.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+            "summary",
+          ],
+          "type": "object",
+        },
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "list",
+              ],
+              "type": "string",
+            },
+            "include_archived": {
+              "description": "Include archived tasks. Default false.",
+              "type": "boolean",
+            },
+            "include_terminal": {
+              "description": "Include done/abandoned tasks. Default false.",
+              "type": "boolean",
+            },
+            "session_id": {
+              "description": "Session id to act on. Defaults to current session.",
+              "type": "string",
+            },
+            "status": {
+              "description": "Filter by status.",
+              "enum": [
+                "open",
+                "in_progress",
+                "blocked",
+                "done",
+                "abandoned",
+              ],
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+          ],
+          "type": "object",
+        },
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "get",
+              ],
+              "type": "string",
+            },
+            "id": {
+              "description": "Task id, e.g. T1 or T1.1.",
+              "type": "string",
+            },
+            "session_id": {
+              "description": "Session id to act on. Defaults to current session.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+            "id",
+          ],
+          "type": "object",
+        },
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "start",
+              ],
+              "type": "string",
+            },
+            "event_summary": {
+              "description": "Short note on starting.",
+              "type": "string",
+            },
+            "id": {
+              "description": "Task id, e.g. T1 or T1.1.",
+              "type": "string",
+            },
+            "session_id": {
+              "description": "Session id to act on. Defaults to current session.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+            "id",
+          ],
+          "type": "object",
+        },
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "block",
+              ],
+              "type": "string",
+            },
+            "event_summary": {
+              "description": "Short reason for blocking.",
+              "type": "string",
+            },
+            "id": {
+              "description": "Task id, e.g. T1 or T1.1.",
+              "type": "string",
+            },
+            "session_id": {
+              "description": "Session id to act on. Defaults to current session.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+            "id",
+          ],
+          "type": "object",
+        },
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "unblock",
+              ],
+              "type": "string",
+            },
+            "event_summary": {
+              "description": "Short reason for unblocking.",
+              "type": "string",
+            },
+            "id": {
+              "description": "Task id, e.g. T1 or T1.1.",
+              "type": "string",
+            },
+            "session_id": {
+              "description": "Session id to act on. Defaults to current session.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+            "id",
+          ],
+          "type": "object",
+        },
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "done",
+              ],
+              "type": "string",
+            },
+            "event_summary": {
+              "description": "Short summary of what was completed.",
+              "type": "string",
+            },
+            "id": {
+              "description": "Task id, e.g. T1 or T1.1.",
+              "type": "string",
+            },
+            "session_id": {
+              "description": "Session id to act on. Defaults to current session.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+            "id",
+          ],
+          "type": "object",
+        },
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "abandon",
+              ],
+              "type": "string",
+            },
+            "event_summary": {
+              "description": "Short reason for abandoning.",
+              "type": "string",
+            },
+            "id": {
+              "description": "Task id, e.g. T1 or T1.1.",
+              "type": "string",
+            },
+            "session_id": {
+              "description": "Session id to act on. Defaults to current session.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+            "id",
+          ],
+          "type": "object",
+        },
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "rename",
+              ],
+              "type": "string",
+            },
+            "id": {
+              "description": "Task id, e.g. T1 or T1.1.",
+              "type": "string",
+            },
+            "session_id": {
+              "description": "Session id to act on. Defaults to current session.",
+              "type": "string",
+            },
+            "summary": {
+              "description": "New task summary.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+            "id",
+            "summary",
+          ],
+          "type": "object",
+        },
+      ],
+    },
+  },
+  "required": [
+    "operation",
   ],
   "type": "object",
 }

@@ -20,6 +20,7 @@ import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
 import { Parameters as Shell } from "../../src/tool/shell"
 import { Parameters as Skill } from "../../src/tool/skill"
+import { Parameters as Subagent } from "../../src/tool/subagent"
 import { Parameters as Task } from "../../src/tool/task"
 import { Parameters as Todo } from "../../src/tool/todo"
 import { Parameters as WebFetch } from "../../src/tool/webfetch"
@@ -47,6 +48,7 @@ describe("tool parameters", () => {
     test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
     test("skill", () => expect(toJsonSchema(Skill)).toMatchSnapshot())
+    test("subagent", () => expect(toJsonSchema(Subagent)).toMatchSnapshot())
     test("task", () => expect(toJsonSchema(Task)).toMatchSnapshot())
     test("todo", () => expect(toJsonSchema(Todo)).toMatchSnapshot())
     test("webfetch", () => expect(toJsonSchema(WebFetch)).toMatchSnapshot())
@@ -237,17 +239,17 @@ describe("tool parameters", () => {
     })
   })
 
-  describe("task", () => {
+  describe("subagent", () => {
     test("accepts description + prompt + subagent_type", () => {
-      const parsed = parse(Task, { description: "d", prompt: "p", subagent_type: "general" })
+      const parsed = parse(Subagent, { description: "d", prompt: "p", subagent_type: "general" })
       expect(parsed.subagent_type).toBe("general")
     })
     test("accepts optional background flag", () => {
-      const parsed = parse(Task, { description: "d", prompt: "p", subagent_type: "general", background: true })
+      const parsed = parse(Subagent, { description: "d", prompt: "p", subagent_type: "general", background: true })
       expect(parsed.background).toBe(true)
     })
     test("rejects missing prompt", () => {
-      expect(accepts(Task, { description: "d", subagent_type: "general" })).toBe(false)
+      expect(accepts(Subagent, { description: "d", subagent_type: "general" })).toBe(false)
     })
   })
 
