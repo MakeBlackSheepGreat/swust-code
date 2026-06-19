@@ -24,7 +24,7 @@ import nightowl from "./theme/nightowl.json" with { type: "json" }
 import nord from "./theme/nord.json" with { type: "json" }
 import osakaJade from "./theme/osaka-jade.json" with { type: "json" }
 import onedark from "./theme/one-dark.json" with { type: "json" }
-import swust-code from "./theme/swust-code.json" with { type: "json" }
+import swustCode from "./theme/swust-code.json" with { type: "json" }
 import mimocode from "./theme/mimocode.json" with { type: "json" }
 import orng from "./theme/orng.json" with { type: "json" }
 import lucentOrng from "./theme/lucent-orng.json" with { type: "json" }
@@ -87,9 +87,9 @@ export type ThemeJson = {
 }
 
 const PLAIN_TERMINAL_THEME: ThemeJson = {
-  ...swust-code,
+  ...swustCode,
   theme: {
-    ...swust-code.theme,
+    ...swustCode.theme,
     text: {
       dark: "darkStep12",
       light: "lightStep12",
@@ -143,7 +143,7 @@ export const DEFAULT_THEMES: Record<string, ThemeJson> = {
   nord,
   ["one-dark"]: onedark,
   ["osaka-jade"]: osakaJade,
-  swust-code,
+  ["swust-code"]: swustCode,
   mimocode,
   orng,
   ["lucent-orng"]: lucentOrng,
@@ -479,7 +479,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         if (theme) return resolveTheme(theme, store.mode)
       }
 
-      return resolveTheme(store.themes.swust-code, store.mode)
+      return resolveTheme(store.themes["swust-code"], store.mode)
     })
 
     createEffect(() => {

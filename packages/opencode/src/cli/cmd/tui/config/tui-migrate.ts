@@ -34,8 +34,8 @@ interface MigrateInput {
  * skips only locations where a tui.json already exists.
  */
 export async function migrateTuiConfig(input: MigrateInput) {
-  const swust-code = await swustCodeFiles(input)
-  for (const file of swust-code) {
+  const swustCodeConfigs = await swustCodeFiles(input)
+  for (const file of swustCodeConfigs) {
     const source = await Filesystem.readText(file).catch((error) => {
       log.warn("failed to read config for tui migration", { path: file, error })
       return undefined
