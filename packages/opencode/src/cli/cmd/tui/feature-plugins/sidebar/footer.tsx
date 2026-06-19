@@ -1,4 +1,4 @@
-﻿import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@swust-code/plugin/tui"
+import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@swust-code/plugin/tui"
 import { createMemo, Show } from "solid-js"
 import { Global } from "@/global"
 
@@ -64,7 +64,7 @@ function View(props: { api: TuiPluginApi }) {
         <span style={{ fg: theme().text }}>{path().name}</span>
       </text>
       <text fg={theme().textMuted}>
-        <span style={{ fg: theme().success }}>•</span> <b>MiMo</b>
+        <span style={{ fg: theme().success }}>•</span> <b>SWUST</b>
         <span style={{ fg: theme().text }}>
           <b>Code</b>
         </span>{" "}

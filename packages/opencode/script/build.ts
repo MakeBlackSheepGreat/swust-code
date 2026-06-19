@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bun
+#!/usr/bin/env bun
 
 import { $ } from "bun"
 import fs from "fs"
@@ -232,7 +232,7 @@ for (const item of targets) {
       autoloadTsconfig: true,
       autoloadPackageJson: true,
       target: name.replace(BINARY_PREFIX, "bun") as any,
-      outfile: `dist/${name}/bin/mimo`,
+      outfile: `dist/${name}/bin/swust-code`,
       execArgv: [`--user-agent=swust-code/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
@@ -250,7 +250,7 @@ for (const item of targets) {
 
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/mimo`
+    const binaryPath = `dist/${name}/bin/swust-code`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()
@@ -272,13 +272,13 @@ for (const item of targets) {
         version: Script.version,
         description: "Platform-specific binary for @swust-code/cli.",
         license: "MIT",
-        author: "Xiaomi MiMo Team",
-        homepage: "https://mimo.xiaomi.com/coder",
+        author: "SWUST Code Contributors",
+        homepage: "https://github.com/MakeBlackSheepGreat/swust-code",
         repository: {
           type: "git",
-          url: "git+https://github.com/XiaomiMiMo/MiMo-Code.git",
+          url: "git+https://github.com/MakeBlackSheepGreat/swust-code.git",
         },
-        keywords: ["ai", "coding", "agent", "cli", "mimo"],
+        keywords: ["ai", "coding", "agent", "cli", "swust-code"],
         os: [item.os],
         cpu: [item.arch],
       },
