@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, test } from "bun:test"
 import {
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
@@ -6,7 +6,7 @@ import {
   parseDeepLink,
   parseNewSessionDeepLink,
 } from "./deep-links"
-import { type Session } from "@mimo-ai/sdk/v2/client"
+import { type Session } from "@swust-code/sdk/v2/client"
 import {
   childSessionOnPath,
   displayName,

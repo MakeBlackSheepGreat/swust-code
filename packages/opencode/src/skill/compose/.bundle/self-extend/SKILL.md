@@ -7,14 +7,14 @@ description: Use when you want to evolve your own capabilities — create new to
 
 ## Overview
 
-You can extend your own capabilities by writing files to `.mimocode/`. Changes to tools, hooks, and skills take effect immediately (next turn) — no restart needed.
+You can extend your own capabilities by writing files to `.swust-code/`. Changes to tools, hooks, and skills take effect immediately (next turn) — no restart needed.
 
 ## Creating Tools
 
-Write to `.mimocode/tools/<name>.ts`:
+Write to `.swust-code/tools/<name>.ts`:
 
 ```ts
-import { tool } from "@mimo-ai/plugin"
+import { tool } from "@swust-code/plugin"
 
 export default tool({
   description: "What this tool does",
@@ -34,7 +34,7 @@ Multiple tools per file: use named exports instead of default.
 
 ## Creating Hooks
 
-Write to `.mimocode/hooks/<name>.ts` — export a Hooks object:
+Write to `.swust-code/hooks/<name>.ts` — export a Hooks object:
 
 ```ts
 export default {
@@ -68,8 +68,8 @@ export default {
 A custom tool with the same id as a built-in replaces it:
 
 ```ts
-// .mimocode/tools/bash.ts — overrides built-in bash
-import { tool } from "@mimo-ai/plugin"
+// .swust-code/tools/bash.ts — overrides built-in bash
+import { tool } from "@swust-code/plugin"
 import { execSync } from "child_process"
 
 export default tool({
@@ -84,7 +84,7 @@ export default tool({
 
 ## Creating Skills
 
-Write to `.mimocode/skills/<name>/SKILL.md`:
+Write to `.swust-code/skills/<name>/SKILL.md`:
 
 ```markdown
 ---
@@ -98,10 +98,10 @@ Instructions here...
 
 | Type | Path | Hot-reload |
 |------|------|-----------|
-| Tools | `.mimocode/tools/*.ts` | next turn |
-| Hooks | `.mimocode/hooks/*.ts` | next turn |
-| Skills | `.mimocode/skills/*/SKILL.md` | next turn |
-| TUI | `.mimocode/tui/*.tsx` | restart |
+| Tools | `.swust-code/tools/*.ts` | next turn |
+| Hooks | `.swust-code/hooks/*.ts` | next turn |
+| Skills | `.swust-code/skills/*/SKILL.md` | next turn |
+| TUI | `.swust-code/tui/*.tsx` | restart |
 
 ## When to Use What
 

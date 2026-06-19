@@ -1,12 +1,12 @@
-import { useMutation } from "@tanstack/solid-query"
+﻿import { useMutation } from "@tanstack/solid-query"
 import { Component, createEffect, createMemo, on, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
-import { Dialog } from "@mimo-ai/ui/dialog"
-import { List } from "@mimo-ai/ui/list"
-import { Switch } from "@mimo-ai/ui/switch"
-import { showToast } from "@mimo-ai/ui/toast"
+import { Dialog } from "@swust-code/ui/dialog"
+import { List } from "@swust-code/ui/list"
+import { Switch } from "@swust-code/ui/switch"
+import { showToast } from "@swust-code/ui/toast"
 import { useLanguage } from "@/context/language"
 
 const statusLabels = {

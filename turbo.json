@@ -8,21 +8,21 @@
       "dependsOn": [],
       "outputs": ["dist/**"]
     },
-    "@mimo-ai/cli#test": {
+    "@swust-code/cli#test": {
       "dependsOn": ["^build"],
       "outputs": [],
       "passThroughEnv": ["*"]
     },
-    "@mimo-ai/cli#test:ci": {
+    "@swust-code/cli#test:ci": {
       "dependsOn": ["^build"],
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
     },
-    "@mimo-ai/app#test": {
+    "@swust-code/app#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@mimo-ai/app#test:ci": {
+    "@swust-code/app#test:ci": {
       "dependsOn": ["^build"],
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]

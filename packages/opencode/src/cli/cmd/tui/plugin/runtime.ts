@@ -1,4 +1,4 @@
-import "@opentui/solid/runtime-plugin-support"
+﻿import "@opentui/solid/runtime-plugin-support"
 import {
   type TuiDispose,
   type TuiPlugin,
@@ -9,7 +9,7 @@ import {
   type TuiPluginStatus,
   type TuiSlotPlugin,
   type TuiTheme,
-} from "@mimo-ai/plugin/tui"
+} from "@swust-code/plugin/tui"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import { TuiConfig } from "@/cli/cmd/tui/config/tui"
@@ -32,9 +32,9 @@ import { hasTheme, upsertTheme } from "../context/theme"
 import { Global } from "@/global"
 import { Filesystem } from "@/util"
 import { Process } from "@/util"
-import { Flock } from "@mimo-ai/shared/util/flock"
+import { Flock } from "@swust-code/shared/util/flock"
 import { Flag } from "@/flag/flag"
-import { Glob } from "@mimo-ai/shared/util/glob"
+import { Glob } from "@swust-code/shared/util/glob"
 import { INTERNAL_TUI_PLUGINS, type InternalTuiPlugin } from "./internal"
 import { setupSlots, Slot as View } from "./slots"
 import type { HostPluginApi, HostSlots } from "./slots"
@@ -158,9 +158,9 @@ function createThemeInstaller(
     const name = path.basename(src, path.extname(src))
     const source_dir = path.dirname(meta.source)
     const local_dir =
-      path.basename(source_dir) === ".mimocode"
+      path.basename(source_dir) === ".swust-code"
         ? path.join(source_dir, "themes")
-        : path.join(source_dir, ".mimocode", "themes")
+        : path.join(source_dir, ".swust-code", "themes")
     const dest_dir = meta.scope === "local" ? local_dir : path.join(Global.Path.config, "themes")
     const dest = path.join(dest_dir, `${name}.json`)
     const stat = await Filesystem.statAsync(src)
@@ -749,7 +749,7 @@ function defaultPluginOrigin(state: RuntimeState, spec: string): ConfigPlugin.Or
   return {
     spec,
     scope: "local",
-    source: state.api.state.path.config || path.join(state.directory, ".mimocode", "tui.json"),
+    source: state.api.state.path.config || path.join(state.directory, ".swust-code", "tui.json"),
   }
 }
 
@@ -995,8 +995,8 @@ async function load(input: { api: Api; config: TuiConfig.Info }) {
     await Instance.provide({
       directory: cwd,
       fn: async () => {
-        const records = Flag.MIMOCODE_PURE ? [] : (config.plugin_origins ?? [])
-        if (Flag.MIMOCODE_PURE && config.plugin_origins?.length) {
+        const records = Flag.SWUST_CODE_PURE ? [] : (config.plugin_origins ?? [])
+        if (Flag.SWUST_CODE_PURE && config.plugin_origins?.length) {
           log.info("skipping external tui plugins in pure mode", { count: config.plugin_origins.length })
         }
 
@@ -1017,10 +1017,10 @@ async function load(input: { api: Api; config: TuiConfig.Info }) {
         const ready = await resolveExternalPlugins(records, () => TuiConfig.waitForDependencies())
         await addExternalPluginEntries(next, ready)
 
-        // File-based TUI plugins from .mimocode/tui/*.{ts,tsx}
+        // File-based TUI plugins from .swust-code/tui/*.{ts,tsx}
         const configDirs = [
           path.join(Global.Path.config, "tui"),
-          path.join(cwd, ".mimocode", "tui"),
+          path.join(cwd, ".swust-code", "tui"),
         ]
         const fileTuiOrigins: ConfigPlugin.Origin[] = []
         for (const dir of configDirs) {

@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, test } from "bun:test"
 import crypto from "crypto"
 import { MimoAuthPlugin } from "../../src/plugin/mimo"
-import type { PluginInput } from "@mimo-ai/plugin"
+import type { PluginInput } from "@swust-code/plugin"
 
 function encrypt(recipientPkBase64: string, payload: string): string {
   const recipientPublicKey = crypto.createPublicKey({
@@ -93,7 +93,7 @@ describe("MimoAuthPlugin", () => {
       expect(url.pathname).toContain("/authorize")
       expect(url.searchParams.get("pk")).toBeTruthy()
       expect(url.searchParams.get("redirect_uri")).toBeTruthy()
-      expect(url.searchParams.get("kn")).toBe("mimocode")
+      expect(url.searchParams.get("kn")).toBe("swust-code")
       expect(url.searchParams.get("key_name")).toMatch(/^mimo-code-cli-key-/)
 
       await result.callback("invalid").catch(() => {})
@@ -219,11 +219,11 @@ describe("MimoAuthPlugin", () => {
   })
 
   describe("chat.headers hook", () => {
-    test("adds X-Mimo-Source header for mimo provider", async () => {
+    test("adds X-Swust-Source header for mimo provider", async () => {
       const hooks = await MimoAuthPlugin(fakeInput)
       const output = { headers: {} as Record<string, string> }
       await hooks["chat.headers"]!({ model: { providerID: "xiaomi" } } as any, output as any)
-      expect(output.headers["X-Mimo-Source"]).toBe("mimocode-cli")
+      expect(output.headers["X-Swust-Source"]).toBe("swust-code-cli")
     })
 
     test("does not add header for other providers", async () => {
@@ -232,7 +232,7 @@ describe("MimoAuthPlugin", () => {
       for (const providerID of providers) {
         const output = { headers: {} as Record<string, string> }
         await hooks["chat.headers"]!({ model: { providerID } } as any, output as any)
-        expect(output.headers["X-Mimo-Source"]).toBeUndefined()
+        expect(output.headers["X-Swust-Source"]).toBeUndefined()
       }
     })
   })

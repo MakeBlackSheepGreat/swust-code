@@ -1,4 +1,4 @@
-/** @jsxImportSource @opentui/solid */
+﻿/** @jsxImportSource @opentui/solid */
 import { useKeyboard, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { RGBA, VignetteEffect } from "@opentui/core"
 import type {
@@ -8,7 +8,7 @@ import type {
   TuiPluginMeta,
   TuiPluginModule,
   TuiSlotPlugin,
-} from "@mimo-ai/plugin/tui"
+} from "@swust-code/plugin/tui"
 
 const tabs = ["overview", "counter", "help"]
 const bind = {

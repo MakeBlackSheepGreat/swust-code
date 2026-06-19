@@ -1,9 +1,9 @@
-{
+﻿{
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@mimo-ai/sdk",
+  "name": "@swust-code/sdk",
   "version": "0.1.1",
-  "description": "TypeScript SDK for the MiMoCode API",
-  "keywords": ["mimo", "mimocode", "ai", "sdk", "coding-assistant"],
+  "description": "TypeScript SDK for the SWUSTCode API",
+  "keywords": ["mimo", "swust-code", "ai", "sdk", "coding-assistant"],
   "type": "module",
   "license": "MIT",
   "author": "Xiaomi MiMo Team",

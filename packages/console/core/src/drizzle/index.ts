@@ -1,5 +1,5 @@
-import { drizzle } from "drizzle-orm/planetscale-serverless"
-import { Resource } from "@mimo-ai/console-resource"
+﻿import { drizzle } from "drizzle-orm/planetscale-serverless"
+import { Resource } from "@swust-code/console-resource"
 export * from "drizzle-orm"
 import { Client } from "@planetscale/database"
 

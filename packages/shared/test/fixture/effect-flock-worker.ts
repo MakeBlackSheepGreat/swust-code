@@ -1,9 +1,9 @@
-import fs from "fs/promises"
+﻿import fs from "fs/promises"
 import os from "os"
 import { Effect, Layer } from "effect"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
-import { EffectFlock } from "@mimo-ai/shared/util/effect-flock"
-import { Global } from "@mimo-ai/shared/global"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
+import { EffectFlock } from "@swust-code/shared/util/effect-flock"
+import { Global } from "@swust-code/shared/global"
 
 type Msg = {
   key: string

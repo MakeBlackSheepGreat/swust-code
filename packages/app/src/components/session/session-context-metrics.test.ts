@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import type { Message } from "@mimo-ai/sdk/v2/client"
+﻿import { describe, expect, test } from "bun:test"
+import type { Message } from "@swust-code/sdk/v2/client"
 import { getSessionContextMetrics } from "./session-context-metrics"
 
 const assistant = (

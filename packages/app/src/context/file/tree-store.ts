@@ -1,5 +1,5 @@
-import { createStore, produce, reconcile } from "solid-js/store"
-import type { FileNode } from "@mimo-ai/sdk/v2"
+﻿import { createStore, produce, reconcile } from "solid-js/store"
+import type { FileNode } from "@swust-code/sdk/v2"
 
 type DirectoryState = {
   expanded: boolean

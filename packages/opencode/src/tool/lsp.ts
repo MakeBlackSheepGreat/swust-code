@@ -1,4 +1,4 @@
-import z from "zod"
+﻿import z from "zod"
 import { Effect } from "effect"
 import * as Tool from "./tool"
 import path from "path"
@@ -7,7 +7,7 @@ import DESCRIPTION from "./lsp.txt"
 import { Instance } from "../project/instance"
 import { pathToFileURL } from "url"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 
 const operations = [
   "goToDefinition",

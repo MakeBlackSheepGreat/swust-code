@@ -1,4 +1,4 @@
-import { Glob } from "@mimo-ai/shared/util/glob"
+﻿import { Glob } from "@swust-code/shared/util/glob"
 
 const FOLDERS = new Set([
   "node_modules",

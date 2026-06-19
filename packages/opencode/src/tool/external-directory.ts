@@ -1,4 +1,4 @@
-import path from "path"
+﻿import path from "path"
 import { Effect } from "effect"
 import { EffectLogger } from "@/effect"
 import { InstanceState } from "@/effect"
@@ -7,7 +7,7 @@ import type * as Tool from "./tool"
 import { Instance } from "../project/instance"
 import { ProjectID } from "../project/schema"
 import { assertMemoryWriteAllowed } from "./memory-path-guard"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 
 type Kind = "file" | "directory"
 

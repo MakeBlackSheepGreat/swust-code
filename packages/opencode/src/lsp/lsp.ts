@@ -1,4 +1,4 @@
-import { BusEvent } from "@/bus/bus-event"
+﻿import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
 import { Log } from "../util"
 import * as LSPClient from "./client"
@@ -12,7 +12,7 @@ import { Process } from "../util"
 import { spawn as lspspawn } from "./launch"
 import { Effect, Layer, Context } from "effect"
 import { InstanceState } from "@/effect"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 
 const log = Log.create({ service: "lsp" })
 
@@ -116,9 +116,9 @@ const kinds = [
 ]
 
 const filterExperimentalServers = (servers: Record<string, LSPServer.Info>) => {
-  if (Flag.MIMOCODE_EXPERIMENTAL_LSP_TY) {
+  if (Flag.SWUST_CODE_EXPERIMENTAL_LSP_TY) {
     if (servers["pyright"]) {
-      log.info("LSP server pyright is disabled because MIMOCODE_EXPERIMENTAL_LSP_TY is enabled")
+      log.info("LSP server pyright is disabled because SWUST_CODE_EXPERIMENTAL_LSP_TY is enabled")
       delete servers["pyright"]
     }
   } else {

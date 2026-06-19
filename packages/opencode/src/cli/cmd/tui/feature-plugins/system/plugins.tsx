@@ -1,5 +1,5 @@
-import { Keybind } from "@/util"
-import type { TuiPlugin, TuiPluginApi, TuiPluginModule, TuiPluginStatus } from "@mimo-ai/plugin/tui"
+﻿import { Keybind } from "@/util"
+import type { TuiPlugin, TuiPluginApi, TuiPluginModule, TuiPluginStatus } from "@swust-code/plugin/tui"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import { fileURLToPath } from "url"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"

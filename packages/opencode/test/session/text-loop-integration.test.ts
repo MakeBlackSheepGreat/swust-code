@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration test for text loop detection using MockLLM (no HTTP server).
  *
  * Run:
@@ -22,7 +22,7 @@ import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "../../src/session"
 import { LLM } from "../../src/session/llm"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 import { SessionPrune } from "../../src/session/prune"
 import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"

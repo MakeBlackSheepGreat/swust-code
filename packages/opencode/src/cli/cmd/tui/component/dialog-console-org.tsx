@@ -1,10 +1,10 @@
-import { createResource, createMemo } from "solid-js"
+﻿import { createResource, createMemo } from "solid-js"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useSDK } from "@tui/context/sdk"
 import { useDialog } from "@tui/ui/dialog"
 import { useToast } from "@tui/ui/toast"
 import { useTheme } from "@tui/context/theme"
-import type { ExperimentalConsoleListOrgsResponse } from "@mimo-ai/sdk/v2"
+import type { ExperimentalConsoleListOrgsResponse } from "@swust-code/sdk/v2"
 
 type OrgOption = ExperimentalConsoleListOrgsResponse["orgs"][number]
 

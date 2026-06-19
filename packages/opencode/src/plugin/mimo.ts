@@ -1,4 +1,4 @@
-import type { Hooks, PluginInput } from "@mimo-ai/plugin"
+﻿import type { Hooks, PluginInput } from "@swust-code/plugin"
 import { Log } from "../util"
 import { createServer } from "http"
 import crypto from "crypto"
@@ -76,7 +76,7 @@ function buildAuthorizeUrl(publicKey: string, redirectUri: string): string {
   const params = new URLSearchParams({
     pk: publicKey,
     redirect_uri: redirectUri,
-    kn: "mimocode",
+    kn: "swust-code",
     key_name: getKeyName(),
   })
   return `${PLATFORM_URL}/authorize?${params.toString()}`
@@ -195,7 +195,7 @@ export async function MimoAuthPlugin(_input: PluginInput): Promise<Hooks> {
     },
     "chat.headers": async (input, output) => {
       if (input.model.providerID !== "xiaomi") return
-      output.headers["X-Mimo-Source"] = "mimocode-cli"
+      output.headers["X-Swust-Source"] = "swust-code-cli"
     },
   }
 }

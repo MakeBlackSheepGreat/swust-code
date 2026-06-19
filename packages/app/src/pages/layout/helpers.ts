@@ -1,5 +1,5 @@
-import { getFilename } from "@mimo-ai/shared/util/path"
-import { type Session } from "@mimo-ai/sdk/v2/client"
+﻿import { getFilename } from "@swust-code/shared/util/path"
+import { type Session } from "@swust-code/sdk/v2/client"
 
 type SessionStore = {
   session?: Session[]

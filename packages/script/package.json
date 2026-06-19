@@ -1,6 +1,6 @@
-{
+﻿{
   "$schema": "https://json.schemastore.org/package",
-  "name": "@mimo-ai/script",
+  "name": "@swust-code/script",
   "license": "MIT",
   "publishConfig": {
     "access": "public"

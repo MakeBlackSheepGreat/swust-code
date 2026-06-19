@@ -1,7 +1,7 @@
-import { createSignal } from "solid-js"
-import { Dialog } from "@mimo-ai/ui/dialog"
-import { Button } from "@mimo-ai/ui/button"
-import { useDialog } from "@mimo-ai/ui/context/dialog"
+﻿import { createSignal } from "solid-js"
+import { Dialog } from "@swust-code/ui/dialog"
+import { Button } from "@swust-code/ui/button"
+import { useDialog } from "@swust-code/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 

@@ -60,7 +60,7 @@ test("build agent has correct default properties", async () => {
   })
 })
 
-test("plan agent denies edits except .mimocode/plans/*", async () => {
+test("plan agent denies edits except .swust-code/plans/*", async () => {
   await using tmp = await tmpdir()
   await Instance.provide({
     directory: tmp.path,
@@ -70,7 +70,7 @@ test("plan agent denies edits except .mimocode/plans/*", async () => {
       // Wildcard is denied
       expect(evalPerm(plan, "edit")).toBe("deny")
       // But specific path is allowed
-      expect(Permission.evaluate("edit", ".mimocode/plans/foo.md", plan!.permission).action).toBe("allow")
+      expect(Permission.evaluate("edit", ".swust-code/plans/foo.md", plan!.permission).action).toBe("allow")
     },
   })
 })
@@ -546,7 +546,7 @@ test("skill directories are allowed for external_directory", async () => {
   await using tmp = await tmpdir({
     git: true,
     init: async (dir) => {
-      const skillDir = path.join(dir, ".mimocode", "skill", "perm-skill")
+      const skillDir = path.join(dir, ".swust-code", "skill", "perm-skill")
       await Bun.write(
         path.join(skillDir, "SKILL.md"),
         `---
@@ -570,7 +570,7 @@ description: Permission skill.
       directory: tmp.path,
       fn: async () => {
         const build = await load(tmp.path, (svc) => svc.get("build"))
-        const skillDir = path.join(tmp.path, ".mimocode", "skill", "perm-skill")
+        const skillDir = path.join(tmp.path, ".swust-code", "skill", "perm-skill")
         const target = path.join(skillDir, "reference", "notes.md")
         expect(Permission.evaluate("external_directory", target, build!.permission).action).toBe("allow")
       },

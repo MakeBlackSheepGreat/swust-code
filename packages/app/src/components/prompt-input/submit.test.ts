@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+﻿import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { Prompt } from "@/context/prompt"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
@@ -63,18 +63,18 @@ beforeAll(async () => {
     useParams: () => params,
   }))
 
-  mock.module("@mimo-ai/sdk/v2/client", () => ({
+  mock.module("@swust-code/sdk/v2/client", () => ({
     createOpencodeClient: (input: { directory: string }) => {
       createdClients.push(input.directory)
       return clientFor(input.directory)
     },
   }))
 
-  mock.module("@mimo-ai/ui/toast", () => ({
+  mock.module("@swust-code/ui/toast", () => ({
     showToast: () => 0,
   }))
 
-  mock.module("@mimo-ai/shared/util/encode", () => ({
+  mock.module("@swust-code/shared/util/encode", () => ({
     base64Encode: (value: string) => value,
   }))
 

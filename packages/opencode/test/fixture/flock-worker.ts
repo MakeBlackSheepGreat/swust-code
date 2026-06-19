@@ -1,5 +1,5 @@
-import fs from "fs/promises"
-import { Flock } from "@mimo-ai/shared/util/flock"
+﻿import fs from "fs/promises"
+import { Flock } from "@swust-code/shared/util/flock"
 
 type Msg = {
   key: string

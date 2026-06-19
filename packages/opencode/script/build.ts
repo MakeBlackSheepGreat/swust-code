@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+﻿#!/usr/bin/env bun
 
 import { $ } from "bun"
 import fs from "fs"
@@ -14,10 +14,10 @@ process.chdir(dir)
 
 await import("./generate.ts")
 
-import { Script } from "@mimo-ai/script"
+import { Script } from "@swust-code/script"
 import pkg from "../package.json"
 
-const BINARY_PREFIX = "mimocode"
+const BINARY_PREFIX = "swust-code"
 
 // Load migrations from migration directories
 const migrationDirs = (
@@ -233,17 +233,17 @@ for (const item of targets) {
       autoloadPackageJson: true,
       target: name.replace(BINARY_PREFIX, "bun") as any,
       outfile: `dist/${name}/bin/mimo`,
-      execArgv: [`--user-agent=mimocode/${Script.version}`, "--use-system-ca", "--"],
+      execArgv: [`--user-agent=swust-code/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
     files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
     entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : []), ...extEntrypoints],
     define: {
-      MIMOCODE_VERSION: `'${Script.version}'`,
+      SWUST_CODE_VERSION: `'${Script.version}'`,
       OPENCODE_MIGRATIONS: JSON.stringify(migrations),
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
       OPENCODE_WORKER_PATH: workerPath,
-      MIMOCODE_CHANNEL: `'${Script.channel}'`,
+      SWUST_CODE_CHANNEL: `'${Script.channel}'`,
       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
     },
   })
@@ -263,14 +263,14 @@ for (const item of targets) {
 
   await $`rm -rf ./dist/${name}/bin/tui`
   await Bun.file(`dist/${name}/README.md`).write(
-    `This is the ${item.os}-${item.arch} binary for [@mimo-ai/cli](https://www.npmjs.com/package/@mimo-ai/cli). Install that package directly.\n`,
+    `This is the ${item.os}-${item.arch} binary for [@swust-code/cli](https://www.npmjs.com/package/@swust-code/cli). Install that package directly.\n`,
   )
   await Bun.file(`dist/${name}/package.json`).write(
     JSON.stringify(
       {
-        name: `@mimo-ai/${name}`,
+        name: `@swust-code/${name}`,
         version: Script.version,
-        description: "Platform-specific binary for @mimo-ai/cli.",
+        description: "Platform-specific binary for @swust-code/cli.",
         license: "MIT",
         author: "Xiaomi MiMo Team",
         homepage: "https://mimo.xiaomi.com/coder",

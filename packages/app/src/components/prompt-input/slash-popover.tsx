@@ -1,7 +1,7 @@
-import { Component, For, Match, Show, Switch } from "solid-js"
-import { FileIcon } from "@mimo-ai/ui/file-icon"
-import { Icon } from "@mimo-ai/ui/icon"
-import { getDirectory, getFilename } from "@mimo-ai/shared/util/path"
+﻿import { Component, For, Match, Show, Switch } from "solid-js"
+import { FileIcon } from "@swust-code/ui/file-icon"
+import { Icon } from "@swust-code/ui/icon"
+import { getDirectory, getFilename } from "@swust-code/shared/util/path"
 
 export type AtOption = { path: string; display: string; recent?: boolean }
 export type AgentOption = { name: string; display: string }

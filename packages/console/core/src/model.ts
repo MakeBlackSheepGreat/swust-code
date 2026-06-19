@@ -1,11 +1,11 @@
-import { z } from "zod"
+﻿import { z } from "zod"
 import { eq, and } from "drizzle-orm"
 import { Database } from "./drizzle"
 import { ModelTable } from "./schema/model.sql"
 import { Identifier } from "./identifier"
 import { fn } from "./util/fn"
 import { Actor } from "./actor"
-import { Resource } from "@mimo-ai/console-resource"
+import { Resource } from "@swust-code/console-resource"
 
 export namespace ZenData {
   const FormatSchema = z.enum(["anthropic", "google", "openai", "oa-compat"])

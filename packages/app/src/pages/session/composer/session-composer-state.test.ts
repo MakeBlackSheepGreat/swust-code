@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import type { PermissionRequest, QuestionRequest, Session } from "@mimo-ai/sdk/v2/client"
+﻿import { describe, expect, test } from "bun:test"
+import type { PermissionRequest, QuestionRequest, Session } from "@swust-code/sdk/v2/client"
 import { todoState } from "./session-composer-state"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 

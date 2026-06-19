@@ -1,4 +1,4 @@
-import type { Argv } from "yargs"
+﻿import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { AppRuntime } from "@/effect/app-runtime"
@@ -25,7 +25,7 @@ interface RemovalTargets {
 
 export const UninstallCommand = {
   command: "uninstall",
-  describe: "uninstall mimocode and remove all related files",
+  describe: "uninstall swust-code and remove all related files",
   builder: (yargs: Argv) =>
     yargs
       .option("keep-config", {
@@ -56,7 +56,7 @@ export const UninstallCommand = {
     UI.empty()
     UI.println(UI.logo("  "))
     UI.empty()
-    prompts.intro("Uninstall MiMoCode")
+    prompts.intro("Uninstall SWUSTCode")
 
     const method = await AppRuntime.runPromise(Installation.Service.use((svc) => svc.method()))
     prompts.log.info(`Installation method: ${method}`)
@@ -130,13 +130,13 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string> = {
-      npm: "npm uninstall -g @mimo-ai/cli",
-      pnpm: "pnpm uninstall -g @mimo-ai/cli",
-      bun: "bun remove -g @mimo-ai/cli",
-      // TODO(mimocode): uncomment when published to these channels
-      // brew: "brew uninstall mimocode",
-      // choco: "choco uninstall mimocode",
-      // scoop: "scoop uninstall mimocode",
+      npm: "npm uninstall -g @swust-code/cli",
+      pnpm: "pnpm uninstall -g @swust-code/cli",
+      bun: "bun remove -g @swust-code/cli",
+      // TODO(swust-code): uncomment when published to these channels
+      // brew: "brew uninstall swust-code",
+      // choco: "choco uninstall swust-code",
+      // scoop: "scoop uninstall swust-code",
     }
     prompts.log.info(`  ✓ Package: ${cmds[method] || method}`)
   }
@@ -181,13 +181,13 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string[]> = {
-      npm: ["npm", "uninstall", "-g", "@mimo-ai/cli"],
-      pnpm: ["pnpm", "uninstall", "-g", "@mimo-ai/cli"],
-      bun: ["bun", "remove", "-g", "@mimo-ai/cli"],
-      // TODO(mimocode): uncomment when published to these channels
-      // brew: ["brew", "uninstall", "mimocode"],
-      // choco: ["choco", "uninstall", "mimocode"],
-      // scoop: ["scoop", "uninstall", "mimocode"],
+      npm: ["npm", "uninstall", "-g", "@swust-code/cli"],
+      pnpm: ["pnpm", "uninstall", "-g", "@swust-code/cli"],
+      bun: ["bun", "remove", "-g", "@swust-code/cli"],
+      // TODO(swust-code): uncomment when published to these channels
+      // brew: ["brew", "uninstall", "swust-code"],
+      // choco: ["choco", "uninstall", "swust-code"],
+      // scoop: ["scoop", "uninstall", "swust-code"],
     }
 
     const cmd = cmds[method]
@@ -213,7 +213,7 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
     prompts.log.info(`  rm "${targets.binary}"`)
 
     const binDir = path.dirname(targets.binary)
-    if (binDir.includes(".mimocode")) {
+    if (binDir.includes(".swust-code")) {
       prompts.log.info(`  rmdir "${binDir}" 2>/dev/null`)
     }
   }
@@ -227,7 +227,7 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
   }
 
   UI.empty()
-  prompts.log.success("Thank you for using MiMoCode!")
+  prompts.log.success("Thank you for using SWUSTCode!")
 }
 
 async function getShellConfigFile(): Promise<string | null> {
@@ -264,7 +264,7 @@ async function getShellConfigFile(): Promise<string | null> {
     if (!exists) continue
 
     const content = await Filesystem.readText(file).catch(() => "")
-    if (content.includes("# mimocode") || content.includes(".mimocode/bin")) {
+    if (content.includes("# swust-code") || content.includes(".swust-code/bin")) {
       return file
     }
   }
@@ -282,21 +282,21 @@ async function cleanShellConfig(file: string) {
   for (const line of lines) {
     const trimmed = line.trim()
 
-    if (trimmed === "# mimocode") {
+    if (trimmed === "# swust-code") {
       skip = true
       continue
     }
 
     if (skip) {
       skip = false
-      if (trimmed.includes(".mimocode/bin") || trimmed.includes("fish_add_path")) {
+      if (trimmed.includes(".swust-code/bin") || trimmed.includes("fish_add_path")) {
         continue
       }
     }
 
     if (
-      (trimmed.startsWith("export PATH=") && trimmed.includes(".mimocode/bin")) ||
-      (trimmed.startsWith("fish_add_path") && trimmed.includes(".mimocode"))
+      (trimmed.startsWith("export PATH=") && trimmed.includes(".swust-code/bin")) ||
+      (trimmed.startsWith("fish_add_path") && trimmed.includes(".swust-code"))
     ) {
       continue
     }

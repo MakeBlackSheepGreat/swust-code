@@ -1,4 +1,4 @@
-import { Server } from "../../server/server"
+﻿import { Server } from "../../server/server"
 import type { CommandModule } from "yargs"
 
 export const GenerateCommand = {
@@ -14,7 +14,7 @@ export const GenerateCommand = {
           {
             lang: "js",
             source: [
-              `import { createOpencodeClient } from "@mimo-ai/sdk`,
+              `import { createOpencodeClient } from "@swust-code/sdk`,
               ``,
               `const client = createOpencodeClient()`,
               `await client.${operation.operationId}({`,

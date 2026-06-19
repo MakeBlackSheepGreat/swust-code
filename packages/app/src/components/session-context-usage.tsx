@@ -1,7 +1,7 @@
-import { Match, Show, Switch, createMemo } from "solid-js"
-import { Tooltip, type TooltipProps } from "@mimo-ai/ui/tooltip"
-import { ProgressCircle } from "@mimo-ai/ui/progress-circle"
-import { Button } from "@mimo-ai/ui/button"
+﻿import { Match, Show, Switch, createMemo } from "solid-js"
+import { Tooltip, type TooltipProps } from "@swust-code/ui/tooltip"
+import { ProgressCircle } from "@swust-code/ui/progress-circle"
+import { Button } from "@swust-code/ui/button"
 
 import { useFile } from "@/context/file"
 import { useLayout } from "@/context/layout"

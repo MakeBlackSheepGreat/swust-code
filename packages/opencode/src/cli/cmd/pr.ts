@@ -7,7 +7,7 @@ import { Process } from "@/util"
 
 export const PrCommand = cmd({
   command: "pr <number>",
-  describe: "fetch and checkout a GitHub PR branch, then run mimocode",
+  describe: "fetch and checkout a GitHub PR branch, then run swust-code",
   builder: (yargs) =>
     yargs.positional("number", {
       type: "number",
@@ -93,12 +93,12 @@ export const PrCommand = cmd({
               )
             }
 
-            // Check for mimocode session link in PR body
+            // Check for swust-code session link in PR body
             if (prInfo && prInfo.body) {
               const sessionMatch = prInfo.body.match(/https:\/\/opncd\.ai\/s\/([a-zA-Z0-9_-]+)/)
               if (sessionMatch) {
                 const sessionUrl = sessionMatch[0]
-                UI.println(`Found mimocode session: ${sessionUrl}`)
+                UI.println(`Found swust-code session: ${sessionUrl}`)
                 UI.println(`Importing session...`)
 
                 const importResult = await Process.text(["mimo", "import", sessionUrl], {
@@ -120,7 +120,7 @@ export const PrCommand = cmd({
 
         UI.println(`Successfully checked out PR #${prNumber} as branch '${localBranchName}'`)
         UI.println()
-        UI.println("Starting mimocode...")
+        UI.println("Starting swust-code...")
         UI.println()
 
         const mimoArgs = sessionId ? ["-s", sessionId] : []

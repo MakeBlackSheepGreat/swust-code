@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, mock, test } from "bun:test"
+﻿import { beforeAll, describe, expect, mock, test } from "bun:test"
 
 let getWorkspaceTerminalCacheKey: (dir: string) => string
 let getLegacyTerminalStorageKeys: (dir: string, legacySessionID?: string) => string[]
@@ -9,7 +9,7 @@ beforeAll(async () => {
     useNavigate: () => () => undefined,
     useParams: () => ({}),
   }))
-  mock.module("@mimo-ai/ui/context", () => ({
+  mock.module("@swust-code/ui/context", () => ({
     createSimpleContext: () => ({
       use: () => undefined,
       provider: () => undefined,

@@ -1,4 +1,4 @@
-import { PlanExitTool } from "./plan"
+﻿import { PlanExitTool } from "./plan"
 import { Session } from "../session"
 import { QuestionTool } from "./question"
 import { BashTool } from "./bash"
@@ -17,7 +17,7 @@ import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import * as Tool from "./tool"
 import { Config } from "../config"
-import { type ToolContext as PluginToolContext, type ToolDefinition } from "@mimo-ai/plugin"
+import { type ToolContext as PluginToolContext, type ToolDefinition } from "@swust-code/plugin"
 import z from "zod"
 import { Plugin } from "../plugin"
 import { Provider } from "../provider"
@@ -30,7 +30,7 @@ import { LspTool } from "./lsp"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
 import { ChangeDirectoryTool } from "./change-directory"
-import { Glob } from "@mimo-ai/shared/util/glob"
+import { Glob } from "@swust-code/shared/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer, Context } from "effect"
@@ -44,7 +44,7 @@ import { Question } from "../question"
 import { Todo } from "../session/todo"
 import { LSP } from "../lsp"
 import { Instruction } from "../session/instruction"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 import { Bus } from "../bus"
 import { Agent } from "../agent/agent"
 import { Skill } from "../skill"
@@ -201,7 +201,7 @@ export const layer = Layer.effect(
 
         yield* config.get()
         const questionEnabled =
-          ["app", "cli", "desktop"].includes(Flag.MIMOCODE_CLIENT) || Flag.MIMOCODE_ENABLE_QUESTION_TOOL
+          ["app", "cli", "desktop"].includes(Flag.SWUST_CODE_CLIENT) || Flag.SWUST_CODE_ENABLE_QUESTION_TOOL
 
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
@@ -245,12 +245,12 @@ export const layer = Layer.effect(
             tool.skill,
             tool.patch,
             tool.changedir,
-            ...(Flag.MIMOCODE_EXPERIMENTAL_LSP_TOOL ? [tool.lsp] : []),
+            ...(Flag.SWUST_CODE_EXPERIMENTAL_LSP_TOOL ? [tool.lsp] : []),
             tool.plan,
             tool.memory,
             tool.history,
             tool.task,
-            ...(Flag.MIMOCODE_EXPERIMENTAL_WORKFLOW_TOOL ? [tool.workflow] : []),
+            ...(Flag.SWUST_CODE_EXPERIMENTAL_WORKFLOW_TOOL ? [tool.workflow] : []),
           ],
           actor: tool.actor,
           read: tool.read,
@@ -316,10 +316,10 @@ export const layer = Layer.effect(
             return (
               input.providerID === ProviderID.opencode ||
               input.providerID === "xiaomi" ||
-              Flag.MIMOCODE_ENABLE_EXA
+              Flag.SWUST_CODE_ENABLE_EXA
             )
           }
-          return input.providerID === ProviderID.opencode || Flag.MIMOCODE_ENABLE_EXA
+          return input.providerID === ProviderID.opencode || Flag.SWUST_CODE_ENABLE_EXA
         }
 
         const usePatch =

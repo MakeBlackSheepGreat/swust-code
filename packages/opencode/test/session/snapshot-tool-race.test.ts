@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reproducer for snapshot race condition with instant tool execution.
  *
  * When the mock LLM returns a tool call response instantly, the AI SDK
@@ -62,7 +62,7 @@ import { ToolRegistry } from "../../src/tool"
 import { Truncate } from "../../src/tool"
 import { TaskRegistry } from "../../src/task/registry"
 import { Auth } from "../../src/auth"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
 import { Ripgrep } from "../../src/file/ripgrep"
 import { Format } from "../../src/format"

@@ -29,13 +29,13 @@ interface MigrateInput {
 }
 
 /**
- * Migrates tui-specific keys (theme, keybinds, tui) from mimocode.json files
+ * Migrates tui-specific keys (theme, keybinds, tui) from swust-code.json files
  * into dedicated tui.json files. Migration is performed per-directory and
  * skips only locations where a tui.json already exists.
  */
 export async function migrateTuiConfig(input: MigrateInput) {
-  const mimocode = await mimocodeFiles(input)
-  for (const file of mimocode) {
+  const swust-code = await swustCodeFiles(input)
+  for (const file of swust-code) {
     const source = await Filesystem.readText(file).catch((error) => {
       log.warn("failed to read config for tui migration", { path: file, error })
       return undefined
@@ -131,15 +131,15 @@ async function backupAndStripLegacy(file: string, source: string) {
     })
 }
 
-async function mimocodeFiles(input: { directories: string[]; cwd: string }) {
+async function swustCodeFiles(input: { directories: string[]; cwd: string }) {
   const files = [
-    ...ConfigPaths.fileInDirectory(Global.Path.config, "mimocode"),
-    ...(await Filesystem.findUp(["mimocode.json", "mimocode.jsonc"], input.cwd, undefined, { rootFirst: true })),
+    ...ConfigPaths.fileInDirectory(Global.Path.config, "swust-code"),
+    ...(await Filesystem.findUp(["swust-code.json", "swust-code.jsonc"], input.cwd, undefined, { rootFirst: true })),
   ]
   for (const dir of unique(input.directories)) {
-    files.push(...ConfigPaths.fileInDirectory(dir, "mimocode"))
+    files.push(...ConfigPaths.fileInDirectory(dir, "swust-code"))
   }
-  if (Flag.MIMOCODE_CONFIG) files.push(Flag.MIMOCODE_CONFIG)
+  if (Flag.SWUST_CODE_CONFIG) files.push(Flag.SWUST_CODE_CONFIG)
 
   const existing = await Promise.all(
     unique(files).map(async (file) => {

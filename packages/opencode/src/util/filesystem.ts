@@ -1,10 +1,10 @@
-import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
+﻿import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
 import { realpathSync } from "fs"
 import { dirname, join, relative, resolve as pathResolve, win32 } from "path"
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
-import { Glob } from "@mimo-ai/shared/util/glob"
+import { Glob } from "@swust-code/shared/util/glob"
 
 // Fast sync version for metadata checks
 export async function exists(p: string): Promise<boolean> {

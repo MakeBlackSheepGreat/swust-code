@@ -1,8 +1,8 @@
-import path from "path"
+﻿import path from "path"
 import z from "zod"
 import { Global } from "../global"
 import { Effect, Layer, Context } from "effect"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 
 export const Tokens = z.object({
   accessToken: z.string(),

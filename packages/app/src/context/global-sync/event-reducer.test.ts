@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import type { Message, Part, PermissionRequest, Project, QuestionRequest, Session } from "@mimo-ai/sdk/v2/client"
+﻿import { describe, expect, test } from "bun:test"
+import type { Message, Part, PermissionRequest, Project, QuestionRequest, Session } from "@swust-code/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./event-reducer"

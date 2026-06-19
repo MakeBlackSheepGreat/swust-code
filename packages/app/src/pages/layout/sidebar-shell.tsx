@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
+﻿import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -8,8 +8,8 @@ import {
   type DragEvent,
 } from "@thisbeyond/solid-dnd"
 import { ConstrainDragXAxis } from "@/utils/solid-dnd"
-import { IconButton } from "@mimo-ai/ui/icon-button"
-import { Tooltip, TooltipKeybind } from "@mimo-ai/ui/tooltip"
+import { IconButton } from "@swust-code/ui/icon-button"
+import { Tooltip, TooltipKeybind } from "@swust-code/ui/tooltip"
 import { type LocalProject } from "@/context/layout"
 
 export const SidebarContent = (props: {

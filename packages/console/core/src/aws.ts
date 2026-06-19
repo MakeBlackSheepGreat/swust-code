@@ -1,5 +1,5 @@
-import { z } from "zod"
-import { Resource } from "@mimo-ai/console-resource"
+﻿import { z } from "zod"
+import { Resource } from "@swust-code/console-resource"
 import { AwsClient } from "aws4fetch"
 import { fn } from "./util/fn"
 

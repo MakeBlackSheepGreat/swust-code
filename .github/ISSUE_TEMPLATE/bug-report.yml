@@ -20,10 +20,10 @@ body:
       required: false
 
   - type: input
-    id: mimocode-version
+    id: swust-code-version
     attributes:
-      label: MiMoCode version
-      description: What version of MiMoCode are you using?
+      label: SWUSTCode version
+      description: What version of SWUSTCode are you using?
     validations:
       required: false
 

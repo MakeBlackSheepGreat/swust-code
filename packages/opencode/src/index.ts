@@ -12,7 +12,7 @@ import { ModelsCommand } from "./cli/cmd/models"
 import { UI } from "./cli/ui"
 import { Installation } from "./installation"
 import { InstallationVersion } from "./installation/version"
-import { NamedError } from "@mimo-ai/shared/util/error"
+import { NamedError } from "@swust-code/shared/util/error"
 import { FormatError } from "./cli/error"
 import { ServeCommand } from "./cli/cmd/serve"
 import { Filesystem } from "./util"
@@ -91,7 +91,7 @@ const cli = yargs(args)
   })
   .middleware(async (opts) => {
     if (opts.pure) {
-      process.env.MIMOCODE_PURE = "1"
+      process.env.SWUST_CODE_PURE = "1"
     }
 
     await Log.init({
@@ -107,17 +107,17 @@ const cli = yargs(args)
     Heap.start()
 
     process.env.AGENT = "1"
-    process.env.MIMOCODE = "1"
-    process.env.MIMOCODE_PID = String(process.pid)
+    process.env.SWUST_CODE = "1"
+    process.env.SWUST_CODE_PID = String(process.pid)
 
-    Log.Default.info("mimocode", {
+    Log.Default.info("swust-code", {
       version: InstallationVersion,
       args: process.argv.slice(2),
       process_role: processMetadata.processRole,
       run_id: processMetadata.runID,
     })
 
-    const marker = path.join(Global.Path.data, "mimocode.db")
+    const marker = path.join(Global.Path.data, "swust-code.db")
     if (!(await Filesystem.exists(marker))) {
       const tty = process.stderr.isTTY
       process.stderr.write("Performing one time database migration, may take a few minutes..." + EOL)
@@ -157,8 +157,8 @@ const cli = yargs(args)
     // Idempotently import Claude Code sessions into SQLite. Runs once per process
     // tree (the env guard is inherited by spawned children) and is best-effort:
     // a failure here must never block command startup.
-    if (!process.env.MIMOCODE_DISABLE_CLAUDE_IMPORT && !process.env.MIMOCODE_CLAUDE_IMPORTED) {
-      process.env.MIMOCODE_CLAUDE_IMPORTED = "1"
+    if (!process.env.SWUST_CODE_DISABLE_CLAUDE_IMPORT && !process.env.SWUST_CODE_CLAUDE_IMPORTED) {
+      process.env.SWUST_CODE_CLAUDE_IMPORTED = "1"
       try {
         await ClaudeImport.run()
       } catch (e) {

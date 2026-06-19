@@ -1,5 +1,5 @@
-#!/usr/bin/env bun
-import { Script } from "@mimo-ai/script"
+﻿#!/usr/bin/env bun
+import { Script } from "@swust-code/script"
 
 await import("./prebuild")
 

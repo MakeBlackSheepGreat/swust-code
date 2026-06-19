@@ -1,14 +1,14 @@
-import { describe, expect } from "bun:test"
+﻿import { describe, expect } from "bun:test"
 import { spawn } from "child_process"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { testEffect } from "../lib/effect"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
-import { EffectFlock } from "@mimo-ai/shared/util/effect-flock"
-import { Global } from "@mimo-ai/shared/global"
-import { Hash } from "@mimo-ai/shared/util/hash"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
+import { EffectFlock } from "@swust-code/shared/util/effect-flock"
+import { Global } from "@swust-code/shared/global"
+import { Hash } from "@swust-code/shared/util/hash"
 
 function lock(dir: string, key: string) {
   return path.join(dir, Hash.fast(key) + ".lock")

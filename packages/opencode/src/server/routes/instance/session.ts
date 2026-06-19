@@ -1,4 +1,4 @@
-import { Hono } from "hono"
+﻿import { Hono } from "hono"
 import { stream } from "hono/streaming"
 import { describeRoute, validator, resolver } from "hono-openapi"
 import { SessionID, MessageID, PartID } from "@/session/schema"
@@ -28,7 +28,7 @@ import { Provider } from "@/provider"
 import { errors } from "../../error"
 import { lazy } from "@/util/lazy"
 import { Bus } from "@/bus"
-import { NamedError } from "@mimo-ai/shared/util/error"
+import { NamedError } from "@swust-code/shared/util/error"
 import { jsonRequest, runRequest } from "./trace"
 
 const log = Log.create({ service: "server" })

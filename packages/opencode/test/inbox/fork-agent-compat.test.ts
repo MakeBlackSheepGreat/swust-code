@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fork-agent inbox compat test — Plan 4 / Task 5
  *
  * Key invariant (from docs/superpowers/specs/2026-05-26-fork-agent-prefix-cache-design.md):
@@ -31,7 +31,7 @@ import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "../../src/session"
 import { LLM } from "../../src/session/llm"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 import { SessionPrune } from "../../src/session/prune"
 import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"

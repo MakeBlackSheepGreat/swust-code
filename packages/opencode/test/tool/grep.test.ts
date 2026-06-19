@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+﻿import { describe, expect } from "bun:test"
 import path from "path"
 import { Effect, Layer } from "effect"
 import { GrepTool } from "../../src/tool/grep"
@@ -8,7 +8,7 @@ import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
 import { Truncate } from "../../src/tool"
 import { Agent } from "../../src/agent/agent"
 import { Ripgrep } from "../../src/file/ripgrep"
-import { AppFileSystem } from "@mimo-ai/shared/filesystem"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(

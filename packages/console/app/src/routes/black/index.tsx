@@ -1,10 +1,10 @@
-import { A, createAsync, query, useSearchParams } from "@solidjs/router"
+﻿import { A, createAsync, query, useSearchParams } from "@solidjs/router"
 import { Title } from "@solidjs/meta"
 import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js"
 import { PlanIcon, plans } from "./common"
 import { useI18n } from "~/context/i18n"
 import { useLanguage } from "~/context/language"
-import { Resource } from "@mimo-ai/console-resource"
+import { Resource } from "@swust-code/console-resource"
 
 const getPaused = query(async () => {
   "use server"

@@ -1,10 +1,10 @@
-import path from "path"
+﻿import path from "path"
 import { fileURLToPath } from "url"
 
 import { Flag } from "@/flag/flag"
 import { Global } from "@/global"
 import { Filesystem } from "@/util"
-import { Flock } from "@mimo-ai/shared/util/flock"
+import { Flock } from "@swust-code/shared/util/flock"
 
 import { parsePluginSpecifier, pluginSource } from "./shared"
 
@@ -46,7 +46,7 @@ type Core = Omit<Entry, "first_time" | "last_time" | "time_changed" | "load_coun
 type Row = Touch & { core: Core }
 
 function storePath() {
-  return Flag.MIMOCODE_PLUGIN_META_FILE ?? path.join(Global.Path.state, "plugin-meta.json")
+  return Flag.SWUST_CODE_PLUGIN_META_FILE ?? path.join(Global.Path.state, "plugin-meta.json")
 }
 
 function lock(file: string) {

@@ -1,9 +1,9 @@
-{
+﻿{
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@mimo-ai/plugin",
+  "name": "@swust-code/plugin",
   "version": "0.1.1",
-  "description": "Plugin SDK for extending MiMoCode",
-  "keywords": ["mimo", "mimocode", "ai", "plugin", "coding-assistant"],
+  "description": "Plugin SDK for extending SWUSTCode",
+  "keywords": ["mimo", "swust-code", "ai", "plugin", "coding-assistant"],
   "type": "module",
   "license": "MIT",
   "author": "Xiaomi MiMo Team",
@@ -32,7 +32,7 @@
     "dist"
   ],
   "dependencies": {
-    "@mimo-ai/sdk": "workspace:*",
+    "@swust-code/sdk": "workspace:*",
     "effect": "catalog:",
     "zod": "catalog:"
   },

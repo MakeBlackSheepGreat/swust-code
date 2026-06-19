@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import type { Part } from "@mimo-ai/sdk/v2"
+﻿import { describe, expect, test } from "bun:test"
+import type { Part } from "@swust-code/sdk/v2"
 import { extractPromptFromParts } from "./prompt"
 
 describe("extractPromptFromParts", () => {

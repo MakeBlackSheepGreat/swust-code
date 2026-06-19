@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import type { FilePart } from "@mimo-ai/sdk/v2"
+﻿import { describe, expect, test } from "bun:test"
+import type { FilePart } from "@swust-code/sdk/v2"
 import { attached, inline, kind } from "./message-file"
 
 function file(part: Partial<FilePart> = {}): FilePart {

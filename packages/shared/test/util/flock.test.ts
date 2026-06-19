@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import { spawn } from "child_process"
 import path from "path"
 import os from "os"
-import { Flock } from "@mimo-ai/shared/util/flock"
-import { Hash } from "@mimo-ai/shared/util/hash"
+import { Flock } from "@swust-code/shared/util/flock"
+import { Hash } from "@swust-code/shared/util/hash"
 
 type Msg = {
   key: string

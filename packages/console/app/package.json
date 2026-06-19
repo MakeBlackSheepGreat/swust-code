@@ -1,5 +1,5 @@
-{
-  "name": "@mimo-ai/console-app",
+﻿{
+  "name": "@swust-code/console-app",
   "version": "0.1.1",
   "type": "module",
   "license": "MIT",
@@ -16,10 +16,10 @@
     "@jsx-email/render": "1.1.1",
     "@kobalte/core": "catalog:",
     "@openauthjs/openauth": "catalog:",
-    "@mimo-ai/console-core": "workspace:*",
-    "@mimo-ai/console-mail": "workspace:*",
-    "@mimo-ai/console-resource": "workspace:*",
-    "@mimo-ai/ui": "workspace:*",
+    "@swust-code/console-core": "workspace:*",
+    "@swust-code/console-mail": "workspace:*",
+    "@swust-code/console-resource": "workspace:*",
+    "@swust-code/ui": "workspace:*",
     "@smithy/eventstream-codec": "4.2.7",
     "@smithy/util-utf8": "4.2.0",
     "@solidjs/meta": "catalog:",

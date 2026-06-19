@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import type { Agent } from "@mimo-ai/sdk/v2/client"
+﻿import { describe, expect, test } from "bun:test"
+import type { Agent } from "@swust-code/sdk/v2/client"
 import { normalizeAgentList } from "./utils"
 
 const agent = (name = "build") =>

@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import type { UserMessage } from "@mimo-ai/sdk/v2"
+﻿import { describe, expect, test } from "bun:test"
+import type { UserMessage } from "@swust-code/sdk/v2"
 import { resetSessionModel, syncSessionModel } from "./session-model-helpers"
 
 const message = (input?: { agent?: string; model?: UserMessage["model"] }) =>

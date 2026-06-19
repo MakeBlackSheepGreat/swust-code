@@ -369,14 +369,14 @@ describe("cross-spawn spawner", () => {
 
         const out = yield* ChildProcessSpawner.ChildProcessSpawner.use((svc) =>
           svc.string(
-            ChildProcess.make("set", ["MIMOCODE_TEST_SHELL"], {
+            ChildProcess.make("set", ["SWUST_CODE_TEST_SHELL"], {
               shell: true,
               extendEnv: true,
-              env: { MIMOCODE_TEST_SHELL: "ok" },
+              env: { SWUST_CODE_TEST_SHELL: "ok" },
             }),
           ),
         )
-        expect(out).toContain("MIMOCODE_TEST_SHELL=ok")
+        expect(out).toContain("SWUST_CODE_TEST_SHELL=ok")
       }),
     )
 

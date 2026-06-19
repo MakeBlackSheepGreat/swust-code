@@ -1,4 +1,4 @@
-import z from "zod"
+﻿import z from "zod"
 import { setTimeout as sleep } from "node:timers/promises"
 import { fn } from "@/util/fn"
 import { Database, asc, eq, inArray } from "@/storage"
@@ -12,7 +12,7 @@ import { Flag } from "@/flag/flag"
 import { Log } from "@/util"
 import { Filesystem } from "@/util"
 import { ProjectID } from "@/project/schema"
-import { Slug } from "@mimo-ai/shared/util/slug"
+import { Slug } from "@swust-code/shared/util/slug"
 import { WorkspaceTable } from "./workspace.sql"
 import { getAdaptor } from "./adaptors"
 import { WorkspaceInfo } from "./types"
@@ -112,9 +112,9 @@ export const create = fn(CreateInput, async (input) => {
   })
 
   const env = {
-    MIMOCODE_AUTH_CONTENT: JSON.stringify(await AppRuntime.runPromise(Auth.Service.use((auth) => auth.all()))),
-    MIMOCODE_WORKSPACE_ID: config.id,
-    MIMOCODE_EXPERIMENTAL_WORKSPACES: "true",
+    SWUST_CODE_AUTH_CONTENT: JSON.stringify(await AppRuntime.runPromise(Auth.Service.use((auth) => auth.all()))),
+    SWUST_CODE_WORKSPACE_ID: config.id,
+    SWUST_CODE_EXPERIMENTAL_WORKSPACES: "true",
     OTEL_EXPORTER_OTLP_HEADERS: process.env.OTEL_EXPORTER_OTLP_HEADERS,
     OTEL_EXPORTER_OTLP_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
     OTEL_RESOURCE_ATTRIBUTES: process.env.OTEL_RESOURCE_ATTRIBUTES,
@@ -561,7 +561,7 @@ async function syncWorkspaceLoop(space: Info, signal: AbortSignal) {
 }
 
 async function startSync(space: Info) {
-  if (!Flag.MIMOCODE_EXPERIMENTAL_WORKSPACES) return
+  if (!Flag.SWUST_CODE_EXPERIMENTAL_WORKSPACES) return
 
   const adaptor = await getAdaptor(space.projectID, space.type)
   const target = await adaptor.target(space)

@@ -1,4 +1,4 @@
-import { Stripe } from "stripe"
+﻿import { Stripe } from "stripe"
 import { and, Database, eq, isNull, sql } from "./drizzle"
 import {
   BillingTable,
@@ -12,7 +12,7 @@ import {
 import { Actor } from "./actor"
 import { fn } from "./util/fn"
 import { z } from "zod"
-import { Resource } from "@mimo-ai/console-resource"
+import { Resource } from "@swust-code/console-resource"
 import { Identifier } from "./identifier"
 import { centsToMicroCents } from "./util/price"
 import { User } from "./user"

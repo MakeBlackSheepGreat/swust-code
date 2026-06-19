@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   Agent,
   Command,
   Config,
@@ -15,7 +15,7 @@ import type {
   SnapshotFileDiff,
   Todo,
   VcsInfo,
-} from "@mimo-ai/sdk/v2/client"
+} from "@swust-code/sdk/v2/client"
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
 
