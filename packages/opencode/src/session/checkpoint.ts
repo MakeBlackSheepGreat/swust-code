@@ -33,6 +33,7 @@ import {
   migrateProjectMemory,
 } from "./checkpoint-paths"
 import { readBudgeted, readBudgetedSectionAware } from "./budgeted-read"
+import { resolveImports } from "../memory/import-resolver"
 import type { LastMessageInfo } from "./last-message-info"
 import { CHECKPOINT_TEMPLATE, MEMORY_TEMPLATE, NOTES_TEMPLATE, CHECKPOINT_SECTION_BUDGETS } from "./checkpoint-templates"
 import { adjustBoundaryForApiInvariants } from "./boundary"
@@ -1056,10 +1057,11 @@ export const layer: Layer.Layer<
       const checkpointText = checkpointResult?.text ?? ""
 
       yield* Effect.promise(() => migrateProjectMemory(projectID))
+      const memPath = memoryPath(projectID)
       const memoryResult = yield* Effect.promise(() =>
-        readBudgetedSectionAware(memoryPath(projectID), caps.memory ?? 10_000),
+        readBudgetedSectionAware(memPath, caps.memory ?? 10_000),
       )
-      const memoryText = memoryResult?.text ?? ""
+      const memoryText = memoryResult?.text ? resolveImports(memoryResult.text, path.dirname(memPath)) : ""
 
       const notesResult = yield* Effect.promise(() =>
         readBudgeted(notesPath(sessionID), caps.notes ?? 6000),

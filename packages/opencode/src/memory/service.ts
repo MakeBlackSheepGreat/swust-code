@@ -6,6 +6,7 @@ import { Database } from "../storage"
 import { Config } from "../config"
 import { reconcileMemory } from "./reconcile"
 import { buildFtsQuery } from "./fts-query"
+import { saveFact, loadFacts, deleteFact, type MemoryFact, type FactType } from "./fact-store"
 
 type SearchRow = {
   path: string
@@ -28,6 +29,16 @@ export interface Interface {
   }) => Effect.Effect<
     Array<{ path: string; snippet: string; score: number; scope: string; scope_id: string; type: string }>
   >
+  readonly saveFact: (input: {
+    projectId: string
+    name: string
+    title: string
+    description: string
+    type: FactType
+    body: string
+  }) => Effect.Effect<string>
+  readonly listFacts: (projectId: string) => Effect.Effect<ReadonlyArray<MemoryFact>>
+  readonly deleteFact: (projectId: string, name: string) => Effect.Effect<boolean>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Memory") {}
@@ -133,10 +144,41 @@ export const layer: Layer.Layer<Service, never, Config.Service> = Layer.effect(
       return mapped.filter((r, i) => i === 0 || r.score >= cutoff).slice(0, limit)
     })
 
+    const saveFactImpl = Effect.fn("Memory.saveFact")(function* (input: {
+      projectId: string
+      name: string
+      title: string
+      description: string
+      type: FactType
+      body: string
+    }) {
+      yield* Effect.promise(() =>
+        saveFact(root, input.projectId, {
+          name: input.name,
+          title: input.title,
+          description: input.description,
+          type: input.type,
+          body: input.body,
+        }),
+      )
+      return input.name
+    })
+
+    const listFactsImpl = Effect.fn("Memory.listFacts")(function* (projectId: string) {
+      return yield* Effect.promise(() => loadFacts(root, projectId))
+    })
+
+    const deleteFactImpl = Effect.fn("Memory.deleteFact")(function* (projectId: string, name: string) {
+      return yield* Effect.promise(() => deleteFact(root, projectId, name))
+    })
+
     return Service.of({
       root: rootEff,
       reconcile,
       search,
+      saveFact: saveFactImpl,
+      listFacts: listFactsImpl,
+      deleteFact: deleteFactImpl,
     })
   }),
 )
