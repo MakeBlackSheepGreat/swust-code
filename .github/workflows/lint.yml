@@ -2,9 +2,9 @@ name: lint
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, mimo-rebase]
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, mimo-rebase]
   workflow_dispatch:
 
 jobs:

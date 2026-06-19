@@ -2,9 +2,9 @@ name: test
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, mimo-rebase]
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, mimo-rebase]
   workflow_dispatch:
 
 concurrency:
@@ -26,8 +26,8 @@ jobs:
 
       - name: Configure git identity
         run: |
-          git config --global user.email "ci@mimo.ai"
-          git config --global user.name "mimo-ci"
+          git config --global user.email "ci@swust-code.dev"
+          git config --global user.name "swust-code-ci"
 
       - name: Cache Turbo
         uses: actions/cache@v4
