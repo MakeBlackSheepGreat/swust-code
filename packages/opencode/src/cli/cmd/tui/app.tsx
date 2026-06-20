@@ -68,6 +68,8 @@ import { TuiConfig } from "@/cli/cmd/tui/config/tui"
 import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { isPlainTerminal } from "./util/terminal"
+import { TuiPathsProvider, useTuiPaths } from "./context/runtime"
+import { Global } from "@/global"
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
@@ -162,10 +164,18 @@ export function tui(input: {
         >
           <ArgsProvider {...input.args}>
             <ExitProvider onBeforeExit={onBeforeExit} onExit={onExit}>
-              <KVProvider>
-                <LanguageProvider>
-                  <UiI18nBridge>
-                <ToastProvider>
+              <TuiPathsProvider
+                value={{
+                  cwd: input.directory ?? process.cwd(),
+                  home: Global.Path.home,
+                  state: Global.Path.state,
+                  worktree: input.directory ?? process.cwd(),
+                }}
+              >
+                <KVProvider>
+                  <LanguageProvider>
+                    <UiI18nBridge>
+                      <ToastProvider>
                   <RouteProvider
                     initialRoute={
                       input.args.continue
@@ -210,10 +220,11 @@ export function tui(input: {
                       </SDKProvider>
                     </TuiConfigProvider>
                   </RouteProvider>
-                </ToastProvider>
-                  </UiI18nBridge>
-                </LanguageProvider>
-              </KVProvider>
+                      </ToastProvider>
+                    </UiI18nBridge>
+                  </LanguageProvider>
+                </KVProvider>
+              </TuiPathsProvider>
             </ExitProvider>
           </ArgsProvider>
         </ErrorBoundary>
@@ -237,6 +248,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const sdk = useSDK()
   const toast = useToast()
   const themeState = useTheme()
+  const paths = useTuiPaths()
   const { theme, setMode, locked, lock, unlock } = themeState
   const sync = useSync()
   const exit = useExit()
@@ -265,6 +277,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     theme: themeState,
     toast,
     renderer,
+    paths,
   })
   const [ready, setReady] = createSignal(false)
   TuiPluginRuntime.init({
@@ -330,24 +343,24 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     if (!terminalTitleEnabled() || Flag.SWUST_CODE_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("SWUSTCode")
+      renderer.setTerminalTitle("龙山灵码")
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || SessionApi.isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("SWUSTCode")
+        renderer.setTerminalTitle("龙山灵码")
         return
       }
 
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
-      renderer.setTerminalTitle(`MC | ${title}`)
+      renderer.setTerminalTitle(`SWUST | ${title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.id}`)
+      renderer.setTerminalTitle(`SWUST | ${route.data.id}`)
     }
   })
 
@@ -772,7 +785,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         aliases: ["docs"],
       },
       onSelect: () => {
-        open("https://mimo.xiaomi.com/coder/docs").catch(() => {})
+        open("https://github.com/MakeBlackSheepGreat/swust-code").catch(() => {})
         dialog.clear()
       },
       category: "system",

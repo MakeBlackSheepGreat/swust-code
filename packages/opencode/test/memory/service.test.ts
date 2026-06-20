@@ -54,11 +54,11 @@ describe("Memory.search", () => {
 
         const globalOnly = yield* memory.search({ query: "matching", scope: "global" })
         expect(globalOnly.length).toBe(1)
-        expect(globalOnly[0].path).toContain("/global/")
+        expect(globalOnly[0].path).toContain(path.join("memory", "global", "x.md"))
 
         const sessionOnly = yield* memory.search({ query: "matching", scope: "sessions" })
         expect(sessionOnly.length).toBe(1)
-        expect(sessionOnly[0].path).toContain("/sessions/")
+        expect(sessionOnly[0].path).toContain(path.join("memory", "sessions", "ses_a", "x.md"))
       }),
     ),
   )
@@ -163,6 +163,54 @@ describe("Memory.search", () => {
         // Empty query returns empty array (early-return path).
         const empty = yield* memory.search({ query: "   " })
         expect(empty.length).toBe(0)
+      }),
+    ),
+  )
+})
+
+describe("Memory fact store", () => {
+  it.live("saves, lists, deletes facts and rebuilds project index", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const memory = yield* Memory.Service
+        const root = yield* memory.root()
+        yield* Effect.promise(() => fs.rm(root, { recursive: true, force: true }))
+
+        const name = yield* memory.saveFact({
+          projectId: "project-1",
+          name: "api-contract",
+          title: "API Contract",
+          description: "Use v2 response envelopes",
+          type: "project",
+          body: "All API responses use the v2 envelope shape.",
+        })
+
+        expect(name).toBe("api-contract")
+
+        const facts = yield* memory.listFacts("project-1")
+        expect(facts).toHaveLength(1)
+        expect(facts[0]).toMatchObject({
+          name: "api-contract",
+          title: "API Contract",
+          description: "Use v2 response envelopes",
+          type: "project",
+        })
+        expect(facts[0].body).toContain("v2 envelope")
+
+        const index = yield* Effect.promise(() =>
+          fs.readFile(path.join(root, "projects", "project-1", "MEMORY.md"), "utf-8"),
+        )
+        expect(index).toContain("API Contract")
+        expect(index).toContain("api-contract.md")
+
+        const deleted = yield* memory.deleteFact("project-1", "api-contract")
+        expect(deleted).toBe(true)
+        expect(yield* memory.listFacts("project-1")).toHaveLength(0)
+
+        const rebuilt = yield* Effect.promise(() =>
+          fs.readFile(path.join(root, "projects", "project-1", "MEMORY.md"), "utf-8"),
+        )
+        expect(rebuilt).not.toContain("api-contract.md")
       }),
     ),
   )

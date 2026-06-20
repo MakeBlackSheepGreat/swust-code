@@ -144,7 +144,9 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
 
       const upgradeCurl = Effect.fnUntraced(
         function* (target: string) {
-          const response = yield* httpOk.execute(HttpClientRequest.get("https://mimo.xiaomi.com/install"))
+          const response = yield* httpOk.execute(
+            HttpClientRequest.get("https://raw.githubusercontent.com/MakeBlackSheepGreat/swust-code/main/install"),
+          )
           const body = yield* response.text
           const bodyBytes = new TextEncoder().encode(body)
           const proc = ChildProcess.make("bash", [], {
@@ -221,7 +223,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
           const headers = yield* text([
             "curl",
             "-sI",
-            "https://github.com/XiaomiMiMo/MiMo-Code/releases/latest",
+            "https://github.com/MakeBlackSheepGreat/swust-code/releases/latest",
           ])
           const match = headers.match(/^location:.*\/tag\/v([0-9][^\s/]*)/im)
           if (match) return match[1]
@@ -265,7 +267,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
 
         // TODO(swust-code): uncomment when swust-code has github releases
         // const response = yield* httpOk.execute(
-        //   HttpClientRequest.get("https://api.github.com/repos/anomalyco/opencode/releases/latest").pipe(
+        //   HttpClientRequest.get("https://api.github.com/repos/MakeBlackSheepGreat/swust-code/releases/latest").pipe(
         //     HttpClientRequest.acceptJson,
         //   ),
         // )

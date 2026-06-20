@@ -7,6 +7,7 @@ import type { useRoute } from "@tui/context/route"
 import type { useSDK } from "@tui/context/sdk"
 import type { useSync } from "@tui/context/sync"
 import type { useTheme } from "@tui/context/theme"
+import type { useTuiPaths } from "@tui/context/runtime"
 import { Dialog as DialogUI, type useDialog } from "@tui/ui/dialog"
 import type { TuiConfig } from "@/cli/cmd/tui/config/tui"
 import { createPluginKeybind } from "../context/plugin-keybinds"
@@ -42,6 +43,7 @@ type Input = {
   theme: ReturnType<typeof useTheme>
   toast: ReturnType<typeof useToast>
   renderer: TuiPluginApi["renderer"]
+  paths: ReturnType<typeof useTuiPaths>
 }
 
 function routeRegister(routes: RouteMap, list: TuiRouteDefinition[], bump: () => void) {
@@ -125,7 +127,7 @@ function mapOptionCb<Value>(cb?: (item: TuiDialogSelectOption<Value>) => void) {
   return (item: SelectOption<Value>) => cb(pickOption(item))
 }
 
-function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
+function stateApi(sync: ReturnType<typeof useSync>, paths: ReturnType<typeof useTuiPaths>): TuiPluginApi["state"] {
   return {
     get ready() {
       return sync.ready
@@ -137,7 +139,13 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
       return sync.data.provider
     },
     get path() {
-      return sync.path
+      return {
+        home: sync.path.home || paths.home,
+        state: sync.path.state || paths.state,
+        config: sync.path.config,
+        worktree: sync.path.worktree || paths.worktree,
+        directory: sync.path.directory || paths.cwd,
+      }
     },
     get vcs() {
       if (!sync.data.vcs) return
@@ -343,7 +351,7 @@ export function createTuiApi(input: Input): TuiPluginApi {
         return input.kv.ready
       },
     },
-    state: stateApi(input.sync),
+    state: stateApi(input.sync, input.paths),
     get client() {
       return input.sdk.client
     },

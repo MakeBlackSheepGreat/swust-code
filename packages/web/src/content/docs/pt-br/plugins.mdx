@@ -19,8 +19,8 @@ Existem duas maneiras de carregar plugins.
 
 Coloque arquivos JavaScript ou TypeScript no diretório de plugins.
 
-- `.opencode/plugins/` - Plugins em nível de projeto
-- `~/.config/opencode/plugins/` - Plugins globais
+- `.swust-code/plugins/` - Plugins em nível de projeto
+- `~/.config/swust-code/plugins/` - Plugins globais
 
 Os arquivos nesses diretórios são carregados automaticamente na inicialização.
 
@@ -30,7 +30,7 @@ Os arquivos nesses diretórios são carregados automaticamente na inicializaçã
 
 Especifique pacotes npm no seu arquivo de configuração.
 
-```json title="opencode.json"
+```json title="swust-code.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": ["opencode-helicone-session", "opencode-wakatime", "@my-org/custom-plugin"]
@@ -45,7 +45,7 @@ Navegue pelos plugins disponíveis no [ecossistema](/docs/ecosystem#plugins).
 
 ### Como os plugins são instalados
 
-**Plugins npm** são instalados automaticamente usando Bun na inicialização. Pacotes e suas dependências são armazenados em cache em `~/.cache/opencode/node_modules/`.
+**Plugins npm** são instalados automaticamente usando Bun na inicialização. Pacotes e suas dependências são armazenados em cache em `~/.cache/swust-code/node_modules/`.
 
 **Plugins locais** são carregados diretamente do diretório de plugins. Para usar pacotes externos, você deve criar um `package.json` dentro do seu diretório de configuração (veja [Dependências](#dependencies)), ou publicar o plugin no npm e [adicioná-lo à sua configuração](/docs/config#plugins).
 
@@ -55,10 +55,10 @@ Navegue pelos plugins disponíveis no [ecossistema](/docs/ecosystem#plugins).
 
 Os plugins são carregados de todas as fontes e todos os hooks são executados em sequência. A ordem de carregamento é:
 
-1. Configuração global (`~/.config/opencode/opencode.json`)
-2. Configuração do projeto (`opencode.json`)
-3. Diretório de plugins global (`~/.config/opencode/plugins/`)
-4. Diretório de plugins do projeto (`.opencode/plugins/`)
+1. Configuração global (`~/.config/swust-code/swust-code.json`)
+2. Configuração do projeto (`swust-code.json`)
+3. Diretório de plugins global (`~/.config/swust-code/plugins/`)
+4. Diretório de plugins do projeto (`.swust-code/plugins/`)
 
 Pacotes npm duplicados com o mesmo nome e versão são carregados uma vez. No entanto, um plugin local e um plugin npm com nomes semelhantes são carregados separadamente.
 
@@ -74,7 +74,7 @@ Um plugin é um **módulo JavaScript/TypeScript** que exporta uma ou mais funç�
 
 Plugins locais e ferramentas personalizadas podem usar pacotes npm externos. Adicione um `package.json` ao seu diretório de configuração com as dependências necessárias.
 
-```json title=".opencode/package.json"
+```json title=".swust-code/package.json"
 {
   "dependencies": {
     "shescape": "^2.1.0"
@@ -84,7 +84,7 @@ Plugins locais e ferramentas personalizadas podem usar pacotes npm externos. Adi
 
 O opencode executa `bun install` na inicialização para instalar esses pacotes. Seus plugins e ferramentas podem então importá-los.
 
-```ts title=".opencode/plugins/my-plugin.ts"
+```ts title=".swust-code/plugins/my-plugin.ts"
 import { escape } from "shescape"
 
 export const MyPlugin = async (ctx) => {
@@ -102,7 +102,7 @@ export const MyPlugin = async (ctx) => {
 
 ### Estrutura básica
 
-```js title=".opencode/plugins/example.js"
+```js title=".swust-code/plugins/example.js"
 export const MyPlugin = async ({ project, client, $, directory, worktree }) => {
   console.log("Plugin initialized!")
 
@@ -127,7 +127,7 @@ A função do plugin recebe:
 Para plugins TypeScript, você pode importar tipos do pacote de plugin:
 
 ```ts title="my-plugin.ts" {1}
-import type { Plugin } from "@mimo-ai/plugin"
+import type { Plugin } from "@swust-code/plugin"
 
 export const MyPlugin: Plugin = async ({ project, client, $, directory, worktree }) => {
   return {
@@ -217,7 +217,7 @@ Aqui estão alguns exemplos de plugins que você pode usar para estender o openc
 
 Envie notificações quando certos eventos ocorrerem:
 
-```js title=".opencode/plugins/notification.js"
+```js title=".swust-code/plugins/notification.js"
 export const NotificationPlugin = async ({ project, client, $, directory, worktree }) => {
   return {
     event: async ({ event }) => {
@@ -242,7 +242,7 @@ Se você estiver usando o aplicativo desktop opencode, ele pode enviar notifica�
 
 Impeça o opencode de ler arquivos `.env`:
 
-```javascript title=".opencode/plugins/env-protection.js"
+```javascript title=".swust-code/plugins/env-protection.js"
 export const EnvProtection = async ({ project, client, $, directory, worktree }) => {
   return {
     "tool.execute.before": async (input, output) => {
@@ -260,7 +260,7 @@ export const EnvProtection = async ({ project, client, $, directory, worktree })
 
 Injete variáveis de ambiente em todas as execuções de shell (ferramentas de AI e terminais de usuário):
 
-```javascript title=".opencode/plugins/inject-env.js"
+```javascript title=".swust-code/plugins/inject-env.js"
 export const InjectEnvPlugin = async () => {
   return {
     "shell.env": async (input, output) => {
@@ -277,8 +277,8 @@ export const InjectEnvPlugin = async () => {
 
 Plugins também podem adicionar ferramentas personalizadas ao opencode:
 
-```ts title=".opencode/plugins/custom-tools.ts"
-import { type Plugin, tool } from "@mimo-ai/plugin"
+```ts title=".swust-code/plugins/custom-tools.ts"
+import { type Plugin, tool } from "@swust-code/plugin"
 
 export const CustomToolsPlugin: Plugin = async (ctx) => {
   return {
@@ -316,7 +316,7 @@ Se uma ferramenta de plugin usar o mesmo nome que uma ferramenta integrada, a fe
 
 Use `client.app.log()` em vez de `console.log` para registro estruturado:
 
-```ts title=".opencode/plugins/my-plugin.ts"
+```ts title=".swust-code/plugins/my-plugin.ts"
 export const MyPlugin = async ({ client }) => {
   await client.app.log({
     body: {
@@ -337,8 +337,8 @@ Níveis: `debug`, `info`, `warn`, `error`. Veja a [documentação do SDK](https:
 
 Personalize o contexto incluído quando uma sessão é compactada:
 
-```ts title=".opencode/plugins/compaction.ts"
-import type { Plugin } from "@mimo-ai/plugin"
+```ts title=".swust-code/plugins/compaction.ts"
+import type { Plugin } from "@swust-code/plugin"
 
 export const CompactionPlugin: Plugin = async (ctx) => {
   return {
@@ -361,8 +361,8 @@ O hook `experimental.session.compacting` é acionado antes que o LLM gere um res
 
 Você também pode substituir o prompt de compactação completamente definindo `output.prompt`:
 
-```ts title=".opencode/plugins/custom-compaction.ts"
-import type { Plugin } from "@mimo-ai/plugin"
+```ts title=".swust-code/plugins/custom-compaction.ts"
+import type { Plugin } from "@swust-code/plugin"
 
 export const CustomCompactionPlugin: Plugin = async (ctx) => {
   return {

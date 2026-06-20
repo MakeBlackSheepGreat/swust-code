@@ -119,10 +119,10 @@ opencode auth [command]
 
 #### login
 
-OpenCode 基于 [Models.dev](https://models.dev) 的提供商列表运行，因此您可以使用 `opencode auth login` 为任何想要使用的提供商配置 API 密钥。密钥存储在 `~/.local/share/opencode/auth.json` 中。
+OpenCode 基于 [Models.dev](https://models.dev) 的提供商列表运行，因此您可以使用 `swust-code auth login` 为任何想要使用的提供商配置 API 密钥。密钥存储在 `~/.local/share/swust-code/auth.json` 中。
 
 ```bash
-opencode auth login
+swust-code auth login
 ```
 
 OpenCode 启动时会从凭据文件加载提供商信息，同时也会加载环境变量或项目中 `.env` 文件中定义的密钥。
@@ -170,7 +170,7 @@ opencode github [command]
 在您的仓库中安装 GitHub 代理。
 
 ```bash
-opencode github install
+swust-code github install
 ```
 
 此命令会设置必要的 GitHub Actions 工作流并引导您完成配置过程。[了解更多](/docs/github)。

@@ -59,6 +59,7 @@ test("installs plugin without loading it", async () => {
   const api = createTuiPluginApi({
     state: {
       path: {
+        home: tmp.path,
         state: path.join(tmp.path, "state.json"),
         config: path.join(tmp.path, "tui.json"),
         worktree: tmp.path,

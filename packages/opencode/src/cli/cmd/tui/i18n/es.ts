@@ -29,7 +29,7 @@ export const dict = {
   "tui.home.placeholder.example.todo": "Corregir un TODO en el código",
   "tui.home.placeholder.example.stack": "¿Cuál es el stack técnico del proyecto?",
   "tui.home.placeholder.example.tests": "Arreglar las pruebas fallidas",
-  "tui.home.agreement.prefix": "Al usar SWUSTCode, aceptas nuestros ",
+  "tui.home.agreement.prefix": "Al usar SWUST Code, aceptas nuestros ",
   "tui.home.agreement.terms": "Términos de servicio",
   "tui.home.agreement.separator": " y la ",
   "tui.home.agreement.privacy": "Política de privacidad",
@@ -126,7 +126,7 @@ export const dict = {
   "tui.tips.mcp_config":
     "Configura servidores MCP locales o remotos en la sección {highlight}mcp{/highlight}",
   "tui.tips.mcp_oauth":
-    "SWUSTCode gestiona automáticamente OAuth para servidores MCP remotos que requieran autenticación",
+    "SWUST Code gestiona automáticamente OAuth para servidores MCP remotos que requieran autenticación",
   "tui.tips.custom_command":
     "Añade archivos {highlight}.md{/highlight} en {highlight}.swust-code/command/{/highlight} para definir indicaciones personalizadas reutilizables",
   "tui.tips.command_args":
@@ -143,12 +143,12 @@ export const dict = {
     'Define {highlight}"rm -rf *": "deny"{/highlight} para bloquear comandos destructivos',
   "tui.tips.bash_ask":
     'Configura {highlight}"git push": "ask"{/highlight} para exigir confirmación antes de hacer push',
-  "tui.tips.formatter": "SWUSTCode formatea archivos automáticamente con prettier, gofmt, ruff y más",
+  "tui.tips.formatter": "SWUST Code formatea archivos automáticamente con prettier, gofmt, ruff y más",
   "tui.tips.disable_formatter":
     'Define {highlight}"formatter": false{/highlight} en la config para desactivar el formato automático',
   "tui.tips.custom_formatter":
     "Define comandos de formateo personalizados por extensión de archivo en la configuración",
-  "tui.tips.lsp": "SWUSTCode usa servidores LSP para análisis inteligente de código",
+  "tui.tips.lsp": "SWUST Code usa servidores LSP para análisis inteligente de código",
   "tui.tips.custom_tool":
     "Crea archivos {highlight}.ts{/highlight} en {highlight}.swust-code/tools/{/highlight} para definir nuevas herramientas LLM",
   "tui.tips.tool_scripts":
@@ -158,29 +158,29 @@ export const dict = {
   "tui.tips.plugin_notify":
     "Usa plugins para enviar notificaciones del sistema cuando termine una sesión",
   "tui.tips.plugin_protect":
-    "Crea un plugin que impida a SWUSTCode leer archivos sensibles",
+    "Crea un plugin que impida a SWUST Code leer archivos sensibles",
   "tui.tips.run":
-    "Usa {highlight}mimo run{/highlight} para scripting no interactivo",
+    "Usa {highlight}swust-code run{/highlight} para scripting no interactivo",
   "tui.tips.continue":
-    "Usa {highlight}mimo --continue{/highlight} para retomar la última sesión",
+    "Usa {highlight}swust-code --continue{/highlight} para retomar la última sesión",
   "tui.tips.attach_cli":
-    "Usa {highlight}mimo run -f file.ts{/highlight} para adjuntar archivos vía CLI",
+    "Usa {highlight}swust-code run -f file.ts{/highlight} para adjuntar archivos vía CLI",
   "tui.tips.format_json":
     "Usa {highlight}--format json{/highlight} para obtener salida legible por máquina en scripts",
   "tui.tips.serve":
-    "Ejecuta {highlight}mimo serve{/highlight} para acceso headless a la API de SWUSTCode",
+    "Ejecuta {highlight}swust-code serve{/highlight} para acceso headless a la API de SWUST Code",
   "tui.tips.attach_server":
-    "Usa {highlight}mimo run --attach{/highlight} para conectarte a un servidor en ejecución",
+    "Usa {highlight}swust-code run --attach{/highlight} para conectarte a un servidor en ejecución",
   "tui.tips.upgrade":
-    "Ejecuta {highlight}mimo upgrade{/highlight} para actualizar a la última versión",
+    "Ejecuta {highlight}swust-code upgrade{/highlight} para actualizar a la última versión",
   "tui.tips.auth_list":
-    "Ejecuta {highlight}mimo auth list{/highlight} para ver todos los proveedores configurados",
+    "Ejecuta {highlight}swust-code auth list{/highlight} para ver todos los proveedores configurados",
   "tui.tips.agent_create":
-    "Ejecuta {highlight}mimo agent create{/highlight} para crear un agente con asistente guiado",
+    "Ejecuta {highlight}swust-code agent create{/highlight} para crear un agente con asistente guiado",
   "tui.tips.github_trigger":
-    "Usa {highlight}/opencode{/highlight} en issues/PR de GitHub para disparar acciones de IA",
+    "Usa {highlight}/swust-code{/highlight} en issues/PR de GitHub para disparar acciones de IA",
   "tui.tips.github_install":
-    "Ejecuta {highlight}mimo github install{/highlight} para configurar el workflow de GitHub",
+    "Ejecuta {highlight}swust-code github install{/highlight} para configurar el workflow de GitHub",
   "tui.tips.github_oc":
     "Comenta {highlight}/oc{/highlight} en líneas de código de un PR para revisiones puntuales",
   "tui.tips.theme_system":
@@ -216,7 +216,7 @@ export const dict = {
   "tui.tips.external_dir":
     "El permiso {highlight}external_directory{/highlight} protege archivos fuera del proyecto",
   "tui.tips.debug_config":
-    "Ejecuta {highlight}mimo debug config{/highlight} para diagnosticar problemas de configuración",
+    "Ejecuta {highlight}swust-code debug config{/highlight} para diagnosticar problemas de configuración",
   "tui.tips.print_logs":
     "Usa la opción {highlight}--print-logs{/highlight} para ver logs detallados en stderr",
   "tui.tips.timeline":
@@ -230,7 +230,7 @@ export const dict = {
   "tui.tips.username_toggle":
     "Activa/desactiva la visualización del nombre de usuario desde la paleta de comandos ({highlight}Ctrl+P{/highlight})",
   "tui.tips.docker":
-    "Ejecuta {highlight}docker run -it --rm ghcr.io/anomalyco/opencode{/highlight} para uso en contenedor",
+    "Ejecuta {highlight}docker run -it --rm ghcr.io/makeblacksheepgreat/swust-code{/highlight} para uso en contenedor",
   "tui.tips.zen":
     "Usa {highlight}/connect{/highlight} con SWUST Code para modelos seleccionados y probados",
   "tui.tips.agents_md":
@@ -337,7 +337,7 @@ export const dict = {
   "tui.toast.update_available.confirm": "La nueva versión v{{version}} está disponible. ¿Desea actualizar ahora?",
   "tui.toast.update_available.updating": "Actualizando a v{{version}}...",
   "tui.toast.update_available.failed": "La actualización falló",
-  "tui.toast.update_available.success": "Se actualizó a SWUSTCode v{{version}}. Por favor reinicie la aplicación.",
+  "tui.toast.update_available.success": "Se actualizó a SWUST Code v{{version}}. Por favor reinicie la aplicación.",
   "tui.toast.updated.title": "Actualizado automáticamente",
   "tui.toast.updated.message": "Parche aplicado automáticamente: v{{version}}. Reinicie para usar la nueva versión. Desactive con autoupdate: false en la configuración.",
   "tui.sidebar.instructions": "Instrucciones",

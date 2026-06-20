@@ -119,10 +119,10 @@ opencode auth [command]
 
 #### login
 
-OpenCode est alimenté par la liste des fournisseurs sur [Models.dev](https://models.dev), vous pouvez donc utiliser `opencode auth login` pour configurer les clés API pour tout fournisseur que vous souhaitez utiliser. Ceci est stocké dans `~/.local/share/opencode/auth.json`.
+OpenCode est alimenté par la liste des fournisseurs sur [Models.dev](https://models.dev), vous pouvez donc utiliser `swust-code auth login` pour configurer les clés API pour tout fournisseur que vous souhaitez utiliser. Ceci est stocké dans `~/.local/share/swust-code/auth.json`.
 
 ```bash
-opencode auth login
+swust-code auth login
 ```
 
 Lorsque OpenCode démarre, il charge les fournisseurs à partir du fichier d'informations d'identification, ainsi que les clés définies dans vos environnements ou un fichier `.env` dans votre projet.
@@ -170,7 +170,7 @@ opencode github [command]
 Installez l'agent GitHub dans votre dépôt.
 
 ```bash
-opencode github install
+swust-code github install
 ```
 
 Cela configure le flux de travail GitHub Actions nécessaire et vous guide tout au long du processus de configuration. [En savoir plus](/docs/github).

@@ -22,8 +22,8 @@ body:
   - type: input
     id: swust-code-version
     attributes:
-      label: SWUSTCode version
-      description: What version of SWUSTCode are you using?
+      label: SWUST Code version
+      description: What version of SWUST Code are you using?
     validations:
       required: false
 

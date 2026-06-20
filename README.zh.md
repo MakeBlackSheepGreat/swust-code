@@ -1,7 +1,7 @@
-<h1 align="center">SWUSTCode</h1>
+<h1 align="center">龙山灵码</h1>
 
 <p align="center">
-  <img src="assets/readme/swust-code-banner.png" alt="SWUSTCode" width="700">
+  <img src="assets/readme/swust-code-banner.png" alt="龙山灵码" width="700">
 </p>
 
 <p align="center"><strong>SWUST Code: Where Models and Agents Co-Evolve</strong></p>
@@ -11,12 +11,12 @@
 </p>
 
 <p align="center">
-  <a href="https://mimo.xiaomi.com/zh/swust-code">官网</a> | <a href="https://mimo.xiaomi.com/zh/blog/mimo-code-long-horizon">博客</a>
+  <a href="https://swust-code.dev">官网</a> | <a href="https://github.com/MakeBlackSheepGreat/swust-code">GitHub</a>
 </p>
 
 ---
 
-SWUSTCode 是一个终端原生的 AI 编程助手。它能读写代码、执行命令、管理 Git，通过持久化记忆系统，在多次会话间保持对你项目的深度理解，并自我进化。
+龙山灵码 是一个终端原生的 AI 编程助手。它能读写代码、执行命令、管理 Git，通过持久化记忆系统，在多次会话间保持对你项目的深度理解，并自我进化。
 
 内置 MiMo Auto 限时免费通道——零配置即可开始使用。也支持接入各家主流 LLM 厂商 API。
 
@@ -26,13 +26,13 @@ SWUSTCode 是一个终端原生的 AI 编程助手。它能读写代码、执行
 
 ```bash
 # 一键安装
-curl -fsSL https://mimo.xiaomi.com/install | bash
+curl -fsSL https://raw.githubusercontent.com/MakeBlackSheepGreat/swust-code/main/install | bash
 
 # 或通过 npm 安装
 npm install -g @swust-code/cli
 
 # 运行
-mimo
+swust-code
 ```
 
 首次启动自动引导配置。支持：
@@ -201,9 +201,9 @@ bun turbo typecheck      # 类型检查
 
 ---
 
-## 与 OpenCode 的关系
+## 与 MiMo-Code 的关系
 
-SWUSTCode 基于 [OpenCode](https://github.com/XiaomiMiMo/MiMo-Code) fork 构建，保留其全部核心能力（多 Provider、TUI、LSP、MCP、插件），并在此基础上构建了持久化记忆、智能上下文管理、子智能体编排、目标驱动的自主循环、Compose 工作流，以及通过 dream/distill 实现的自我进化。
+龙山灵码（中文名：龙山灵码）基于 [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) fork 构建，保留其全部核心能力（多 Provider、TUI、LSP、MCP、插件），并在此基础上构建了持久化记忆、智能上下文管理、子智能体编排、目标驱动的自主循环、Compose 工作流，以及通过 dream/distill 实现的自我进化。
 
 ---
 
@@ -221,6 +221,6 @@ SWUSTCode 基于 [OpenCode](https://github.com/XiaomiMiMo/MiMo-Code) fork 构建
 
 源代码基于 [MIT 许可证](./LICENSE) 开源。
 
-使用 SWUSTCode 还需遵守[使用限制](./USE_RESTRICTIONS.md)。
+使用 龙山灵码 还需遵守[使用限制](./USE_RESTRICTIONS.md)。
 使用小米 MiMo 托管服务须遵守 [MiMo 服务条款](https://platform.xiaomimimo.com/docs/terms/user-agreement)。
 使用 MiMo 名称、标志和商标须遵守 MiMo 商标政策。

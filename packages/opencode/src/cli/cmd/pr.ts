@@ -101,7 +101,7 @@ export const PrCommand = cmd({
                 UI.println(`Found swust-code session: ${sessionUrl}`)
                 UI.println(`Importing session...`)
 
-                const importResult = await Process.text(["mimo", "import", sessionUrl], {
+                const importResult = await Process.text(["swust-code", "import", sessionUrl], {
                   nothrow: true,
                 })
                 if (importResult.code === 0) {
@@ -123,15 +123,15 @@ export const PrCommand = cmd({
         UI.println("Starting swust-code...")
         UI.println()
 
-        const mimoArgs = sessionId ? ["-s", sessionId] : []
-        const mimoProcess = Process.spawn(["mimo", ...mimoArgs], {
+        const swustCodeArgs = sessionId ? ["-s", sessionId] : []
+        const swustCodeProcess = Process.spawn(["swust-code", ...swustCodeArgs], {
           stdin: "inherit",
           stdout: "inherit",
           stderr: "inherit",
           cwd: process.cwd(),
         })
-        const code = await mimoProcess.exited
-        if (code !== 0) throw new Error(`mimo exited with code ${code}`)
+        const code = await swustCodeProcess.exited
+        if (code !== 0) throw new Error(`swust-code exited with code ${code}`)
       },
     })
   },

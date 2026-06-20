@@ -1,6 +1,6 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@swust-code/plugin/tui"
 import { createMemo, Show } from "solid-js"
-import { Global } from "@/global"
+import { splitDisplayPath } from "@tui/routes/session/sidebar-path"
 
 const id = "internal:sidebar-footer"
 
@@ -14,14 +14,10 @@ function View(props: { api: TuiPluginApi }) {
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))
   const show = createMemo(() => !has() && !done())
   const path = createMemo(() => {
-    const dir = props.api.state.path.directory || process.cwd()
-    const out = dir.replace(Global.Path.home, "~")
+    const dir = props.api.state.path.directory
+    const out = dir.replace(props.api.state.path.home, "~")
     const text = props.api.state.vcs?.branch ? out + ":" + props.api.state.vcs.branch : out
-    const list = text.split("/")
-    return {
-      parent: list.slice(0, -1).join("/"),
-      name: list.at(-1) ?? "",
-    }
+    return splitDisplayPath(text)
   })
 
   return (
@@ -48,7 +44,7 @@ function View(props: { api: TuiPluginApi }) {
                 ✕
               </text>
             </box>
-            <text fg={theme().textMuted}>SWUSTCode includes free models so you can start immediately.</text>
+            <text fg={theme().textMuted}>SWUST Code includes free models so you can start immediately.</text>
             <text fg={theme().textMuted}>
               Connect from 75+ providers to use other models, including Claude, GPT, Gemini etc
             </text>
@@ -60,7 +56,7 @@ function View(props: { api: TuiPluginApi }) {
         </box>
       </Show>
       <text>
-        <span style={{ fg: theme().textMuted }}>{path().parent}/</span>
+        <span style={{ fg: theme().textMuted }}>{path().parent ? `${path().parent}/` : ""}</span>
         <span style={{ fg: theme().text }}>{path().name}</span>
       </text>
       <text fg={theme().textMuted}>

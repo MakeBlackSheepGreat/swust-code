@@ -29,7 +29,7 @@ export const dict = {
   "tui.home.placeholder.example.todo": "Исправь TODO в кодовой базе",
   "tui.home.placeholder.example.stack": "Какой технологический стек у этого проекта?",
   "tui.home.placeholder.example.tests": "Почини сломанные тесты",
-  "tui.home.agreement.prefix": "Используя SWUSTCode, вы соглашаетесь с нашими ",
+  "tui.home.agreement.prefix": "Используя SWUST Code, вы соглашаетесь с нашими ",
   "tui.home.agreement.terms": "Условиями использования",
   "tui.home.agreement.separator": " и ",
   "tui.home.agreement.privacy": "Политикой конфиденциальности",
@@ -127,7 +127,7 @@ export const dict = {
   "tui.tips.mcp_config":
     "Настройте локальные или удалённые MCP-серверы в разделе {highlight}mcp{/highlight} конфига",
   "tui.tips.mcp_oauth":
-    "SWUSTCode автоматически обрабатывает OAuth для удалённых MCP-серверов с авторизацией",
+    "SWUST Code автоматически обрабатывает OAuth для удалённых MCP-серверов с авторизацией",
   "tui.tips.custom_command":
     "Добавляйте файлы {highlight}.md{/highlight} в {highlight}.swust-code/command/{/highlight} для повторно используемых пользовательских команд",
   "tui.tips.command_args":
@@ -145,12 +145,12 @@ export const dict = {
   "tui.tips.bash_ask":
     'Настройте {highlight}"git push": "ask"{/highlight}, чтобы запрашивать подтверждение перед push',
   "tui.tips.formatter":
-    "SWUSTCode автоматически форматирует файлы с помощью prettier, gofmt, ruff и других инструментов",
+    "SWUST Code автоматически форматирует файлы с помощью prettier, gofmt, ruff и других инструментов",
   "tui.tips.disable_formatter":
     'Установите {highlight}"formatter": false{/highlight}, чтобы отключить всё авто-форматирование',
   "tui.tips.custom_formatter":
     "Определяйте собственные команды форматирования по расширениям файлов в конфиге",
-  "tui.tips.lsp": "SWUSTCode использует LSP-серверы для интеллектуального анализа кода",
+  "tui.tips.lsp": "SWUST Code использует LSP-серверы для интеллектуального анализа кода",
   "tui.tips.custom_tool":
     "Создавайте файлы {highlight}.ts{/highlight} в {highlight}.swust-code/tools/{/highlight}, чтобы определить новые LLM-инструменты",
   "tui.tips.tool_scripts":
@@ -160,29 +160,29 @@ export const dict = {
   "tui.tips.plugin_notify":
     "Используйте плагины, чтобы отправлять системные уведомления при завершении сессий",
   "tui.tips.plugin_protect":
-    "Создайте плагин, который запретит SWUSTCode читать чувствительные файлы",
+    "Создайте плагин, который запретит SWUST Code читать чувствительные файлы",
   "tui.tips.run":
-    "Используйте {highlight}mimo run{/highlight} для неинтерактивных скриптов",
+    "Используйте {highlight}swust-code run{/highlight} для неинтерактивных скриптов",
   "tui.tips.continue":
-    "Используйте {highlight}mimo --continue{/highlight}, чтобы продолжить последнюю сессию",
+    "Используйте {highlight}swust-code --continue{/highlight}, чтобы продолжить последнюю сессию",
   "tui.tips.attach_cli":
-    "Используйте {highlight}mimo run -f file.ts{/highlight}, чтобы прикрепить файлы из командной строки",
+    "Используйте {highlight}swust-code run -f file.ts{/highlight}, чтобы прикрепить файлы из командной строки",
   "tui.tips.format_json":
     "Используйте {highlight}--format json{/highlight} для машинно-читаемого вывода в скриптах",
   "tui.tips.serve":
-    "Запустите {highlight}mimo serve{/highlight} для headless-доступа к API SWUSTCode",
+    "Запустите {highlight}swust-code serve{/highlight} для headless-доступа к API SWUST Code",
   "tui.tips.attach_server":
-    "Используйте {highlight}mimo run --attach{/highlight}, чтобы подключиться к запущенному серверу",
+    "Используйте {highlight}swust-code run --attach{/highlight}, чтобы подключиться к запущенному серверу",
   "tui.tips.upgrade":
-    "Выполните {highlight}mimo upgrade{/highlight}, чтобы обновиться до последней версии",
+    "Выполните {highlight}swust-code upgrade{/highlight}, чтобы обновиться до последней версии",
   "tui.tips.auth_list":
-    "Выполните {highlight}mimo auth list{/highlight}, чтобы увидеть всех настроенных провайдеров",
+    "Выполните {highlight}swust-code auth list{/highlight}, чтобы увидеть всех настроенных провайдеров",
   "tui.tips.agent_create":
-    "Выполните {highlight}mimo agent create{/highlight}, чтобы создать агента в пошаговом режиме",
+    "Выполните {highlight}swust-code agent create{/highlight}, чтобы создать агента в пошаговом режиме",
   "tui.tips.github_trigger":
-    "Используйте {highlight}/opencode{/highlight} в issue/PR на GitHub, чтобы запускать AI-действия",
+    "Используйте {highlight}/swust-code{/highlight} в issue/PR на GitHub, чтобы запускать AI-действия",
   "tui.tips.github_install":
-    "Выполните {highlight}mimo github install{/highlight}, чтобы настроить GitHub-workflow",
+    "Выполните {highlight}swust-code github install{/highlight}, чтобы настроить GitHub-workflow",
   "tui.tips.github_oc":
     "Оставьте {highlight}/oc{/highlight} в комментарии к строке PR для точечного код-ревью",
   "tui.tips.theme_system":
@@ -219,7 +219,7 @@ export const dict = {
   "tui.tips.external_dir":
     "Разрешение {highlight}external_directory{/highlight} защищает файлы вне проекта",
   "tui.tips.debug_config":
-    "Выполните {highlight}mimo debug config{/highlight}, чтобы диагностировать проблемы конфигурации",
+    "Выполните {highlight}swust-code debug config{/highlight}, чтобы диагностировать проблемы конфигурации",
   "tui.tips.print_logs":
     "Используйте флаг {highlight}--print-logs{/highlight}, чтобы видеть подробные логи в stderr",
   "tui.tips.timeline":
@@ -233,7 +233,7 @@ export const dict = {
   "tui.tips.username_toggle":
     "Переключайте отображение имени пользователя через палитру команд ({highlight}Ctrl+P{/highlight})",
   "tui.tips.docker":
-    "Выполните {highlight}docker run -it --rm ghcr.io/anomalyco/opencode{/highlight} для контейнерного запуска",
+    "Выполните {highlight}docker run -it --rm ghcr.io/makeblacksheepgreat/swust-code{/highlight} для контейнерного запуска",
   "tui.tips.zen":
     "Используйте {highlight}/connect{/highlight} с SWUST Code для подобранных и протестированных моделей",
   "tui.tips.agents_md":
@@ -341,7 +341,7 @@ export const dict = {
   "tui.toast.update_available.confirm": "Доступна новая версия v{{version}}. Обновить сейчас?",
   "tui.toast.update_available.updating": "Обновление до v{{version}}...",
   "tui.toast.update_available.failed": "Не удалось обновить",
-  "tui.toast.update_available.success": "Обновлено до SWUSTCode v{{version}}. Пожалуйста, перезапустите приложение.",
+  "tui.toast.update_available.success": "Обновлено до SWUST Code v{{version}}. Пожалуйста, перезапустите приложение.",
   "tui.toast.updated.title": "Автообновление выполнено",
   "tui.toast.updated.message": "Патч применён автоматически: v{{version}}. Перезапустите для использования новой версии. Отключите через autoupdate: false в конфигурации.",
   "tui.sidebar.instructions": "Инструкции",
@@ -464,7 +464,7 @@ export const dict = {
   "cli.providers.mimo_free.failed": "Не удалось проверить MiMo Auto (free)",
   "cli.providers.mimo_free.default_set": "Модель по умолчанию: mimo/mimo-auto (контекст 1M, бесплатно)",
   "cli.providers.mimo_free.usage_hint":
-    "Вход не требуется — просто запустите mimo. Для платных/премиум-моделей выберите вход через браузер MiMo.",
+    "Вход не требуется — просто запустите swust-code. Для платных/премиум-моделей выберите вход через браузер MiMo.",
   "cli.providers.mimo_login.decrypt_retry": "Ошибка расшифровки, повторите попытку (осталось попыток: {remaining})",
   "cli.providers.mimo_login.decrypt_exhausted": "Ошибка расшифровки, превышено максимальное число попыток",
 

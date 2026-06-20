@@ -22,7 +22,7 @@
     "db": "bun drizzle-kit"
   },
   "bin": {
-    "mimo": "./bin/mimo"
+    "swust-code": "./bin/swust-code"
   },
   "exports": {
     "./*": "./src/*.ts"

@@ -119,10 +119,10 @@ opencode auth [command]
 
 #### login
 
-OpenCode pokreće lista provajdera na [Models.dev](https://models.dev), tako da možete koristiti `opencode auth login` da konfigurirate API ključeve za bilo kojeg provajdera kojeg želite koristiti. Ovo je pohranjeno u `~/.local/share/opencode/auth.json`.
+OpenCode pokreće lista provajdera na [Models.dev](https://models.dev), tako da možete koristiti `swust-code auth login` da konfigurirate API ključeve za bilo kojeg provajdera kojeg želite koristiti. Ovo je pohranjeno u `~/.local/share/swust-code/auth.json`.
 
 ```bash
-opencode auth login
+swust-code auth login
 ```
 
 Kada se OpenCode pokrene, učitava dobavljače iz datoteke vjerodajnica. I ako postoje neki ključevi definirani u vašim okruženjima ili `.env` fajl u vašem projektu.
@@ -170,7 +170,7 @@ opencode github [command]
 Instalirajte GitHub agenta u svoj repozitorij.
 
 ```bash
-opencode github install
+swust-code github install
 ```
 
 Ovo postavlja neophodni tok rada GitHub Actions i vodi vas kroz proces konfiguracije. [Saznajte više](/docs/github).

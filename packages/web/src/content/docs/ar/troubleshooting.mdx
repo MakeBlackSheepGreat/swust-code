@@ -11,7 +11,7 @@ description: المشكلات الشائعة وكيفية حلها.
 
 يتم حفظ ملفات السجل في:
 
-- **macOS/Linux**: `~/.local/share/opencode/log/`
+- **macOS/Linux**: `~/.local/share/swust-code/log/`
 - **Windows**: اضغط `WIN+R` والصق `%USERPROFILE%\.local\share\opencode\log`
 
 تتم تسمية ملفات السجل بطوابع زمنية (مثل `2025-01-09T123456.log`) ويتم الاحتفاظ بأحدث 10 ملفات سجل.
@@ -24,7 +24,7 @@ description: المشكلات الشائعة وكيفية حلها.
 
 يخزن opencode بيانات الجلسات وبيانات التطبيق الأخرى على القرص في:
 
-- **macOS/Linux**: `~/.local/share/opencode/`
+- **macOS/Linux**: `~/.local/share/swust-code/`
 - **Windows**: اضغط `WIN+R` والصق `%USERPROFILE%\.local\share\opencode`
 
 يحتوي هذا الدليل على:
@@ -57,9 +57,9 @@ description: المشكلات الشائعة وكيفية حلها.
 
 افتح ملف الإعدادات العام وابحث عن المفتاح `plugin`.
 
-- **macOS/Linux**: `~/.config/opencode/opencode.jsonc` (أو `~/.config/opencode/opencode.json`)
-- **macOS/Linux** (عمليات تثبيت أقدم): `~/.local/share/opencode/opencode.jsonc`
-- **Windows**: اضغط `WIN+R` والصق `%USERPROFILE%\.config\opencode\opencode.jsonc`
+- **macOS/Linux**: `~/.config/swust-code/swust-code.jsonc` (أو `~/.config/swust-code/swust-code.json`)
+- **macOS/Linux** (عمليات تثبيت أقدم): `~/.local/share/swust-code/swust-code.jsonc`
+- **Windows**: اضغط `WIN+R` والصق `%USERPROFILE%\.config\opencode\swust-code.jsonc`
 
 إذا كانت لديك إضافات مضبوطة، فقم بتعطيلها مؤقتا بإزالة المفتاح أو ضبطه على مصفوفة فارغة:
 
@@ -75,10 +75,10 @@ description: المشكلات الشائعة وكيفية حلها.
 يمكن لـ OpenCode أيضا تحميل إضافات محلية من القرص. انقلها مؤقتا إلى مكان آخر (أو أعد تسمية المجلد) ثم أعد تشغيل تطبيق سطح المكتب:
 
 - **إضافات عامة**
-  - **macOS/Linux**: `~/.config/opencode/plugins/`
+  - **macOS/Linux**: `~/.config/swust-code/plugins/`
   - **Windows**: اضغط `WIN+R` والصق `%USERPROFILE%\.config\opencode\plugins`
 - **إضافات المشروع** (فقط إذا كنت تستخدم إعدادات لكل مشروع)
-  - `<your-project>/.opencode/plugins/`
+  - `<your-project>/.swust-code/plugins/`
 
 إذا عاد التطبيق للعمل، فأعد تفعيل الإضافات واحدة تلو الأخرى لمعرفة أيها يسبب المشكلة.
 
@@ -91,8 +91,8 @@ description: المشكلات الشائعة وكيفية حلها.
 1. أغلق OpenCode Desktop تماما.
 2. احذف دليل ذاكرة التخزين المؤقت:
 
-- **macOS**: Finder -> `Cmd+Shift+G` -> الصق `~/.cache/opencode`
-- **Linux**: احذف `~/.cache/opencode` (أو شغّل `rm -rf ~/.cache/opencode`)
+- **macOS**: Finder -> `Cmd+Shift+G` -> الصق `~/.cache/swust-code`
+- **Linux**: احذف `~/.cache/swust-code` (أو شغّل `rm -rf ~/.cache/swust-code`)
 - **Windows**: اضغط `WIN+R` والصق `%USERPROFILE%\.cache\opencode`
 
 3. أعد تشغيل OpenCode Desktop.
@@ -111,7 +111,7 @@ description: المشكلات الشائعة وكيفية حلها.
 
 #### إزالة `server.port` / `server.hostname` من الإعدادات
 
-إذا كان `opencode.json(c)` يحتوي على قسم `server`، فأزله مؤقتا ثم أعد تشغيل تطبيق سطح المكتب.
+إذا كان `swust-code.json(c)` يحتوي على قسم `server`، فأزله مؤقتا ثم أعد تشغيل تطبيق سطح المكتب.
 
 #### تحقق من متغيرات البيئة
 
@@ -177,7 +177,7 @@ description: المشكلات الشائعة وكيفية حلها.
 
    أفضل طريقة للإبلاغ عن الأخطاء أو طلب الميزات هي عبر مستودعنا على GitHub:
 
-   [**github.com/anomalyco/opencode/issues**](https://github.com/anomalyco/opencode/issues)
+   [**github.com/MakeBlackSheepGreat/swust-code/issues**](https://github.com/MakeBlackSheepGreat/swust-code/issues)
 
    قبل إنشاء مشكلة جديدة، ابحث في المشكلات الموجودة لمعرفة ما إذا كانت مشكلتك قد تم الإبلاغ عنها بالفعل.
 
@@ -240,7 +240,7 @@ description: المشكلات الشائعة وكيفية حلها.
 2. إذا استمرت المشكلة، فجرّب مسح الإعدادات المخزنة لديك:
 
    ```bash
-   rm -rf ~/.local/share/opencode
+   rm -rf ~/.local/share/swust-code
    ```
 
    على Windows، اضغط `WIN+R` واحذف: `%USERPROFILE%\.local\share\opencode`
@@ -258,7 +258,7 @@ description: المشكلات الشائعة وكيفية حلها.
 1. امسح ذاكرة التخزين المؤقت لحزم المزوّد:
 
    ```bash
-   rm -rf ~/.cache/opencode
+   rm -rf ~/.cache/swust-code
    ```
 
    على Windows، اضغط `WIN+R` واحذف: `%USERPROFILE%\.cache\opencode`

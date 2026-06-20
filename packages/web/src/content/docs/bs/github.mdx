@@ -3,7 +3,7 @@ title: GitHub
 description: Koristite OpenCode u GitHub problemima i zahtjevima za povlačenjem.
 ---
 
-OpenCode se integriše sa vašim GitHub tokovom rada. Spomenite `/opencode` ili `/oc` u svom komentaru i OpenCode će izvršiti zadatke unutar vašeg GitHub Actions runnera.
+OpenCode se integriše sa vašim GitHub tokovom rada. Spomenite `/swust-code` ili `/oc` u svom komentaru i OpenCode će izvršiti zadatke unutar vašeg GitHub Actions runnera.
 
 ---
 
@@ -20,7 +20,7 @@ OpenCode se integriše sa vašim GitHub tokovom rada. Spomenite `/opencode` ili 
 Pokrenite sljedeću naredbu u projektu koji se nalazi u GitHub repo:
 
 ```bash
-opencode github install
+swust-code github install
 ```
 
 Ovo će vas provesti kroz instalaciju GitHub aplikacije, kreiranje toka posla i postavljanje tajni.
@@ -32,12 +32,12 @@ Ovo će vas provesti kroz instalaciju GitHub aplikacije, kreiranje toka posla i 
 Ili ga možete postaviti ručno.
 
 1. **Instalirajte GitHub aplikaciju**
-   Idite na [**github.com/apps/opencodegent**](https://github.com/apps/opencodegent). Uvjerite se da je instaliran na ciljnom spremištu.
+   Idite na [**github.com/apps/swust-codegent**](https://github.com/apps/swust-codegent). Uvjerite se da je instaliran na ciljnom spremištu.
 2. **Dodajte radni tok**
-   Dodajte sljedeći fajl toka posla u `.github/workflows/opencode.yml` u svoj repo. Obavezno postavite odgovarajuće `model` i potrebne API ključeve u `env`.
+   Dodajte sljedeći fajl toka posla u `.github/workflows/swust-code.yml` u svoj repo. Obavezno postavite odgovarajuće `model` i potrebne API ključeve u `env`.
 
-```yml title=".github/workflows/opencode.yml" {24,26}
-   name: opencode
+```yml title=".github/workflows/swust-code.yml" {24,26}
+   name: swust-code
 
    on:
      issue_comment:
@@ -46,10 +46,10 @@ Ili ga možete postaviti ručno.
        types: [created]
 
    jobs:
-     opencode:
+     swust-code:
        if: |
          contains(github.event.comment.body, '/oc') ||
-         contains(github.event.comment.body, '/opencode')
+         contains(github.event.comment.body, '/swust-code')
        runs-on: ubuntu-latest
        permissions:
          id-token: write
@@ -60,8 +60,8 @@ Ili ga možete postaviti ručno.
               fetch-depth: 1
               persist-credentials: false
 
-          - name: Run OpenCode
-           uses: anomalyco/opencode/github@latest
+          - name: Run SWUST Code
+           uses: MakeBlackSheepGreat/swust-code/github@latest
            env:
              ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
            with:
@@ -101,8 +101,8 @@ Također možete koristiti [Personal Access Tokens](https://docs.github.com/en/a
 OpenCode se može pokrenuti sljedećim GitHub događajima:
 | Vrsta događaja | Pokrenuo | Detalji
 |----------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `issue_comment` | Komentirajte problem ili PR | Navedite `/opencode` ili `/oc` u svom komentaru. OpenCode čita kontekst i može kreirati grane, otvarati PR-ove ili odgovarati. |
-| `pull_request_review_comment` | Komentirajte određene linije koda u PR-u | Navedite `/opencode` ili `/oc` dok pregledavate kod. OpenCode prima putanju datoteke, brojeve redova i kontekst razlike. |
+| `issue_comment` | Komentirajte problem ili PR | Navedite `/swust-code` ili `/oc` u svom komentaru. OpenCode čita kontekst i može kreirati grane, otvarati PR-ove ili odgovarati. |
+| `pull_request_review_comment` | Komentirajte određene linije koda u PR-u | Navedite `/swust-code` ili `/oc` dok pregledavate kod. OpenCode prima putanju datoteke, brojeve redova i kontekst razlike. |
 | `issues` | Broj otvoren ili uređen | Automatski pokrenite OpenCode kada se problemi kreiraju ili modificiraju. Zahtijeva `prompt` unos. |
 | `pull_request` | PR otvoren ili ažuriran | Automatski pokrenite OpenCode kada se PR-ovi otvore, sinkroniziraju ili ponovo otvore. Korisno za automatske recenzije. |
 | `schedule` | Cron baziran raspored | Pokrenite OpenCode prema rasporedu. Zahtijeva `prompt` unos. Izlaz ide u dnevnike i PR-ove (nema problema za komentarisanje). |
@@ -112,15 +112,15 @@ OpenCode se može pokrenuti sljedećim GitHub događajima:
 
 Pokrenite OpenCode po rasporedu za obavljanje automatiziranih zadataka:
 
-```yaml title=".github/workflows/opencode-scheduled.yml"
-name: Scheduled OpenCode Task
+```yaml title=".github/workflows/swust-code-scheduled.yml"
+name: Scheduled SWUST Code Task
 
 on:
   schedule:
     - cron: "0 9 * * 1" # Every Monday at 9am UTC
 
 jobs:
-  opencode:
+  swust-code:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -133,8 +133,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
+      - name: Run SWUST Code
+        uses: MakeBlackSheepGreat/swust-code/github@latest
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:
@@ -152,8 +152,8 @@ Za zakazane događaje, unos `prompt` je **potreban** jer nema komentara za izvla
 
 Automatski pregledajte PR-ove kada se otvore ili ažuriraju:
 
-```yaml title=".github/workflows/opencode-review.yml"
-name: opencode-review
+```yaml title=".github/workflows/swust-code-review.yml"
+name: swust-code-review
 
 on:
   pull_request:
@@ -171,7 +171,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: anomalyco/opencode/github@latest
+      - uses: MakeBlackSheepGreat/swust-code/github@latest
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -193,7 +193,7 @@ Za `pull_request` događaje, ako nije naveden `prompt`, OpenCode podrazumevano p
 
 Automatski triažirajte nove probleme. Ovaj primjer filtrira na račune starije od 30 dana radi smanjenja neželjene pošte:
 
-```yaml title=".github/workflows/opencode-triage.yml"
+```yaml title=".github/workflows/swust-code-triage.yml"
 name: Issue Triage
 
 on:
@@ -227,7 +227,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: anomalyco/opencode/github@latest
+      - uses: MakeBlackSheepGreat/swust-code/github@latest
         if: steps.check.outputs.result == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -248,8 +248,8 @@ Za `issues` događaje, `prompt` unos je **potreban** jer nema komentara za izvla
 
 Zaobiđite zadani prompt da biste prilagodili ponašanje OpenCode za vaš tok posla.
 
-```yaml title=".github/workflows/opencode.yml"
-- uses: anomalyco/opencode/github@latest
+```yaml title=".github/workflows/swust-code.yml"
+- uses: MakeBlackSheepGreat/swust-code/github@latest
   with:
     model: anthropic/claude-sonnet-4-5
     prompt: |
@@ -271,7 +271,7 @@ Evo nekoliko primjera kako možete koristiti OpenCode u GitHub.
   Dodajte ovaj komentar u GitHub izdanje.
 
 ```
-  /opencode explain this issue
+  /swust-code explain this issue
 ```
 
 OpenCode će pročitati cijelu temu, uključujući sve komentare, i odgovoriti s jasnim objašnjenjem.
@@ -280,7 +280,7 @@ OpenCode će pročitati cijelu temu, uključujući sve komentare, i odgovoriti s
   U izdanju na GitHub-u recite:
 
 ```
-  /opencode fix this
+  /swust-code fix this
 ```
 
 I OpenCode će kreirati novu granu, implementirati promjene i otvoriti PR sa promjenama.

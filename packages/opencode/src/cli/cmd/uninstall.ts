@@ -1,4 +1,4 @@
-﻿import type { Argv } from "yargs"
+import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { AppRuntime } from "@/effect/app-runtime"
@@ -56,7 +56,7 @@ export const UninstallCommand = {
     UI.empty()
     UI.println(UI.logo("  "))
     UI.empty()
-    prompts.intro("Uninstall SWUSTCode")
+    prompts.intro("Uninstall SWUST Code")
 
     const method = await AppRuntime.runPromise(Installation.Service.use((svc) => svc.method()))
     prompts.log.info(`Installation method: ${method}`)
@@ -227,7 +227,7 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
   }
 
   UI.empty()
-  prompts.log.success("Thank you for using SWUSTCode!")
+  prompts.log.success("Thank you for using SWUST Code!")
 }
 
 async function getShellConfigFile(): Promise<string | null> {

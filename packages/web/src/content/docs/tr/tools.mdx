@@ -13,7 +13,7 @@ Varsayılan olarak tüm araçlar **etkindir** ve çalışmak için izin istemez.
 
 Araç davranışını kontrol etmek için `permission` alanını kullanın. Her araç için izin verebilir, reddedebilir veya onay isteyebilirsiniz.
 
-```json title="opencode.json"
+```json title="swust-code.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -26,7 +26,7 @@ Araç davranışını kontrol etmek için `permission` alanını kullanın. Her 
 
 Birden fazla aracı aynı anda kontrol etmek için joker karakterler de kullanabilirsiniz. Örneğin, bir MCP sunucusundan gelen tüm araçlar için onay istemek:
 
-```json title="opencode.json"
+```json title="swust-code.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -49,7 +49,7 @@ opencode içinde bulunan tüm yerleşik araçlar aşağıdadır.
 
 Proje ortamınızda kabuk komutları çalıştırır.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -66,7 +66,7 @@ Bu araç LLM'in `npm install`, `git status` gibi terminal komutlarını veya di�
 
 Birebir metin değiştirme ile mevcut dosyaları düzenler.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -83,7 +83,7 @@ Bu araç dosyalarda kesin metin eşleşmelerini değiştirerek hassas düzenleme
 
 Yeni dosyalar oluşturur veya mevcut dosyaları üzerine yazar.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -104,7 +104,7 @@ LLM'in yeni dosya oluşturmasına izin vermek için bunu kullanın. Dosya zaten 
 
 Kod tabanınızdan dosya içeriği okur.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -121,7 +121,7 @@ Bu araç dosyaları okur ve içeriklerini döndürür. Büyük dosyalar için be
 
 Düzenli ifadelerle dosya içeriğinde arama yapar.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -138,7 +138,7 @@ Kod tabanında hızlı içerik araması sunar. Tam regex sözdizimini ve dosya d
 
 Desen eşleştirme ile dosya bulur.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -159,7 +159,7 @@ Tanım, referans, hover bilgisi ve çağrılar hiyerarşisi gibi kod zekası öz
 Bu araç yalnızca `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` (veya `OPENCODE_EXPERIMENTAL=true`) olduğunda kullanılabilir.
 :::
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -178,7 +178,7 @@ Projeniz için kullanılabilir LSP sunucularını ayarlamak için [LSP Sunucular
 
 Dosyalara patch uygular.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -199,7 +199,7 @@ Bu araç patch dosyalarını kod tabanınıza uygular. Farklı kaynaklardan gele
 
 Bir [skill](/docs/skills) (`SKILL.md` dosyası) yükler ve içeriğini konuşmaya döndürür.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -214,7 +214,7 @@ Bir [skill](/docs/skills) (`SKILL.md` dosyası) yükler ve içeriğini konuşmay
 
 Kodlama oturumlarında yapılacaklar listesini yönetir.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -235,7 +235,7 @@ Bu araç alt agent'lar için varsayılan olarak devre dışıdır, ama manuel et
 
 Web içeriği getirir.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -263,7 +263,7 @@ OPENCODE_ENABLE_EXA=1 opencode
 
 :::
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -286,7 +286,7 @@ Bilgi keşfetmeniz gerekiyorsa `websearch`, belirli bir URL'den içerik çekmeni
 
 Çalışma sırasında kullanıcıya soru sorar.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {

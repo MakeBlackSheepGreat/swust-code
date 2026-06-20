@@ -13,7 +13,7 @@ Som standard er alle verktøy **aktivert** og trenger ikke tillatelse for å kj�
 
 Bruk feltet `permission` for å kontrollere verktøyets oppførsel. Du kan tillate, avslå eller kreve godkjenning for hvert verktøy.
 
-```json title="opencode.json"
+```json title="swust-code.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -26,7 +26,7 @@ Bruk feltet `permission` for å kontrollere verktøyets oppførsel. Du kan tilla
 
 Du kan også bruke jokertegn for å kontrollere flere verktøy samtidig. For eksempel, for å kreve godkjenning for alle verktøy fra en MCP-server:
 
-```json title="opencode.json"
+```json title="swust-code.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -49,7 +49,7 @@ Her er alle de innebygde verktøyene som er tilgjengelige i OpenCode.
 
 Utfør skallkommandoer i prosjektmiljøet ditt.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -66,7 +66,7 @@ Dette verktøyet lar LLM kjøre terminalkommandoer som `npm install`, `git statu
 
 Endre eksisterende filer ved å bruke eksakte strengerstatninger.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -83,7 +83,7 @@ Dette verktøyet utfører nøyaktige redigeringer av filer ved å erstatte eksak
 
 Opprett nye filer eller overskriv eksisterende.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -104,7 +104,7 @@ Bruk denne for å la LLM lage nye filer. Den vil overskrive eksisterende filer h
 
 Les filinnholdet fra kodebasen din.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -121,7 +121,7 @@ Dette verktøyet leser filer og returnerer innholdet. Den støtter lesing av spe
 
 Søk i filinnhold ved hjelp av regulære uttrykk.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -138,7 +138,7 @@ Rask innholdssøk på tvers av kodebasen din. Støtter full regex-syntaks og fil
 
 Finn filer etter mønstermatching.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -159,7 +159,7 @@ Samhandle med dine konfigurerte LSP-servere for å få kodeintelligens-funksjone
 Dette verktøyet er bare tilgjengelig når `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` (eller `OPENCODE_EXPERIMENTAL=true`).
 :::
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -178,7 +178,7 @@ For å konfigurere hvilke LSP-servere som er tilgjengelige for prosjektet ditt, 
 
 Bruk patcher på filer.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -199,7 +199,7 @@ Dette verktøyet bruker oppdateringsfiler til kodebasen din. Nyttig for å påf�
 
 Last inn en [ferdighet](/docs/skills) (en `SKILL.md` fil) og returner innholdet i samtalen.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -214,7 +214,7 @@ Last inn en [ferdighet](/docs/skills) (en `SKILL.md` fil) og returner innholdet 
 
 Administrer gjøremålslister under kodingsøkter.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -235,7 +235,7 @@ Dette verktøyet er deaktivert for subagenter som standard, men du kan aktivere 
 
 Hent nettinnhold.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -263,7 +263,7 @@ OPENCODE_ENABLE_EXA=1 opencode
 
 :::
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -286,7 +286,7 @@ Bruk `websearch` når du trenger å finne informasjon (oppdagelse), og `webfetch
 
 Still brukeren spørsmål under utførelse.
 
-```json title="opencode.json" {4}
+```json title="swust-code.json" {4}
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {

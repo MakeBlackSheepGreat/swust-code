@@ -48,6 +48,7 @@ export const layer: Layer.Layer<Service, never, Config.Service> = Layer.effect(
   Effect.gen(function* () {
     const config = yield* Config.Service
     const root = path.join(Global.Path.data, "memory")
+    const dataRoot = Global.Path.data
     const ccBase = path.join(os.homedir(), ".claude", "projects")
 
     const rootEff = Effect.fn("Memory.root")(function* () {
@@ -153,7 +154,7 @@ export const layer: Layer.Layer<Service, never, Config.Service> = Layer.effect(
       body: string
     }) {
       yield* Effect.promise(() =>
-        saveFact(root, input.projectId, {
+        saveFact(dataRoot, input.projectId, {
           name: input.name,
           title: input.title,
           description: input.description,
@@ -165,11 +166,11 @@ export const layer: Layer.Layer<Service, never, Config.Service> = Layer.effect(
     })
 
     const listFactsImpl = Effect.fn("Memory.listFacts")(function* (projectId: string) {
-      return yield* Effect.promise(() => loadFacts(root, projectId))
+      return yield* Effect.promise(() => loadFacts(dataRoot, projectId))
     })
 
     const deleteFactImpl = Effect.fn("Memory.deleteFact")(function* (projectId: string, name: string) {
-      return yield* Effect.promise(() => deleteFact(root, projectId, name))
+      return yield* Effect.promise(() => deleteFact(dataRoot, projectId, name))
     })
 
     return Service.of({

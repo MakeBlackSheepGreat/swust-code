@@ -3,7 +3,7 @@ title: GitHub
 description: Usa OpenCode in issue e pull request su GitHub.
 ---
 
-OpenCode si integra nel tuo workflow GitHub. Menziona `/opencode` o `/oc` in un commento e OpenCode eseguira' i task dentro il runner di GitHub Actions.
+OpenCode si integra nel tuo workflow GitHub. Menziona `/swust-code` o `/oc` in un commento e OpenCode eseguira' i task dentro il runner di GitHub Actions.
 
 ---
 
@@ -20,7 +20,7 @@ OpenCode si integra nel tuo workflow GitHub. Menziona `/opencode` o `/oc` in un 
 Esegui il comando seguente in un progetto che si trova in un repo GitHub:
 
 ```bash
-opencode github install
+swust-code github install
 ```
 
 Questo ti guidera' nell'installazione della GitHub app, nella creazione del workflow e nella configurazione dei secret.
@@ -37,10 +37,10 @@ In alternativa, puoi configurarlo manualmente.
 
 2. **Aggiungi il workflow**
 
-   Aggiungi il seguente file workflow in `.github/workflows/opencode.yml` nel tuo repo. Assicurati di impostare il `model` appropriato e le API key richieste in `env`.
+   Aggiungi il seguente file workflow in `.github/workflows/swust-code.yml` nel tuo repo. Assicurati di impostare il `model` appropriato e le API key richieste in `env`.
 
-   ```yml title=".github/workflows/opencode.yml" {24,26}
-   name: opencode
+   ```yml title=".github/workflows/swust-code.yml" {24,26}
+   name: swust-code
 
    on:
      issue_comment:
@@ -49,10 +49,10 @@ In alternativa, puoi configurarlo manualmente.
        types: [created]
 
    jobs:
-     opencode:
+     swust-code:
        if: |
          contains(github.event.comment.body, '/oc') ||
-         contains(github.event.comment.body, '/opencode')
+         contains(github.event.comment.body, '/swust-code')
        runs-on: ubuntu-latest
        permissions:
          id-token: write
@@ -63,8 +63,8 @@ In alternativa, puoi configurarlo manualmente.
               fetch-depth: 1
               persist-credentials: false
 
-          - name: Run OpenCode
-           uses: anomalyco/opencode/github@latest
+          - name: Run SWUST Code
+           uses: MakeBlackSheepGreat/swust-code/github@latest
            env:
              ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
            with:
@@ -107,8 +107,8 @@ OpenCode puo' essere attivato dai seguenti eventi GitHub:
 
 | Tipo evento                   | Attivato da                            | Dettagli                                                                                                                  |
 | ----------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `issue_comment`               | Commento su una issue o PR             | Menziona `/opencode` o `/oc` nel commento. OpenCode legge il contesto e puo' creare branch, aprire PR o rispondere.       |
-| `pull_request_review_comment` | Commento su specifiche righe in una PR | Menziona `/opencode` o `/oc` durante una review. OpenCode riceve path file, numeri di riga e contesto del diff.           |
+| `issue_comment`               | Commento su una issue o PR             | Menziona `/swust-code` o `/oc` nel commento. OpenCode legge il contesto e puo' creare branch, aprire PR o rispondere.       |
+| `pull_request_review_comment` | Commento su specifiche righe in una PR | Menziona `/swust-code` o `/oc` durante una review. OpenCode riceve path file, numeri di riga e contesto del diff.           |
 | `issues`                      | Issue aperta o modificata              | Attiva automaticamente OpenCode quando le issue vengono create o modificate. Richiede l'input `prompt`.                   |
 | `pull_request`                | PR aperta o aggiornata                 | Attiva automaticamente OpenCode quando le PR vengono aperte, sincronizzate o riaperte. Utile per review automatiche.      |
 | `schedule`                    | Pianificazione basata su cron          | Esegue OpenCode a pianificazione. Richiede l'input `prompt`. Output nei log e nelle PR (nessuna issue su cui commentare). |
@@ -118,15 +118,15 @@ OpenCode puo' essere attivato dai seguenti eventi GitHub:
 
 Esegui OpenCode a pianificazione per eseguire task automatizzati:
 
-```yaml title=".github/workflows/opencode-scheduled.yml"
-name: Scheduled OpenCode Task
+```yaml title=".github/workflows/swust-code-scheduled.yml"
+name: Scheduled SWUST Code Task
 
 on:
   schedule:
     - cron: "0 9 * * 1" # Every Monday at 9am UTC
 
 jobs:
-  opencode:
+  swust-code:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -139,8 +139,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
+      - name: Run SWUST Code
+        uses: MakeBlackSheepGreat/swust-code/github@latest
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:
@@ -158,8 +158,8 @@ Per gli eventi schedulati, l'input `prompt` e' **obbligatorio** dato che non c'e
 
 Review automatica delle PR quando vengono aperte o aggiornate:
 
-```yaml title=".github/workflows/opencode-review.yml"
-name: opencode-review
+```yaml title=".github/workflows/swust-code-review.yml"
+name: swust-code-review
 
 on:
   pull_request:
@@ -177,7 +177,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: anomalyco/opencode/github@latest
+      - uses: MakeBlackSheepGreat/swust-code/github@latest
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -199,7 +199,7 @@ Per gli eventi `pull_request`, se non viene fornito alcun `prompt`, OpenCode fa 
 
 Triage automatico delle nuove issue. Questo esempio filtra gli account piu' vecchi di 30 giorni per ridurre lo spam:
 
-```yaml title=".github/workflows/opencode-triage.yml"
+```yaml title=".github/workflows/swust-code-triage.yml"
 name: Issue Triage
 
 on:
@@ -233,7 +233,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: anomalyco/opencode/github@latest
+      - uses: MakeBlackSheepGreat/swust-code/github@latest
         if: steps.check.outputs.result == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -254,8 +254,8 @@ Per gli eventi `issues`, l'input `prompt` e' **obbligatorio** dato che non c'e' 
 
 Sovrascrivi il prompt di default per personalizzare il comportamento di OpenCode nel tuo workflow.
 
-```yaml title=".github/workflows/opencode.yml"
-- uses: anomalyco/opencode/github@latest
+```yaml title=".github/workflows/swust-code.yml"
+- uses: MakeBlackSheepGreat/swust-code/github@latest
   with:
     model: anthropic/claude-sonnet-4-5
     prompt: |
@@ -278,7 +278,7 @@ Ecco alcuni esempi di come puoi usare OpenCode su GitHub.
   Aggiungi questo commento in una issue GitHub.
 
   ```
-  /opencode explain this issue
+  /swust-code explain this issue
   ```
 
   OpenCode leggera' l'intero thread, inclusi tutti i commenti, e rispondera' con una spiegazione chiara.
@@ -288,7 +288,7 @@ Ecco alcuni esempi di come puoi usare OpenCode su GitHub.
   In una issue GitHub, scrivi:
 
   ```
-  /opencode fix this
+  /swust-code fix this
   ```
 
   OpenCode creera' un nuovo branch, implementera' le modifiche e aprira' una PR con i cambiamenti.

@@ -31,7 +31,7 @@ export default defineConfig({
     configSchema(),
     solidJs(),
     starlight({
-      title: "OpenCode",
+      title: "龙山灵码",
       defaultLocale: "root",
       locales: {
         root: {

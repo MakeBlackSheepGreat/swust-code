@@ -62,7 +62,7 @@ Plasser en `AGENTS.md` i prosjektroten for prosjektspesifikke regler. Disse gjel
 
 ### Globalt
 
-Du kan også ha globale regler i en `~/.config/opencode/AGENTS.md`-fil. Dette blir brukt på alle OpenCode-økter.
+Du kan også ha globale regler i en `~/.config/swust-code/AGENTS.md`-fil. Dette blir brukt på alle OpenCode-økter.
 
 Siden dette ikke er forpliktet til Git eller delt med teamet ditt, anbefaler vi å bruke dette til å spesifisere eventuelle personlige regler som LLM bør følge.
 
@@ -71,7 +71,7 @@ Siden dette ikke er forpliktet til Git eller delt med teamet ditt, anbefaler vi 
 For brukere som migrerer fra Claude Code, støtter OpenCode Claude Codes filkonvensjoner som fallbacks:
 
 - **Prosjektregler**: `CLAUDE.md` i prosjektkatalogen din (brukes hvis ingen `AGENTS.md` eksisterer)
-- **Globale regler**: `~/.claude/CLAUDE.md` (brukes hvis ingen `~/.config/opencode/AGENTS.md` eksisterer)
+- **Globale regler**: `~/.claude/CLAUDE.md` (brukes hvis ingen `~/.config/swust-code/AGENTS.md` eksisterer)
 - **Skills**: `~/.claude/skills/` — se [Agent Skills](/docs/skills/) for detaljer
 
 For å deaktivere Claude Code-kompatibilitet, sett en av disse miljøvariablene:
@@ -89,20 +89,20 @@ export OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 # Disable only .claude/skills
 Når OpenCode starter, ser den etter regelfiler i denne rekkefølgen:
 
 1. **Lokale filer** ved å gå opp fra gjeldende katalog (`AGENTS.md`, `CLAUDE.md`)
-2. **Global fil** på `~/.config/opencode/AGENTS.md`
+2. **Global fil** på `~/.config/swust-code/AGENTS.md`
 3. **Claude Code-fil** på `~/.claude/CLAUDE.md` (med mindre de er deaktivert)
 
-Den første matchende filen vinner i hver kategori. For eksempel, hvis du har både `AGENTS.md` og `CLAUDE.md`, brukes bare `AGENTS.md`. På samme måte har `~/.config/opencode/AGENTS.md` forrang over `~/.claude/CLAUDE.md`.
+Den første matchende filen vinner i hver kategori. For eksempel, hvis du har både `AGENTS.md` og `CLAUDE.md`, brukes bare `AGENTS.md`. På samme måte har `~/.config/swust-code/AGENTS.md` forrang over `~/.claude/CLAUDE.md`.
 
 ---
 
 ## Egendefinerte instruksjoner
 
-Du kan spesifisere egendefinerte instruksjonsfiler i din `opencode.json` eller den globale `~/.config/opencode/opencode.json`. Dette lar deg og teamet ditt gjenbruke eksisterende regler i stedet for å måtte duplisere dem til AGENTS.md.
+Du kan spesifisere egendefinerte instruksjonsfiler i din `swust-code.json` eller den globale `~/.config/swust-code/swust-code.json`. Dette lar deg og teamet ditt gjenbruke eksisterende regler i stedet for å måtte duplisere dem til AGENTS.md.
 
 Eksempel:
 
-```json title="opencode.json"
+```json title="swust-code.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["CONTRIBUTING.md", "docs/guidelines.md", ".cursor/rules/*.md"]
@@ -111,7 +111,7 @@ Eksempel:
 
 Du kan også bruke eksterne URL-er for å laste instruksjoner fra nettet.
 
-```json title="opencode.json"
+```json title="swust-code.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["https://raw.githubusercontent.com/my-org/shared-rules/main/style.md"]
@@ -128,11 +128,11 @@ Alle instruksjonsfilene er kombinert med `AGENTS.md`-filene dine.
 
 Selv om OpenCode ikke automatisk analyserer filreferanser i `AGENTS.md`, kan du oppnå lignende funksjonalitet på to måter:
 
-### Bruker opencode.json
+### Bruker swust-code.json
 
-Den anbefalte tilnærmingen er å bruke feltet `instructions` i `opencode.json`:
+Den anbefalte tilnærmingen er å bruke feltet `instructions` i `swust-code.json`:
 
-```json title="opencode.json"
+```json title="swust-code.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["docs/development-standards.md", "test/testing-guidelines.md", "packages/*/AGENTS.md"]
@@ -176,5 +176,5 @@ Denne tilnærmingen lar deg:
 - Sørge for at OpenCode laster filer kun når det er nødvendig for den spesifikke oppgaven
 
 :::tip
-For monorepos eller prosjekter med delte standarder er bruk av `opencode.json` med glob-mønstre (som `packages/*/AGENTS.md`) mer vedlikeholdbart enn manuelle instruksjoner.
+For monorepos eller prosjekter med delte standarder er bruk av `swust-code.json` med glob-mønstre (som `packages/*/AGENTS.md`) mer vedlikeholdbart enn manuelle instruksjoner.
 :::

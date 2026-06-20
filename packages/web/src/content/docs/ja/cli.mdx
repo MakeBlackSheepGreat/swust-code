@@ -119,10 +119,10 @@ opencode auth [command]
 
 #### login
 
-OpenCode は [Models.dev](https://models.dev) のプロバイダーリストを利用しているため、`opencode auth login` を使用して、使用したいプロバイダーの API キーを構成できます。これは `~/.local/share/opencode/auth.json` に保存されます。
+OpenCode は [Models.dev](https://models.dev) のプロバイダーリストを利用しているため、`swust-code auth login` を使用して、使用したいプロバイダーの API キーを構成できます。これは `~/.local/share/swust-code/auth.json` に保存されます。
 
 ```bash
-opencode auth login
+swust-code auth login
 ```
 
 OpenCode が起動すると、認証情報ファイルからプロバイダーがロードされます。また、環境またはプロジェクト内の `.env` ファイルで定義されたキーがあるかどうかも確認します。
@@ -170,7 +170,7 @@ opencode github [command]
 GitHub エージェントをリポジトリにインストールします。
 
 ```bash
-opencode github install
+swust-code github install
 ```
 
 これにより、必要な GitHub Actions ワークフローが設定され、構成プロセスがガイドされます。 [詳細はこちら](/docs/github)。

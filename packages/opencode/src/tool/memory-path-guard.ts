@@ -79,6 +79,10 @@ function isReservedForCheckpointWriter(parts: string[]): boolean {
   return false
 }
 
+function normalizedPath(input: string): string {
+  return path.normalize(input).replace(/\\/g, "/").replace(/\/+$/, "")
+}
+
 /**
  * Throws if the target write would violate memory-scope or reserved-path
  * rules. Pure function — does not touch the filesystem.
@@ -105,11 +109,12 @@ export function assertMemoryWriteAllowed(input: {
   const notesFile = path.join(memoryRoot, "sessions", sessionID, "notes.md")
   const checkpointFile = path.join(memoryRoot, "sessions", sessionID, "checkpoint.md")
   const taskMemDir = path.join(memoryRoot, "sessions", sessionID, "tasks")
-  const normalizedRoot = memoryRoot.endsWith(path.sep) ? memoryRoot : memoryRoot + path.sep
-  if (!target.startsWith(normalizedRoot)) return
+  const normalizedRoot = normalizedPath(memoryRoot)
+  const normalizedTarget = normalizedPath(target)
+  if (normalizedTarget !== normalizedRoot && !normalizedTarget.startsWith(normalizedRoot + "/")) return
 
-  const rel = path.relative(memoryRoot, target)
-  const parts = rel.split(path.sep)
+  const rel = normalizedTarget.slice(normalizedRoot.length).replace(/^\/+/, "")
+  const parts = rel.split("/")
 
   if (parts.length < 2) {
     throw new Error(formatMainAgentHelp(memoryFile, notesFile, target))

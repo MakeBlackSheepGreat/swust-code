@@ -267,6 +267,7 @@ export type TuiState = {
   readonly config: SdkConfig
   readonly provider: ReadonlyArray<Provider>
   readonly path: {
+    home: string
     state: string
     config: string
     worktree: string

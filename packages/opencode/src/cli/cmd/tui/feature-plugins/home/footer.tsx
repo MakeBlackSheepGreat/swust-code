@@ -1,14 +1,13 @@
 ﻿import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@swust-code/plugin/tui"
 import { createMemo, Match, Show, Switch } from "solid-js"
-import { Global } from "@/global"
 
 const id = "internal:home-footer"
 
 function Directory(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
   const dir = createMemo(() => {
-    const dir = props.api.state.path.directory || process.cwd()
-    const out = dir.replace(Global.Path.home, "~")
+    const dir = props.api.state.path.directory
+    const out = dir.replace(props.api.state.path.home, "~")
     const branch = props.api.state.vcs?.branch
     if (branch) return out + ":" + branch
     return out

@@ -190,6 +190,24 @@ export const layer = Layer.effect(
             mode: "primary",
             native: true,
           },
+          goal: {
+            name: "goal",
+            color: "#7cc7c8",
+            description: "Goal mode. Works autonomously until the user's request is completed, verified, or impossible.",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                actor: "allow",
+                question: "allow",
+                plan_enter: "allow",
+                skill: "allow",
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+          },
           general: {
             name: "general",
             color: "#aac4e1",

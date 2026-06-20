@@ -119,10 +119,10 @@ opencode auth [command]
 
 #### login
 
-OpenCode drives av leverandørlisten på [Models.dev](https://models.dev), så du kan bruke `opencode auth login` til å konfigurere API-nøkler for enhver leverandør du vil bruke. Dette er lagret i `~/.local/share/opencode/auth.json`.
+OpenCode drives av leverandørlisten på [Models.dev](https://models.dev), så du kan bruke `swust-code auth login` til å konfigurere API-nøkler for enhver leverandør du vil bruke. Dette er lagret i `~/.local/share/swust-code/auth.json`.
 
 ```bash
-opencode auth login
+swust-code auth login
 ```
 
 Når OpenCode starter opp, laster den leverandørene fra filen med påloggingsinformasjon. Og hvis det er noen nøkler definert i miljøene dine eller en `.env`-fil i prosjektet ditt.
@@ -170,7 +170,7 @@ opencode github [command]
 Installer GitHub-agenten i depotet ditt.
 
 ```bash
-opencode github install
+swust-code github install
 ```
 
 Dette setter opp den nødvendige GitHub Actions-arbeidsflyten og veileder deg gjennom konfigurasjonsprosessen. [Finn ut mer](/docs/github).
