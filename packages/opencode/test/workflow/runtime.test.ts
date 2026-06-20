@@ -336,8 +336,21 @@ describe("WorkflowRuntime cancel cascade", () => {
           model: ref,
           maxConcurrentAgents: 8,
         })
-        // Let the fan-out register its children, then cancel mid-flight.
-        yield* Effect.sleep("150 millis")
+        // Wait until the fan-out has registered at least one child. A fixed
+        // sleep can fire before QuickJS has crossed the spawn bridge on a busy CI
+        // runner, making the test cancel an empty reclaim set.
+        const waitForChildren = Effect.gen(function* () {
+          while (true) {
+            const children = (yield* registry.listBySession(parent.id)).filter((a) => a.actorID !== "main")
+            if (children.length > 0) return children
+            yield* Effect.sleep("25 millis")
+          }
+        })
+        yield* waitForChildren.pipe(
+          Effect.timeout("10 seconds"),
+          Effect.catchTag("TimeoutError", () => Effect.succeed([])),
+          Effect.tap((children) => Effect.sync(() => expect(children.length).toBeGreaterThan(0))),
+        )
         yield* runtime.cancel({ runID })
 
         const s = yield* runtime.status({ runID })

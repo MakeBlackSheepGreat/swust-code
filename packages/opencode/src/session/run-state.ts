@@ -20,6 +20,7 @@ export interface Interface {
     sessionID: SessionID,
     onInterrupt: Effect.Effect<MessageV2.WithParts>,
     work: Effect.Effect<MessageV2.WithParts>,
+    cancel?: Effect.Effect<void>,
   ) => Effect.Effect<MessageV2.WithParts>
 }
 
@@ -122,8 +123,9 @@ export const layer = Layer.effect(
       sessionID: SessionID,
       onInterrupt: Effect.Effect<MessageV2.WithParts>,
       work: Effect.Effect<MessageV2.WithParts>,
+      cancel?: Effect.Effect<void>,
     ) {
-      return yield* (yield* runner(sessionID, "main", onInterrupt)).startShell(work)
+      return yield* (yield* runner(sessionID, "main", onInterrupt)).startShell(work, cancel)
     })
 
     return Service.of({ assertNotBusy, cancel, cancelActor, ensureRunning, startShell })

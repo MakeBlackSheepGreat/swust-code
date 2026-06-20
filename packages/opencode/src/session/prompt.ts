@@ -68,7 +68,7 @@ import { AppFileSystem } from "@swust-code/shared/filesystem"
 import { Truncate } from "@/tool"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util"
-import { Cause, Effect, Exit, Layer, Option, Scope, Context } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Option, Scope, Context } from "effect"
 import { EffectLogger } from "@/effect"
 import { InstanceState } from "@/effect"
 import { ActorTool, type ActorPromptOps } from "@/tool/actor"
@@ -1108,7 +1108,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       } satisfies MessageV2.TextPart)
     })
 
-    const shellImpl = Effect.fn("SessionPrompt.shellImpl")(function* (input: ShellInput) {
+    const shellImpl = Effect.fn("SessionPrompt.shellImpl")(function* (input: ShellInput, abortSignal?: AbortSignal) {
       const ctx = yield* InstanceState.context
       const run = yield* runner()
       const session = yield* sessions.get(input.sessionID)
@@ -1267,7 +1267,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
       const exit = yield* Effect.gen(function* () {
         const handle = yield* spawner.spawn(cmd)
-        yield* Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
+        const outputFiber = yield* Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
           Effect.sync(() => {
             output += chunk
             if (part.state.status === "running") {
@@ -1275,8 +1275,31 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               void run.fork(sessions.updatePart(part))
             }
           }),
-        )
-        yield* handle.exitCode
+        ).pipe(Effect.forkScoped)
+
+        const abort = abortSignal
+          ? Effect.callback<void>((resume) => {
+              if (abortSignal.aborted) return resume(Effect.void)
+              const handler = () => resume(Effect.void)
+              abortSignal.addEventListener("abort", handler, { once: true })
+              return Effect.sync(() => abortSignal.removeEventListener("abort", handler))
+            })
+          : Effect.never
+
+        const race = yield* Effect.raceAll([
+          handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code }))),
+          abort.pipe(Effect.map(() => ({ kind: "abort" as const }))),
+        ])
+
+        if (race.kind === "abort") {
+          aborted = true
+          yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+          yield* Fiber.await(outputFiber).pipe(Effect.exit, Effect.asVoid)
+          return null
+        }
+
+        yield* Fiber.await(outputFiber).pipe(Effect.exit, Effect.asVoid)
+        return race.code
       }).pipe(
         Effect.scoped,
         Effect.onInterrupt(() =>
@@ -3113,7 +3136,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.shell")(
       function* (input: ShellInput) {
-        return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input))
+        const controller = new AbortController()
+        return yield* state.startShell(
+          input.sessionID,
+          lastAssistant(input.sessionID),
+          shellImpl(input, controller.signal),
+          Effect.sync(() => controller.abort()),
+        )
       },
     )
 

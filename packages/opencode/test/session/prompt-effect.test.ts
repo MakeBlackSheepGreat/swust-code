@@ -1392,7 +1392,8 @@ unix(
                 (part): part is CompletedToolPart =>
                   part.type === "tool" && part.tool === "bash" && part.state.status === "completed",
               )
-            expect(tool?.state.output).toContain("User aborted the command")
+            expect(tool).toBeDefined()
+            if (tool) expect(tool.state.output).toContain("User aborted the command")
             if (Exit.isSuccess(exit)) {
               expect(exit.value.info.role).toBe("assistant")
               const resultTool = completedTool(exit.value.parts)
