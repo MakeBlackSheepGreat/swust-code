@@ -1,0 +1,79 @@
+name: npm release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Setup npm registry
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./packages/opencode/package.json').version")"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "${TAG_VERSION}" != "${PACKAGE_VERSION}" ]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} does not match packages/opencode version ${PACKAGE_VERSION}"
+              exit 1
+            fi
+          fi
+          echo "version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify npm authentication
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::Missing repository secret NPM_TOKEN"
+            exit 1
+          fi
+          npm whoami
+
+      - name: Run typecheck
+        run: bun typecheck
+
+      - name: Run tests
+        timeout-minutes: 20
+        run: bun turbo test --output-logs=errors-only --log-order=grouped --log-prefix=task
+
+      - name: Build release packages
+        env:
+          SWUST_CODE_CHANNEL: latest
+          SWUST_CODE_VERSION: ${{ steps.version.outputs.version }}
+        run: bun --cwd packages/opencode run build
+
+      - name: Publish packages to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+          SWUST_CODE_CHANNEL: latest
+          SWUST_CODE_VERSION: ${{ steps.version.outputs.version }}
+        run: bun --cwd packages/opencode run script/publish.ts

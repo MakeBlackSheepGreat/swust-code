@@ -144,6 +144,13 @@ bun run dev
 bun turbo typecheck
 ```
 
+Maintainers can publish npm releases by setting the repository secret `NPM_TOKEN`, then pushing a semver tag that matches `packages/opencode/package.json`:
+
+```bash
+git tag v0.6.0
+git push swust-code v0.6.0
+```
+
 Package and runtime details:
 
 | Item | Value |

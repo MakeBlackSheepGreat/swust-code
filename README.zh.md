@@ -144,6 +144,13 @@ bun run dev
 bun turbo typecheck
 ```
 
+维护者发布 npm 版本时，需要先配置仓库 Secret `NPM_TOKEN`，再推送与 `packages/opencode/package.json` 一致的语义化 tag：
+
+```bash
+git tag v0.6.0
+git push swust-code v0.6.0
+```
+
 | 项目 | 值 |
 |------|----|
 | npm 包 | `@swust-code/cli` |
