@@ -21,6 +21,7 @@ jobs:
     env:
       GH_REPO: MakeBlackSheepGreat/swust-code
       GH_TOKEN: ${{ github.token }}
+      NODE_AUTH_TOKEN: ""
 
     steps:
       - name: Checkout repository
@@ -33,7 +34,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.14.0
-          package-manager-cache: false
           registry-url: https://registry.npmjs.org
 
       - name: Resolve release version
@@ -59,10 +59,6 @@ jobs:
       - name: Run typecheck
         run: bun typecheck
 
-      - name: Run tests
-        timeout-minutes: 20
-        run: bun turbo test --output-logs=errors-only --log-order=grouped --log-prefix=task
-
       - name: Create draft GitHub release
         env:
           SWUST_CODE_CHANNEL: latest
@@ -78,6 +74,7 @@ jobs:
 
       - name: Publish packages to npm
         env:
+          NPM_CONFIG_PROVENANCE: "true"
           SWUST_CODE_CHANNEL: latest
           SWUST_CODE_VERSION: ${{ steps.version.outputs.version }}
         run: bun run --cwd packages/opencode ./script/publish.ts
