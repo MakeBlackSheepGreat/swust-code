@@ -162,7 +162,7 @@ describe("installation", () => {
         () => jsonResponse({}),
         (cmd, args) => {
           if (cmd === "curl" && args.includes("https://github.com/MakeBlackSheepGreat/swust-code/releases/latest"))
-            return "HTTP/2 302\r\nlocation: https://github.com/MakeBlackSheepGreat/swust-code/releases/tag/v0.5.0\r\n"
+            return "HTTP/2 302\r\nlocation: https://github.com/MakeBlackSheepGreat/swust-code/releases/tag/v0.6.0\r\n"
           return ""
         },
       )
@@ -170,7 +170,7 @@ describe("installation", () => {
       const result = await Effect.runPromise(
         Installation.Service.use((svc) => svc.latest("curl")).pipe(Effect.provide(layer)),
       )
-      expect(result).toBe("0.5.0")
+      expect(result).toBe("0.6.0")
     })
 
     test("dies for unsupported channels (brew/choco/scoop/unknown)", async () => {

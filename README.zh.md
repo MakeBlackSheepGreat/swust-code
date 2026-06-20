@@ -14,7 +14,7 @@
   <a href="https://swust-code.dev"><img src="https://img.shields.io/badge/docs-live-1d4ed8?style=flat-square" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="License"></a>
   <a href="https://github.com/MakeBlackSheepGreat/swust-code"><img src="https://img.shields.io/github/stars/MakeBlackSheepGreat/swust-code?style=flat-square&color=0f766e" alt="Stars"></a>
-  <img src="https://img.shields.io/badge/version-0.5.0-2563eb?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.0-2563eb?style=flat-square" alt="Version">
 </p>
 
 > [!IMPORTANT]
@@ -65,6 +65,7 @@ swust-code
 | `/memory <查询>` | 搜索持久化项目记忆 |
 | `/dream` | 从近期会话中整合长期项目知识 |
 | `/distill` | 将重复工作流沉淀为 skill、subagent 或 command |
+| `/subagent`、`/subagents` | 为可见子智能体配置项目级模型、思考强度和最大执行步数 |
 | `/paste-image` | 从剪贴板附加图片 |
 | `/model`、`/agent`、`/mcp`、`/skill`、`/effort` | 用常见别名打开现有 MiMo/SWUST TUI 控件 |
 
@@ -87,6 +88,7 @@ SWUST 层聚焦品牌、中文体验和工程防护：
 
 - 龙山灵码品牌与中文本地化
 - 更完整的侧边栏上下文：goal、task、todo、LSP、MCP、变更文件、token、费用、缓存状态
+- 子智能体项目级个性化设置：模型、思考强度和最大执行步数
 - attention 通知与声音包配置
 - agent 停止前的未完成任务 gate
 - Bash 命令安全分析
@@ -147,7 +149,7 @@ bun turbo typecheck
 | npm 包 | `@swust-code/cli` |
 | CLI 命令 | `swust-code` |
 | 包管理器 | `bun@1.3.11` |
-| 当前声明版本 | `0.5.0` |
+| 当前声明版本 | `0.6.0` |
 
 ## 文档
 

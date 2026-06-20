@@ -14,7 +14,7 @@
   <a href="https://swust-code.dev"><img src="https://img.shields.io/badge/docs-live-1d4ed8?style=flat-square" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="License"></a>
   <a href="https://github.com/MakeBlackSheepGreat/swust-code"><img src="https://img.shields.io/github/stars/MakeBlackSheepGreat/swust-code?style=flat-square&color=0f766e" alt="Stars"></a>
-  <img src="https://img.shields.io/badge/version-0.5.0-2563eb?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.0-2563eb?style=flat-square" alt="Version">
 </p>
 
 > [!IMPORTANT]
@@ -65,6 +65,7 @@ First launch opens a guided provider setup:
 | `/memory <query>` | Search persistent project memory |
 | `/dream` | Consolidate durable project knowledge from recent sessions |
 | `/distill` | Turn repeated workflows into reusable skills, subagents, or commands |
+| `/subagent`, `/subagents` | Configure visible subagents with project-level model, reasoning variant, and max-step overrides |
 | `/paste-image` | Attach an image from the clipboard |
 | `/model`, `/agent`, `/mcp`, `/skill`, `/effort` | Open existing MiMo/SWUST TUI controls via familiar aliases |
 
@@ -87,6 +88,7 @@ The SWUST layer focuses on product identity, Chinese-first usability, and engine
 
 - 龙山灵码 branding and Chinese localization
 - richer sidebar context for goal, task, todo, LSP, MCP, changed files, token, cost, and cache state
+- project-level subagent settings for model, reasoning variant, and max execution steps
 - attention notifications and sound-pack configuration
 - task gate checks before agents stop with unfinished work
 - bash command safety analysis
@@ -149,7 +151,7 @@ Package and runtime details:
 | npm package | `@swust-code/cli` |
 | CLI binary | `swust-code` |
 | Package manager | `bun@1.3.11` |
-| Current declared version | `0.5.0` |
+| Current declared version | `0.6.0` |
 
 ## Documentation
 
