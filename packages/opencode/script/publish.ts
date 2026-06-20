@@ -61,10 +61,10 @@ await Bun.file(`./dist/${pkg.name}/package.json`).write(
     {
       name: pkg.name,
       version: version,
-      description: "SWUST Code: Where Models and Agents Co-Evolve",
+      description: "Terminal-native AI coding agent with persistent memory, checkpoints, and MiMo-based multi-agent workflows.",
       license: "MIT",
       author: "SWUST Code Contributors",
-      homepage: "https://github.com/MakeBlackSheepGreat/swust-code",
+      homepage: "https://swust-code.dev",
       repository: {
         type: "git",
         url: "git+https://github.com/MakeBlackSheepGreat/swust-code.git",
@@ -72,7 +72,7 @@ await Bun.file(`./dist/${pkg.name}/package.json`).write(
       bugs: {
         url: "https://github.com/MakeBlackSheepGreat/swust-code/issues",
       },
-      keywords: ["ai", "cli", "code", "swust-code"],
+      keywords: ["ai", "cli", "coding-agent", "swust-code", "mimo", "terminal", "multi-agent"],
       bin: {
         "swust-code": "./bin/swust-code",
       },

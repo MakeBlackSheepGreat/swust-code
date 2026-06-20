@@ -22,12 +22,18 @@ type Diff = {
   message: string
 }
 
-const repo = process.env.GH_REPO ?? "anomalyco/opencode"
-const bot = ["actions-user", "opencode", "opencode-agent[bot]"]
-const order = ["Core", "TUI", "Desktop", "SDK", "Extensions"] as const
+const repo =
+  process.env.GH_REPO ??
+  (await $`gh repo view --json nameWithOwner --jq .nameWithOwner`
+    .text()
+    .catch(() => "MakeBlackSheepGreat/swust-code"))
+    .trim()
+const bot = ["actions-user", "opencode", "opencode-agent[bot]", "github-actions[bot]"]
+const order = ["Core", "TUI", "Documentation", "Desktop", "SDK", "Extensions"] as const
 const sections = {
   core: "Core",
   tui: "TUI",
+  docs: "Documentation",
   app: "Desktop",
   tauri: "Desktop",
   sdk: "SDK",
@@ -123,6 +129,14 @@ async function commits(from: string, to: string) {
     for (const file of diff.split("\n").filter(Boolean)) {
       if (file.startsWith("packages/opencode/src/cli/cmd/")) areas.add("tui")
       else if (file.startsWith("packages/opencode/")) areas.add("core")
+      else if (
+        file.startsWith("packages/web/") ||
+        file === "README.md" ||
+        file === "README.zh.md" ||
+        file === "README_npm.md" ||
+        file.startsWith("docs/")
+      )
+        areas.add("docs")
       else if (file.startsWith("packages/desktop/src-tauri/")) areas.add("tauri")
       else if (file.startsWith("packages/desktop/") || file.startsWith("packages/app/")) areas.add("app")
       else if (file.startsWith("packages/sdk/") || file.startsWith("packages/plugin/")) areas.add("sdk")

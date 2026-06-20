@@ -3,7 +3,9 @@
 <p align="center"><strong>SWUST Code: Where Models and Agents Co-Evolve</strong></p>
 
 <p align="center">
-  <a href="https://github.com/MakeBlackSheepGreat/swust-code">Website</a> | <a href="https://github.com/MakeBlackSheepGreat/swust-code">GitHub</a>
+  <a href="https://swust-code.dev">Documentation</a> |
+  <a href="https://github.com/MakeBlackSheepGreat/swust-code/releases">Releases</a> |
+  <a href="https://github.com/MakeBlackSheepGreat/swust-code">GitHub</a>
 </p>
 
 ---

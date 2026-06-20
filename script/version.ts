@@ -7,16 +7,25 @@ const output = [`version=${Script.version}`]
 const sha = process.env.GITHUB_SHA ?? (await $`git rev-parse HEAD`.text()).trim()
 
 if (!Script.preview) {
-  await $`bun script/changelog.ts --to ${sha}`.cwd(process.cwd()).nothrow()
-  const file = `${process.cwd()}/UPCOMING_CHANGELOG.md`
-  const body = await Bun.file(file)
-    .text()
-    .catch(() => "No notable changes")
   const dir = process.env.RUNNER_TEMP ?? "/tmp"
   const notesFile = `${dir}/opencode-release-notes.txt`
+  const repo = process.env.GH_REPO
+  const body =
+    await $`bun script/release-notes.ts --version ${Script.version} --target ${sha}`
+      .cwd(process.cwd())
+      .text()
+      .catch(() => `# SWUST Code v${Script.version}\n\nRelease notes generation failed.`)
   await Bun.write(notesFile, body)
-  await $`gh release create v${Script.version} -d --target ${sha} --title "v${Script.version}" --notes-file ${notesFile}`.nothrow()
-  const release = await $`gh release view v${Script.version} --json tagName,databaseId`.json()
+  if (repo) {
+    await $`gh release create v${Script.version} -d --target ${sha} --title "v${Script.version}" --notes-file ${notesFile} --repo ${repo}`.nothrow()
+    await $`gh release edit v${Script.version} --title "v${Script.version}" --notes-file ${notesFile} --target ${sha} --repo ${repo}`.nothrow()
+  } else {
+    await $`gh release create v${Script.version} -d --target ${sha} --title "v${Script.version}" --notes-file ${notesFile}`.nothrow()
+    await $`gh release edit v${Script.version} --title "v${Script.version}" --notes-file ${notesFile} --target ${sha}`.nothrow()
+  }
+  const release = repo
+    ? await $`gh release view v${Script.version} --json tagName,databaseId --repo ${repo}`.json()
+    : await $`gh release view v${Script.version} --json tagName,databaseId`.json()
   output.push(`release=${release.databaseId}`)
   output.push(`tag=${release.tagName}`)
 } else if (Script.channel === "beta") {

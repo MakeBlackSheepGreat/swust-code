@@ -94,4 +94,4 @@ jobs:
           exit 1
 
       - name: Publish GitHub release
-        run: gh release edit v${{ steps.version.outputs.version }} --draft=false --repo ${GH_REPO}
+        run: gh release edit v${{ steps.version.outputs.version }} --draft=false --latest --repo ${GH_REPO}
