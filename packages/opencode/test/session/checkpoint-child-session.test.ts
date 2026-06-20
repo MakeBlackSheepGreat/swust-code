@@ -77,10 +77,19 @@ const recordingActor = Layer.effect(
       cancel: () => Effect.void,
       getForkContext: () => Effect.succeed(undefined),
     })
-    spawnRef.current = impl
+    const releaseSpawn = spawnRef.push(impl)
+    const releasePrefix = prefixCaptureRef.push(() =>
+      Effect.succeed({
+        system: [],
+        tools: {},
+        inheritedMessages: [],
+        parentPermission: [],
+      }),
+    )
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
-        if (spawnRef.current === impl) spawnRef.current = undefined
+        releasePrefix()
+        releaseSpawn()
       }),
     )
     return impl
@@ -116,17 +125,11 @@ const env = Layer.mergeAll(
 const it = testEffect(env)
 
 // Reset closure state before every test (Effect.sync inside the test body).
-// Also clear prefixCaptureRef — it's a global mutable ref that other tests in
-// the full suite may have populated via SessionPrompt.layer initialisation.
-// Leaving it set causes tryStartCheckpointWriter to attempt a real prefix
-// capture (which needs a live Provider for the providerID we pass) and fail.
-// See src/session/prefix-capture-ref.ts.
 const resetSpawnLog = Effect.sync(() => {
   spawnLog.count = 0
   spawnLog.lastInput = undefined
   settleNextSuccess.value = false
   pendingOutcomes.length = 0
-  prefixCaptureRef.current = undefined
 })
 
 // Seeds a parent session with a single user message + text part — same

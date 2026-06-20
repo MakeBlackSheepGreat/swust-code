@@ -3,6 +3,7 @@ import path from "path"
 import fs from "fs/promises"
 import { Glob } from "@swust-code/shared/util/glob"
 import { tmpdir } from "../fixture/fixture"
+import { supportsSymlink } from "../fixture/symlink"
 
 describe("Glob", () => {
   describe("scan()", () => {
@@ -76,6 +77,7 @@ describe("Glob", () => {
 
     test("does not follow symlinks by default", async () => {
       await using tmp = await tmpdir()
+      if (!(await supportsSymlink(tmp.path, "dir"))) return
       await fs.mkdir(path.join(tmp.path, "realdir"))
       await fs.writeFile(path.join(tmp.path, "realdir", "file.txt"), "", "utf-8")
       await fs.symlink(path.join(tmp.path, "realdir"), path.join(tmp.path, "linkdir"))
@@ -87,6 +89,7 @@ describe("Glob", () => {
 
     test("follows symlinks when symlink option is true", async () => {
       await using tmp = await tmpdir()
+      if (!(await supportsSymlink(tmp.path, "dir"))) return
       await fs.mkdir(path.join(tmp.path, "realdir"))
       await fs.writeFile(path.join(tmp.path, "realdir", "file.txt"), "", "utf-8")
       await fs.symlink(path.join(tmp.path, "realdir"), path.join(tmp.path, "linkdir"))

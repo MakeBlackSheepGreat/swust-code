@@ -1,7 +1,7 @@
 ﻿import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
 import { realpathSync } from "fs"
-import { dirname, join, relative, resolve as pathResolve, win32 } from "path"
+import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep, win32 } from "path"
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
 import { Glob } from "@swust-code/shared/util/glob"
@@ -116,7 +116,19 @@ export function normalizePath(p: string): string {
   try {
     return realpathSync.native(resolved)
   } catch {
-    return resolved
+    let current = resolved
+    const rest: string[] = []
+    while (true) {
+      const parent = dirname(current)
+      if (parent === current) return resolved
+      rest.unshift(current.slice(parent.length + 1))
+      current = parent
+      try {
+        return join(realpathSync.native(current), ...rest)
+      } catch {
+        continue
+      }
+    }
   }
 }
 
@@ -162,7 +174,8 @@ export function overlaps(a: string, b: string) {
 }
 
 export function contains(parent: string, child: string) {
-  return !relative(parent, child).startsWith("..")
+  const rel = relative(parent, child)
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }
 
 export async function findUp(

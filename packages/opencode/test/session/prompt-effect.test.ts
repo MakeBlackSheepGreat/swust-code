@@ -1,4 +1,4 @@
-﻿import { NodeFileSystem } from "@effect/platform-node"
+import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
 import { afterEach, expect } from "bun:test"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
@@ -300,6 +300,8 @@ function providerCfg(url: string) {
     },
   }
 }
+
+const shortLiveTimeout = process.platform === "win32" ? 10_000 : 3_000
 
 const user = Effect.fn("test.user")(function* (sessionID: SessionID, text: string) {
   const session = yield* Session.Service
@@ -792,7 +794,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 // Cancel semantics
@@ -822,7 +824,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 it.live(
@@ -850,7 +852,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 it.live(
@@ -928,7 +930,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 // Queue semantics
@@ -972,7 +974,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 it.live(
@@ -1041,7 +1043,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 it.live(
@@ -1071,7 +1073,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 it.live("assertNotBusy succeeds when idle", () =>
@@ -1116,7 +1118,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 unix("shell captures stdout and stderr in completed tool output", () =>
@@ -1286,7 +1288,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 it.live(
@@ -1326,7 +1328,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  shortLiveTimeout,
 )
 
 unix(

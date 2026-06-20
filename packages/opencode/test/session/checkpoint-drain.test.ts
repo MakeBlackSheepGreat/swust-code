@@ -7,6 +7,7 @@ import { Memory } from "../../src/memory"
 import { ActorRegistry } from "../../src/actor/registry"
 import { Actor, type AgentOutcome } from "../../src/actor/spawn"
 import { spawnRef } from "../../src/actor/spawn-ref"
+import { prefixCaptureRef } from "../../src/session/prefix-capture-ref"
 import { TaskRegistry } from "../../src/task/registry"
 import { SessionCheckpoint } from "../../src/session/checkpoint"
 import { Log } from "../../src/util"
@@ -49,10 +50,19 @@ const hangingActor = Layer.effect(
       cancel: () => Effect.void,
       getForkContext: () => Effect.succeed(undefined),
     })
-    spawnRef.current = impl
+    const releaseSpawn = spawnRef.push(impl)
+    const releasePrefix = prefixCaptureRef.push(() =>
+      Effect.succeed({
+        system: [],
+        tools: {},
+        inheritedMessages: [],
+        parentPermission: [],
+      }),
+    )
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
-        if (spawnRef.current === impl) spawnRef.current = undefined
+        releasePrefix()
+        releaseSpawn()
       }),
     )
     return impl

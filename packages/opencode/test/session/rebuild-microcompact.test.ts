@@ -1,4 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
+import path from "node:path"
 import fs from "node:fs/promises"
 import { Effect, Layer } from "effect"
 import { Bus } from "../../src/bus"
@@ -90,6 +91,12 @@ async function seedAssistantWithTool(
   return { msg, part }
 }
 
+async function writeCheckpoint(sessionID: SessionID, content: string) {
+  const file = checkpointPath(sessionID)
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await Bun.write(file, content)
+}
+
 describe("rebuild microcompact", () => {
   it.live(
     "clears completed compactable tool_result strictly newer than boundary; preserves non-compactable and pre-boundary",
@@ -101,13 +108,7 @@ describe("rebuild microcompact", () => {
 
         // Seed checkpoint.md so renderRebuildContext returns non-empty (else
         // insertRebuildBoundary short-circuits and microcompact never runs).
-        yield* Effect.promise(async () => {
-          await fs.mkdir(
-            checkpointPath(info.id).replace(/\/[^/]+$/, ""),
-            { recursive: true },
-          )
-          await Bun.write(checkpointPath(info.id), "## §1 Active intent\n\nrebuild microcompact test\n")
-        })
+        yield* Effect.promise(() => writeCheckpoint(info.id, "## §1 Active intent\n\nrebuild microcompact test\n"))
 
         const t0 = 1_700_000_000_000
         // Pre-boundary: read tool with body — should NOT be cleared.
@@ -188,13 +189,7 @@ describe("rebuild microcompact", () => {
         const cp = yield* SessionCheckpoint.Service
         const info = yield* ssn.create({})
 
-        yield* Effect.promise(async () => {
-          await fs.mkdir(
-            checkpointPath(info.id).replace(/\/[^/]+$/, ""),
-            { recursive: true },
-          )
-          await Bun.write(checkpointPath(info.id), "## §1 Active intent\n\nno-op test\n")
-        })
+        yield* Effect.promise(() => writeCheckpoint(info.id, "## §1 Active intent\n\nno-op test\n"))
 
         const t0 = 1_700_000_000_000
         const pre = yield* Effect.promise(() =>
@@ -234,10 +229,7 @@ describe("rebuild microcompact", () => {
         const cp = yield* SessionCheckpoint.Service
         const info = yield* ssn.create({})
 
-        yield* Effect.promise(async () => {
-          await fs.mkdir(checkpointPath(info.id).replace(/\/[^/]+$/, ""), { recursive: true })
-          await Bun.write(checkpointPath(info.id), "## §1 Active intent\n\nC1 lookup test\n")
-        })
+        yield* Effect.promise(() => writeCheckpoint(info.id, "## §1 Active intent\n\nC1 lookup test\n"))
 
         const t0 = 1_700_000_000_000
         const pre = yield* Effect.promise(() =>
@@ -282,10 +274,7 @@ describe("rebuild microcompact", () => {
         const cp = yield* SessionCheckpoint.Service
         const info = yield* ssn.create({})
 
-        yield* Effect.promise(async () => {
-          await fs.mkdir(checkpointPath(info.id).replace(/\/[^/]+$/, ""), { recursive: true })
-          await Bun.write(checkpointPath(info.id), "## §1 Active intent\n\nC1 fail-closed test\n")
-        })
+        yield* Effect.promise(() => writeCheckpoint(info.id, "## §1 Active intent\n\nC1 fail-closed test\n"))
 
         const t0 = 1_700_000_000_000
         const a = yield* Effect.promise(() =>

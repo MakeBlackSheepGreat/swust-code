@@ -45,4 +45,20 @@ export type PrefixCaptureFn = (input: {
   msgs: unknown[]
 }) => Effect.Effect<PrefixCaptureResult, never>
 
-export const prefixCaptureRef: { current: PrefixCaptureFn | undefined } = { current: undefined }
+const stack: PrefixCaptureFn[] = []
+
+export const prefixCaptureRef: {
+  readonly current: PrefixCaptureFn | undefined
+  push: (impl: PrefixCaptureFn) => () => void
+} = {
+  get current() {
+    return stack.at(-1)
+  },
+  push(impl) {
+    stack.push(impl)
+    return () => {
+      const index = stack.lastIndexOf(impl)
+      if (index >= 0) stack.splice(index, 1)
+    }
+  },
+}

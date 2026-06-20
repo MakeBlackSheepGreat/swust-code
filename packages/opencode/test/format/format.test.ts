@@ -8,6 +8,12 @@ import { Format } from "../../src/format"
 import * as Formatter from "../../src/format/formatter"
 
 const it = testEffect(Layer.mergeAll(Format.defaultLayer, CrossSpawnSpawner.defaultLayer, NodeFileSystem.layer))
+const appendCommand = (text: string) => [
+  process.execPath,
+  "-e",
+  `const fs=require("fs");const file=process.argv[1];fs.writeFileSync(file, fs.readFileSync(file, "utf8") + ${JSON.stringify(text)});`,
+  "$FILE",
+]
 
 describe("Format", () => {
   it.live("status() returns empty list when no formatters are configured", () =>
@@ -229,11 +235,11 @@ describe("Format", () => {
         config: {
           formatter: {
             first: {
-              command: ["sh", "-c", 'sleep 0.05; v=$(cat "$1"); printf \'%sA\' "$v" > "$1"', "sh", "$FILE"],
+              command: appendCommand("A"),
               extensions: [".seq"],
             },
             second: {
-              command: ["sh", "-c", 'v=$(cat "$1"); printf \'%sB\' "$v" > "$1"', "sh", "$FILE"],
+              command: appendCommand("B"),
               extensions: [".seq"],
             },
           },

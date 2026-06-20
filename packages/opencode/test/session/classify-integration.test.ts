@@ -329,7 +329,7 @@ describe("classifier routing — integration", () => {
     await using tmp = await tmpdir({ git: true })
     const stub = startScriptedLLMServer([{ lines: textStopResponse("plain text from a fork agent") }])
     const forkActorID = "explore-fork-1"
-    const prevSpawnRef = spawnRef.current
+    let releaseSpawnRef: (() => void) | undefined
     try {
       await writeConfig(tmp.path, stub.origin)
       await Instance.provide({
@@ -367,11 +367,11 @@ describe("classifier routing — integration", () => {
                 watermarkMsgID,
                 model: { providerID: ProviderID.make("alibaba"), modelID: ModelID.make("qwen-plus") },
               }
-              spawnRef.current = {
+              releaseSpawnRef = spawnRef.push({
                 getForkContext: (id: string) => Effect.succeed(id === forkActorID ? forkCtx : undefined),
                 spawn: () => Effect.die("spawn not used in fork-gate test"),
                 cancel: () => Effect.die("cancel not used in fork-gate test"),
-              } as unknown as NonNullable<typeof spawnRef.current>
+              } as unknown as NonNullable<typeof spawnRef.current>)
 
               const result = yield* prompt.prompt({
                 sessionID: session.id,
@@ -400,7 +400,7 @@ describe("classifier routing — integration", () => {
           ),
       })
     } finally {
-      spawnRef.current = prevSpawnRef
+      releaseSpawnRef?.()
       await stub.stop()
     }
   })
@@ -409,7 +409,7 @@ describe("classifier routing — integration", () => {
     await using tmp = await tmpdir({ git: true })
     const stub = startScriptedLLMServer([{ lines: contentFilterResponse() }])
     const forkActorID = "explore-fork-cf"
-    const prevSpawnRef = spawnRef.current
+    let releaseSpawnRef: (() => void) | undefined
     try {
       await writeConfig(tmp.path, stub.origin)
       await Instance.provide({
@@ -442,11 +442,11 @@ describe("classifier routing — integration", () => {
                 watermarkMsgID,
                 model: { providerID: ProviderID.make("alibaba"), modelID: ModelID.make("qwen-plus") },
               }
-              spawnRef.current = {
+              releaseSpawnRef = spawnRef.push({
                 getForkContext: (id: string) => Effect.succeed(id === forkActorID ? forkCtx : undefined),
                 spawn: () => Effect.die("spawn not used in fork content-filter test"),
                 cancel: () => Effect.die("cancel not used in fork content-filter test"),
-              } as unknown as NonNullable<typeof spawnRef.current>
+              } as unknown as NonNullable<typeof spawnRef.current>)
 
               const result = yield* prompt.prompt({
                 sessionID: session.id,
@@ -469,7 +469,7 @@ describe("classifier routing — integration", () => {
           ),
       })
     } finally {
-      spawnRef.current = prevSpawnRef
+      releaseSpawnRef?.()
       await stub.stop()
     }
   })

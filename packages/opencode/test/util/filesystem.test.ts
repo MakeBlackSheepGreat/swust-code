@@ -3,6 +3,7 @@ import path from "path"
 import fs from "fs/promises"
 import { Filesystem } from "../../src/util"
 import { tmpdir } from "../fixture/fixture"
+import { supportsSymlink } from "../fixture/symlink"
 
 describe("filesystem", () => {
   describe("exists()", () => {
@@ -594,6 +595,7 @@ describe("filesystem", () => {
 
     test("resolves symlinked directory to canonical path", async () => {
       await using tmp = await tmpdir()
+      if (!(await supportsSymlink(tmp.path, "dir"))) return
       const target = path.join(tmp.path, "real")
       await fs.mkdir(target)
       const link = path.join(tmp.path, "link")
@@ -610,6 +612,7 @@ describe("filesystem", () => {
 
     test("throws ELOOP on symlink cycle", async () => {
       await using tmp = await tmpdir()
+      if (!(await supportsSymlink(tmp.path, "dir"))) return
       const a = path.join(tmp.path, "a")
       const b = path.join(tmp.path, "b")
       await fs.symlink(b, a)

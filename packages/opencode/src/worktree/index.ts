@@ -356,14 +356,29 @@ export const layer: Layer.Layer<
     }
 
     function cleanDirectory(target: string) {
-      return Effect.promise(() =>
-        import("fs/promises")
-          .then((fsp) => fsp.rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
-          .catch((error) => {
-            const message = errorMessage(error)
-            throw new RemoveFailedError({ message: message || "Failed to remove git worktree directory" })
-          }),
-      )
+      return Effect.promise(async () => {
+        const fsp = await import("fs/promises")
+        const attempts = process.platform === "win32" ? 20 : 5
+        let last: unknown
+        for (let i = 0; i < attempts; i++) {
+          try {
+            await fsp.rm(target, {
+              recursive: true,
+              force: true,
+              maxRetries: process.platform === "win32" ? 10 : 5,
+              retryDelay: process.platform === "win32" ? 250 : 100,
+            })
+            return
+          } catch (error) {
+            last = error
+            const code = (error as NodeJS.ErrnoException).code
+            if (process.platform !== "win32" || (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY")) break
+            await new Promise((resolve) => setTimeout(resolve, 250))
+          }
+        }
+        const message = errorMessage(last)
+        throw new RemoveFailedError({ message: message || "Failed to remove git worktree directory" })
+      })
     }
 
     const remove = Effect.fn("Worktree.remove")(function* (input: RemoveInput) {

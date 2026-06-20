@@ -48,6 +48,34 @@ export function globalMemoryPath(): string {
 export async function migrateProjectMemory(projectID: ProjectID): Promise<void> {
   const upper = memoryPath(projectID)
   const lower = path.join(path.dirname(upper), "memory.md")
+
+  // On case-insensitive filesystems (Windows/macOS default), MEMORY.md and
+  // memory.md address the same entry. Node/Bun existence checks cannot tell
+  // whether the canonical casing is already present, and rename(lower, upper)
+  // becomes a no-op. Inspect directory entries first so the canonical name is
+  // only considered present when the on-disk entry uses that exact spelling.
+  const dir = path.dirname(upper)
+  let entries: string[] = []
+  try {
+    entries = await fs.readdir(dir)
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
+  }
+
+  if (entries.includes("MEMORY.md")) return
+  if (!entries.includes("memory.md")) return
+
+  if (process.platform === "win32" || process.platform === "darwin") {
+    const tmp = path.join(dir, `.memory-${process.pid}-${Date.now()}.tmp`)
+    await fs.rename(lower, tmp).catch((e) => {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
+    })
+    await fs.rename(tmp, upper).catch((e) => {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
+    })
+    return
+  }
+
   if (await Bun.file(upper).exists()) return
   if (await Bun.file(lower).exists())
     // Two migrators (e.g. concurrent sessions/writers on the same project) can

@@ -237,7 +237,7 @@ export const layer = Layer.effect(
     // (ToolRegistry → SessionCheckpoint → ToolRegistry). See prefix-capture-ref.ts.
     // The closure resolves Agent.Info and Provider.Model internally so checkpoint.ts
     // only needs to pass string IDs.
-    const capture: typeof prefixCaptureRef.current = (input) =>
+    const capture: NonNullable<typeof prefixCaptureRef.current> = (input) =>
       Effect.gen(function* () {
         const empty = { system: [] as string[], tools: {} as Record<string, AITool>, inheritedMessages: [] as ModelMessage[], parentPermission: [] as Permission.Ruleset }
         const ag = yield* agents.get(input.agentName).pipe(Effect.catch(() => Effect.succeed(undefined)))
@@ -267,12 +267,8 @@ export const layer = Layer.effect(
         )
         return { ...prefix, parentPermission: ag.permission }
       })
-    prefixCaptureRef.current = capture
-    yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        if (prefixCaptureRef.current === capture) prefixCaptureRef.current = undefined
-      }),
-    )
+    const releasePrefixCapture = prefixCaptureRef.push(capture)
+    yield* Effect.addFinalizer(() => Effect.sync(releasePrefixCapture))
 
     const runner = Effect.fn("SessionPrompt.runner")(function* () {
       return yield* EffectBridge.make()

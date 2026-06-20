@@ -1012,10 +1012,12 @@ describe("tool.bash abort", () => {
       directory: projectRoot,
       fn: async () => {
         const bash = await initBash()
+        const command =
+          process.platform === "win32" ? "Write-Output started; Start-Sleep -Seconds 60" : "echo started && sleep 60"
         const result = await Effect.runPromise(
           bash.execute(
             {
-              command: `echo started && sleep 60`,
+              command,
               description: "Timeout test",
               timeout: 500,
             },

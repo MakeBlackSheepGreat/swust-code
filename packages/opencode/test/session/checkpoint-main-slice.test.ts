@@ -58,12 +58,12 @@ const recordingActor = Layer.effect(
       cancel: () => Effect.void,
       getForkContext: () => Effect.succeed(undefined),
     })
-    spawnRef.current = impl
+    const releaseSpawn = spawnRef.push(impl)
 
     // Stand-in prefix capture: records what msgs[] was passed in (which is
     // the slice tryStartCheckpointWriter sliced from `msgs` at the watermark)
     // and returns an empty prefix so the fork capture path completes.
-    const capture: typeof prefixCaptureRef.current = (input) =>
+    const capture: NonNullable<typeof prefixCaptureRef.current> = (input) =>
       Effect.sync(() => {
         captures.prefixMsgs = (input.msgs as Array<{ info: { id: string; agentID?: string } }>).map((m) => ({
           id: m.info.id,
@@ -76,12 +76,12 @@ const recordingActor = Layer.effect(
           parentPermission: [],
         }
       })
-    prefixCaptureRef.current = capture
+    const releasePrefix = prefixCaptureRef.push(capture)
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
-        if (spawnRef.current === impl) spawnRef.current = undefined
-        if (prefixCaptureRef.current === capture) prefixCaptureRef.current = undefined
+        releasePrefix()
+        releaseSpawn()
       }),
     )
     return impl

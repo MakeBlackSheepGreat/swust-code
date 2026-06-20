@@ -25,14 +25,26 @@ function exists(dir: string) {
 }
 
 async function clean(dir: string) {
-  Bun.gc(true)
-  await sleep(100)
-  await fs.rm(dir, {
-    recursive: true,
-    force: true,
-    maxRetries: 30,
-    retryDelay: 100,
-  })
+  const attempts = process.platform === "win32" ? 20 : 1
+  let last: unknown
+  for (let i = 0; i < attempts; i++) {
+    Bun.gc(true)
+    await sleep(process.platform === "win32" ? 250 : 100)
+    try {
+      await fs.rm(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: process.platform === "win32" ? 20 : 30,
+        retryDelay: process.platform === "win32" ? 250 : 100,
+      })
+      return
+    } catch (error) {
+      last = error
+      const code = (error as NodeJS.ErrnoException).code
+      if (process.platform !== "win32" || (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY")) throw error
+    }
+  }
+  throw last
 }
 
 export async function cleanupTmpdir(dir: string, cleanup = clean) {

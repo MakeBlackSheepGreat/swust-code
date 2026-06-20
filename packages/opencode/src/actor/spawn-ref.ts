@@ -16,15 +16,11 @@ import type { Interface as ActorInterface } from "./spawn"
 const stack: ActorInterface[] = []
 
 export const spawnRef: {
-  current: ActorInterface | undefined
+  readonly current: ActorInterface | undefined
   push: (impl: ActorInterface) => () => void
 } = {
   get current() {
     return stack.at(-1)
-  },
-  set current(value) {
-    stack.length = 0
-    if (value) stack.push(value)
   },
   push(impl) {
     stack.push(impl)

@@ -60,12 +60,8 @@ const recordingActor = Layer.effect(
       cancel: () => Effect.void,
       getForkContext: () => Effect.succeed(undefined),
     })
-    spawnRef.current = impl
-    yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        if (spawnRef.current === impl) spawnRef.current = undefined
-      }),
-    )
+    const release = spawnRef.push(impl)
+    yield* Effect.addFinalizer(() => Effect.sync(release))
     return impl
   }),
 )
@@ -74,7 +70,7 @@ const recordingActor = Layer.effect(
 // Used to assert what tryStartCheckpointWriter passes to the prefix-capture
 // helper for each (forkMode, lastCheckpointMessageID) combination. Returns
 // non-empty system/tools so the resulting forkCtx is non-undefined.
-function installRecordingCapture() {
+const installRecordingCapture = Effect.fn("CheckpointForkMode.installRecordingCapture")(function* () {
   const fn: PrefixCaptureFn = (input) =>
     Effect.sync(() => {
       const first = (input.msgs[0] as { info?: { role?: string; id?: string } } | undefined)?.info
@@ -92,8 +88,9 @@ function installRecordingCapture() {
         parentPermission: [],
       }
     })
-  prefixCaptureRef.current = fn
-}
+  const release = prefixCaptureRef.push(fn)
+  yield* Effect.addFinalizer(() => Effect.sync(release))
+})
 
 const deps = Layer.mergeAll(
   ProviderTest.fake().layer,
@@ -119,7 +116,6 @@ const reset = Effect.sync(() => {
   spawnLog.count = 0
   spawnLog.lastInput = undefined
   captureLog.calls = []
-  prefixCaptureRef.current = undefined
 })
 
 // Seed parent session with msgs sequence: u1(text)/a1(tool)/u2(tool_result)/a2(text)
@@ -247,7 +243,7 @@ describe("checkpoint writer forkContext shape per mode", () => {
       () =>
         Effect.gen(function* () {
           yield* reset
-          installRecordingCapture()
+          yield* installRecordingCapture()
 
           const svc = yield* SessionCheckpoint.Service
           const { info, u2 } = yield* seedFourMessages()
@@ -290,7 +286,7 @@ describe("checkpoint writer forkContext shape per mode", () => {
       () =>
         Effect.gen(function* () {
           yield* reset
-          installRecordingCapture()
+          yield* installRecordingCapture()
 
           const svc = yield* SessionCheckpoint.Service
           const { info, u1, a1, u2 } = yield* seedFourMessages()
@@ -339,7 +335,7 @@ describe("checkpoint writer forkContext shape per mode", () => {
       () =>
         Effect.gen(function* () {
           yield* reset
-          installRecordingCapture()
+          yield* installRecordingCapture()
 
           const svc = yield* SessionCheckpoint.Service
           const ssn = yield* SessionNs.Service
@@ -479,7 +475,7 @@ describe("checkpoint writer forkContext shape per mode", () => {
       () =>
         Effect.gen(function* () {
           yield* reset
-          installRecordingCapture()
+          yield* installRecordingCapture()
 
           const svc = yield* SessionCheckpoint.Service
           const { info, u1, u2 } = yield* seedFourMessages()
@@ -525,7 +521,7 @@ describe("checkpoint writer forkContext shape per mode", () => {
       () =>
         Effect.gen(function* () {
           yield* reset
-          installRecordingCapture()
+          yield* installRecordingCapture()
 
           const svc = yield* SessionCheckpoint.Service
           const { info, a2 } = yield* seedFourMessages()

@@ -22,6 +22,13 @@ describe("globalMemoryPath", () => {
 })
 
 describe("migrateProjectMemory", () => {
+  async function exactEntries(dir: string) {
+    return fs.readdir(dir).catch((e) => {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return []
+      throw e
+    })
+  }
+
   test("renames legacy memory.md to MEMORY.md when only legacy exists", async () => {
     const pid = ProjectID.make(`p_test_${Date.now()}_${Math.random().toString(36).slice(2)}`)
     const upper = memoryPath(pid)
@@ -33,7 +40,9 @@ describe("migrateProjectMemory", () => {
     await migrateProjectMemory(pid)
 
     expect(await Bun.file(upper).text()).toBe("legacy content")
-    expect(await Bun.file(lower).exists()).toBe(false)
+    const entries = await exactEntries(dir)
+    expect(entries).toContain("MEMORY.md")
+    expect(entries).not.toContain("memory.md")
     await fs.rm(dir, { recursive: true, force: true })
   })
 
@@ -44,12 +53,15 @@ describe("migrateProjectMemory", () => {
     const lower = path.join(dir, "memory.md")
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(upper, "new content")
-    await fs.writeFile(lower, "stale legacy")
+    if (process.platform !== "win32" && process.platform !== "darwin") {
+      await fs.writeFile(lower, "stale legacy")
+    }
 
     await migrateProjectMemory(pid)
 
     // Existing MEMORY.md is authoritative; legacy left untouched (not clobbered).
     expect(await Bun.file(upper).text()).toBe("new content")
+    expect(await exactEntries(dir)).toContain("MEMORY.md")
     await fs.rm(dir, { recursive: true, force: true })
   })
 
@@ -72,7 +84,9 @@ describe("migrateProjectMemory", () => {
     const results = await Promise.allSettled([migrateProjectMemory(pid), migrateProjectMemory(pid)])
     expect(results.every((r) => r.status === "fulfilled")).toBe(true)
     expect(await Bun.file(upper).text()).toBe("legacy content")
-    expect(await Bun.file(lower).exists()).toBe(false)
+    const entries = await exactEntries(dir)
+    expect(entries).toContain("MEMORY.md")
+    expect(entries).not.toContain("memory.md")
     await fs.rm(dir, { recursive: true, force: true })
   })
 })

@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
@@ -59,8 +59,9 @@ function parseOutput(output: string): CancelResponse {
 // test (with fiber interruption) lives in test/actor/spawn.test.ts.
 const cancelled: Array<{ sessionID: SessionID; actorID: string; mode: "graceful" | "forced" }> = []
 let installedRegistry: ActorRegistry.Interface | undefined
-beforeAll(() => {
-  spawnRef.current = {
+
+const installCancelSpawn = Effect.fn("ActorCancelTest.installCancelSpawn")(function* () {
+  const release = spawnRef.push({
     spawn: () => Effect.die("spawn not used in cancel tests"),
     cancel: (sessionID, actorID, mode) =>
       Effect.gen(function* () {
@@ -70,7 +71,8 @@ beforeAll(() => {
         }
       }),
     getForkContext: () => Effect.succeed(undefined),
-  } satisfies ActorInterface
+  } satisfies ActorInterface)
+  yield* Effect.addFinalizer(() => Effect.sync(release))
 })
 
 function ctxFor(sessionID: SessionID) {
@@ -99,6 +101,7 @@ describe("actor tool — cancel action", () => {
     "cancel on running task signals graceful and updates registry",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
+        yield* installCancelSpawn()
         cancelled.length = 0
         const sessions = yield* Session.Service
         const registry = yield* ActorRegistry.Service
@@ -151,6 +154,7 @@ describe("actor tool — cancel action", () => {
     "cancel missing actor_id fails",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
+        yield* installCancelSpawn()
         const sessions = yield* Session.Service
         const chat = yield* sessions.create({ title: "chat" })
         const { ctx } = ctxFor(chat.id)
@@ -170,6 +174,7 @@ describe("actor tool — cancel action", () => {
     "cancel on already-terminal task returns current status (idempotent)",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
+        yield* installCancelSpawn()
         cancelled.length = 0
         const sessions = yield* Session.Service
         const registry = yield* ActorRegistry.Service

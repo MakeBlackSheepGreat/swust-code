@@ -63,6 +63,7 @@ export function makeFileHooks(root: string) {
       return abs
         .map((p) => path.relative(root, p))
         .filter((rel) => rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel))
+        .map((rel) => rel.replaceAll(path.sep, "/"))
         .sort()
     },
   }

@@ -7,6 +7,7 @@ import { Snapshot } from "../../src/snapshot"
 import { Instance } from "../../src/project/instance"
 import { Filesystem } from "../../src/util"
 import { provideInstance, tmpdir } from "../fixture/fixture"
+import { supportsSymlink } from "../fixture/symlink"
 
 // Git always outputs /-separated paths internally. Snapshot.patch() joins them
 // with path.join (which produces \ on Windows) then normalizes back to /.
@@ -184,6 +185,7 @@ test("binary file handling", async () => {
 
 test("symlink handling", async () => {
   await using tmp = await bootstrap()
+  if (!(await supportsSymlink(tmp.path, "file"))) return
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
@@ -475,6 +477,7 @@ test("hidden files", async () => {
 
 test("nested symlinks", async () => {
   await using tmp = await bootstrap()
+  if (!(await supportsSymlink(tmp.path, "file")) || !(await supportsSymlink(tmp.path, "dir"))) return
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
@@ -493,7 +496,9 @@ test("nested symlinks", async () => {
   })
 })
 
-test("file permissions and ownership changes", async () => {
+const unixTest = process.platform === "win32" ? test.skip : test
+
+unixTest("file permissions and ownership changes", async () => {
   await using tmp = await bootstrap()
   await Instance.provide({
     directory: tmp.path,

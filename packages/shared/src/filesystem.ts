@@ -1,5 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { dirname, join, relative, resolve as pathResolve } from "path"
+import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from "path"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
@@ -192,7 +192,19 @@ export namespace AppFileSystem {
     try {
       return realpathSync.native(resolved)
     } catch {
-      return resolved
+      let current = resolved
+      const rest: string[] = []
+      while (true) {
+        const parent = dirname(current)
+        if (parent === current) return resolved
+        rest.unshift(current.slice(parent.length + 1))
+        current = parent
+        try {
+          return join(realpathSync.native(current), ...rest)
+        } catch {
+          continue
+        }
+      }
     }
   }
 
@@ -231,6 +243,7 @@ export namespace AppFileSystem {
   }
 
   export function contains(parent: string, child: string) {
-    return !relative(parent, child).startsWith("..")
+    const rel = relative(parent, child)
+    return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
   }
 }
