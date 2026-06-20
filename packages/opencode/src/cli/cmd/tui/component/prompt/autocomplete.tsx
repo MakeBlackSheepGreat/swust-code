@@ -11,10 +11,42 @@ import { useTuiConfig } from "../../context/tui-config"
 import { useTheme, selectedForeground } from "@tui/context/theme"
 import { SplitBorder } from "@tui/component/border"
 import { useCommandDialog } from "@tui/component/dialog-command"
+import { useLanguage } from "@tui/context/language"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "@/util"
 import type { PromptInfo } from "./history"
 import { useFrecency } from "./frecency"
+
+const BUILTIN_COMMAND_DESCRIPTIONS: Record<string, { key: string; fallback: string }> = {
+  init: {
+    key: "tui.command.init.description",
+    fallback: "guided AGENTS.md setup",
+  },
+  review: {
+    key: "tui.command.review.description",
+    fallback: "review changes [commit|branch|pr], defaults to uncommitted",
+  },
+  dream: {
+    key: "tui.command.dream.description",
+    fallback: "manually consolidate project memory from memory files and raw trajectory",
+  },
+  distill: {
+    key: "tui.command.distill.description",
+    fallback: "find repeated workflows in recent work and package them into skills, subagents, or commands",
+  },
+  goal: {
+    key: "tui.command.goal.description",
+    fallback: "set a stop-condition goal; runs until a judge says it's met. /goal clear to abort",
+  },
+  memory: {
+    key: "tui.command.memory.description",
+    fallback: "search persistent project memory",
+  },
+  "deep-research": {
+    key: "tui.command.deep_research.description",
+    fallback: "deep multi-source, fact-checked research report (runs the deep-research workflow)",
+  },
+}
 
 function removeLineRange(input: string) {
   const hashIndex = input.lastIndexOf("#")
@@ -80,10 +112,19 @@ export function Autocomplete(props: {
   const sdk = useSDK()
   const sync = useSync()
   const command = useCommandDialog()
+  const lang = useLanguage()
   const { theme } = useTheme()
   const dimensions = useTerminalDimensions()
   const frecency = useFrecency()
   const tuiConfig = useTuiConfig()
+
+  const localizeCommandDescription = (name: string, description: string | undefined) => {
+    const known = BUILTIN_COMMAND_DESCRIPTIONS[name]
+    if (!known) return description
+    if (description && description !== known.fallback) return description
+    const translated = lang.t(known.key)
+    return translated && translated !== known.key ? translated : description
+  }
 
   const [store, setStore] = createStore({
     index: 0,
@@ -368,7 +409,7 @@ export function Autocomplete(props: {
       const label = serverCommand.source === "mcp" ? ":mcp" : ""
       results.push({
         display: "/" + serverCommand.name + label,
-        description: serverCommand.description,
+        description: localizeCommandDescription(serverCommand.name, serverCommand.description),
         onSelect: () => {
           const newText = "/" + serverCommand.name + " "
           const cursor = props.input().logicalCursor

@@ -64,6 +64,7 @@ export const Default = {
   DREAM: "dream",
   DISTILL: "distill",
   GOAL: "goal",
+  MEMORY: "memory",
   DEEP_RESEARCH: "deep-research",
 } as const
 
@@ -172,6 +173,25 @@ export const layer = Layer.effect(
         subtask: false,
         get template() {
           return "$ARGUMENTS"
+        },
+        hints: ["$ARGUMENTS"],
+      }
+      commands[Default.MEMORY] = {
+        name: Default.MEMORY,
+        description: "search persistent project memory",
+        source: "command",
+        subtask: false,
+        get template() {
+          return [
+            "Search persistent SWUST-Code project memory for the user's query.",
+            "",
+            "Memory query or instructions:",
+            "$ARGUMENTS",
+            "",
+            "Use the memory tool first. If the query is empty, search for broad project facts and summarize the most relevant entries.",
+            "If the memory tool reports zero results and the user needs exact details, inspect the memory files with read/grep as appropriate.",
+            "Return concise results and include memory paths when useful for follow-up.",
+          ].join("\n")
         },
         hints: ["$ARGUMENTS"],
       }

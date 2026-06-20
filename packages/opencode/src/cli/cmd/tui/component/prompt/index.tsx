@@ -566,6 +566,19 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
+        title: t("tui.command.prompt.paste_image.title"),
+        description: t("tui.command.prompt.paste_image.description"),
+        value: "prompt.paste_image",
+        category: "prompt",
+        slash: {
+          name: "paste-image",
+        },
+        onSelect: async (dialog) => {
+          await pasteFromClipboard({ imageOnly: true })
+          dialog.clear()
+        },
+      },
+      {
         title: t("tui.command.session.interrupt.title"),
         value: "session.interrupt",
         keybind: "session_interrupt",
@@ -690,6 +703,7 @@ export function Prompt(props: PromptProps) {
         category: "prompt",
         slash: {
           name: "skills",
+          aliases: ["skill"],
         },
         onSelect: () => {
           dialog.replace(() => (
@@ -1307,16 +1321,23 @@ export function Prompt(props: PromptProps) {
     }, 0)
   }
 
-  async function pasteFromClipboard() {
+  async function pasteFromClipboard(options?: { imageOnly?: boolean }) {
     if (props.disabled) return
     const content = await Clipboard.read()
-    if (!content) return
+    if (!content) {
+      if (options?.imageOnly) toast.show({ message: t("tui.prompt.paste_image.no_image"), variant: "warning" })
+      return
+    }
     if (content.mime.startsWith("image/")) {
       await pasteAttachment({
         filename: "clipboard",
         mime: content.mime,
         content: content.data,
       })
+      return
+    }
+    if (options?.imageOnly) {
+      toast.show({ message: t("tui.prompt.paste_image.no_image"), variant: "warning" })
       return
     }
     await pastePlainText(content.data.replace(/\r\n/g, "\n").replace(/\r/g, "\n"))

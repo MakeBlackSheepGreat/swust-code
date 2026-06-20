@@ -496,6 +496,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       category: "agent",
       slash: {
         name: "models",
+        aliases: ["model"],
       },
       onSelect: () => {
         dialog.replace(() => <DialogModel />)
@@ -548,6 +549,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       category: "agent",
       slash: {
         name: "agents",
+        aliases: ["agent"],
       },
       onSelect: () => {
         dialog.replace(() => <DialogAgent />)
@@ -578,6 +580,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       category: "agent",
       slash: {
         name: "mcps",
+        aliases: ["mcp"],
       },
       onSelect: () => {
         dialog.replace(() => <DialogMcp />)
@@ -610,6 +613,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       hidden: local.model.variant.list().length === 0,
       slash: {
         name: "variants",
+        aliases: ["variant", "effort"],
       },
       onSelect: () => {
         dialog.replace(() => <DialogVariant />)
@@ -710,6 +714,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       keybind: "theme_list",
       slash: {
         name: "themes",
+        aliases: ["theme"],
       },
       onSelect: () => {
         dialog.replace(() => <DialogThemeList />)
