@@ -6,6 +6,8 @@
 
 <p align="center"><strong>SWUST Code: Where Models and Agents Co-Evolve</strong></p>
 
+<p align="center">Official Chinese name: <strong>龙山灵码</strong></p>
+
 <p align="center">
   <a href="README.zh.md">中文</a> | English
 </p>

@@ -12,6 +12,7 @@
   Provider,
   PermissionRequest,
   QuestionRequest,
+  Session,
   SessionStatus,
   TextPart,
   Config as SdkConfig,
@@ -190,6 +191,76 @@ export type TuiToast = {
   duration?: number
 }
 
+export type TuiAttentionWhen = "always" | "focused" | "blurred"
+
+export const TuiAttentionSoundNames = ["default", "question", "permission", "error", "done", "subagent_done"] as const
+export type TuiAttentionSoundName = (typeof TuiAttentionSoundNames)[number]
+
+export type TuiAttentionSound =
+  | boolean
+  | {
+      name?: TuiAttentionSoundName
+      volume?: number
+      when?: TuiAttentionWhen
+    }
+
+export type TuiAttentionNotification =
+  | boolean
+  | {
+      when?: TuiAttentionWhen
+    }
+
+export type TuiAttentionSoundPack = {
+  id: string
+  name?: string
+  sounds: Partial<Record<TuiAttentionSoundName, string>>
+}
+
+export type TuiAttentionSoundPackInfo = {
+  id: string
+  name?: string
+  active: boolean
+  builtin: boolean
+}
+
+export type TuiAttentionSoundboardActivateOptions = {
+  persist?: boolean
+}
+
+export type TuiAttentionSoundboard = {
+  registerPack(pack: TuiAttentionSoundPack): () => void
+  activate(id: string, options?: TuiAttentionSoundboardActivateOptions): boolean
+  current(): string
+  list(): ReadonlyArray<TuiAttentionSoundPackInfo>
+}
+
+export type TuiAttentionNotifyInput = {
+  title?: string
+  message: string
+  notification?: TuiAttentionNotification
+  sound?: TuiAttentionSound
+}
+
+export type TuiAttentionNotifySkipReason =
+  | "attention_disabled"
+  | "empty_message"
+  | "blurred"
+  | "focused"
+  | "focus_unknown"
+  | "renderer_destroyed"
+
+export type TuiAttentionNotifyResult = {
+  ok: boolean
+  notification: boolean
+  sound: boolean
+  skipped?: TuiAttentionNotifySkipReason
+}
+
+export type TuiAttention = {
+  notify(input: TuiAttentionNotifyInput): Promise<TuiAttentionNotifyResult>
+  soundboard: TuiAttentionSoundboard
+}
+
 export type TuiThemeCurrent = {
   readonly primary: RGBA
   readonly secondary: RGBA
@@ -276,6 +347,7 @@ export type TuiState = {
   readonly vcs: { branch?: string } | undefined
   session: {
     count: () => number
+    get: (sessionID: string) => Session | undefined
     diff: (sessionID: string) => ReadonlyArray<TuiSidebarFileItem>
     todo: (sessionID: string) => ReadonlyArray<TuiSidebarTodoItem>
     task: (sessionID: string) => ReadonlyArray<TuiSidebarTaskItem>
@@ -294,8 +366,18 @@ export type TuiState = {
 
 type TuiConfigView = Pick<PluginConfig, "$schema" | "theme" | "keybinds" | "plugin"> &
   NonNullable<PluginConfig["tui"]> & {
+    attention: TuiAttentionConfigView
     plugin_enabled?: Record<string, boolean>
   }
+
+type TuiAttentionConfigView = {
+  enabled: boolean
+  notifications: boolean
+  sound: boolean
+  volume: number
+  sound_pack: string
+  sounds: Partial<Record<TuiAttentionSoundName, string>>
+}
 
 export type TuiApp = {
   readonly version: string
@@ -474,6 +556,7 @@ export type TuiWorkspace = {
 
 export type TuiPluginApi = {
   app: TuiApp
+  attention: TuiAttention
   command: {
     register: (cb: () => TuiCommand[]) => () => void
     trigger: (value: string) => void

@@ -85,7 +85,10 @@ type Opts = {
   renderer?: HostPluginApi["renderer"]
   count?: Count
   keybind?: Partial<HostPluginApi["keybind"]>
-  tuiConfig?: HostPluginApi["tuiConfig"]
+  attention?: Partial<HostPluginApi["attention"]>
+  tuiConfig?: Partial<HostPluginApi["tuiConfig"]> & {
+    attention?: Partial<HostPluginApi["tuiConfig"]["attention"]>
+  }
   app?: Partial<HostPluginApi["app"]>
   state?: {
     ready?: HostPluginApi["state"]["ready"]
@@ -110,9 +113,28 @@ type Opts = {
   }
 }
 
+const defaultTuiConfig: HostPluginApi["tuiConfig"] = {
+  attention: {
+    enabled: false,
+    notifications: true,
+    sound: true,
+    volume: 0.4,
+    sound_pack: "swust-code.default",
+    sounds: {},
+  },
+}
+
 export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
   const kv: Record<string, unknown> = {}
   const count = opts.count
+  const tuiConfig: HostPluginApi["tuiConfig"] = {
+    ...defaultTuiConfig,
+    ...opts.tuiConfig,
+    attention: {
+      ...defaultTuiConfig.attention,
+      ...opts.tuiConfig?.attention,
+    },
+  }
   const ctrl = new AbortController()
   const own = createOpencodeClient({
     baseUrl: "http://localhost:4096",
@@ -159,6 +181,22 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
     app: {
       get version() {
         return opts.app?.version ?? "0.0.0-test"
+      },
+    },
+    attention: {
+      notify:
+        opts.attention?.notify ??
+        (async () => ({
+          ok: false,
+          notification: false,
+          sound: false,
+          skipped: "attention_disabled",
+        })),
+      soundboard: {
+        registerPack: opts.attention?.soundboard?.registerPack ?? (() => () => {}),
+        activate: opts.attention?.soundboard?.activate ?? (() => false),
+        current: opts.attention?.soundboard?.current ?? (() => "swust-code.default"),
+        list: opts.attention?.soundboard?.list ?? (() => []),
       },
     },
     get client() {
@@ -256,7 +294,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
           return createPluginKeybind(key, defaults, over)
         }),
     },
-    tuiConfig: opts.tuiConfig ?? {},
+    tuiConfig,
     kv: {
       get: kvGet,
       set(name, value) {
@@ -284,6 +322,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
       },
       session: {
         count: opts.state?.session?.count ?? (() => 0),
+        get: opts.state?.session?.get ?? (() => undefined),
         diff: opts.state?.session?.diff ?? (() => []),
         todo: opts.state?.session?.todo ?? (() => []),
         task: opts.state?.session?.task ?? (() => []),

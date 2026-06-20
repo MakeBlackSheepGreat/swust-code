@@ -9,7 +9,7 @@ import type { useSync } from "@tui/context/sync"
 import type { useTheme } from "@tui/context/theme"
 import type { useTuiPaths } from "@tui/context/runtime"
 import { Dialog as DialogUI, type useDialog } from "@tui/ui/dialog"
-import type { TuiConfig } from "@/cli/cmd/tui/config/tui"
+import { TuiConfig } from "@/cli/cmd/tui/config/tui"
 import { createPluginKeybind } from "../context/plugin-keybinds"
 import type { useKV } from "../context/kv"
 import { DialogAlert } from "../ui/dialog-alert"
@@ -44,6 +44,7 @@ type Input = {
   toast: ReturnType<typeof useToast>
   renderer: TuiPluginApi["renderer"]
   paths: ReturnType<typeof useTuiPaths>
+  attention: TuiPluginApi["attention"]
 }
 
 function routeRegister(routes: RouteMap, list: TuiRouteDefinition[], bump: () => void) {
@@ -157,6 +158,9 @@ function stateApi(sync: ReturnType<typeof useSync>, paths: ReturnType<typeof use
       count() {
         return sync.data.session.length
       },
+      get(sessionID) {
+        return sync.session.get(sessionID)
+      },
       diff(sessionID) {
         return sync.data.session_diff[sessionID] ?? []
       },
@@ -224,6 +228,7 @@ export function createTuiApi(input: Input): TuiPluginApi {
 
   return {
     app: appApi(),
+    attention: input.attention,
     command: {
       register(cb) {
         return input.command.register(() => cb())
@@ -338,7 +343,10 @@ export function createTuiApi(input: Input): TuiPluginApi {
       },
     },
     get tuiConfig() {
-      return input.tuiConfig
+      return {
+        ...input.tuiConfig,
+        attention: TuiConfig.resolveAttention(input.tuiConfig),
+      }
     },
     kv: {
       get(key, fallback) {

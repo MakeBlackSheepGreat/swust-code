@@ -14,6 +14,15 @@ const FILE = [pulseA, pulseB, pulseC]
 const HUM = charge
 const DIR = join(tmpdir(), "opencode-sfx")
 
+export const Sounds = {
+  default: pulseA,
+  question: pulseB,
+  permission: pulseC,
+  error: pulseC,
+  done: pulseA,
+  subagent_done: pulseB,
+} as const
+
 const LIST = [
   "ffplay",
   "mpv",
@@ -101,6 +110,12 @@ function play(file: string, volume: number) {
   const item = load()
   if (!item) return run(file, volume)?.exited
   return item.play(file, { volume }).catch(() => run(file, volume)?.exited)
+}
+
+export function playFile(path: string, volume: number) {
+  void file(path)
+    .then((ready) => play(ready, volume))
+    .catch(() => undefined)
 }
 
 export function start() {

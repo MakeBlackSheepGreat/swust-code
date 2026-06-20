@@ -11,6 +11,7 @@ import {
   ErrorBoundary,
   createSignal,
   onMount,
+  onCleanup,
   batch,
   Show,
 } from "solid-js"
@@ -70,6 +71,7 @@ import { FormatError, FormatUnknownError } from "@/cli/error"
 import { isPlainTerminal } from "./util/terminal"
 import { TuiPathsProvider, useTuiPaths } from "./context/runtime"
 import { Global } from "@/global"
+import { createTuiAttention } from "./attention"
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
@@ -249,6 +251,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const toast = useToast()
   const themeState = useTheme()
   const paths = useTuiPaths()
+  const attention = createTuiAttention({ renderer, config: tuiConfig, kv, toast })
   const { theme, setMode, locked, lock, unlock } = themeState
   const sync = useSync()
   const exit = useExit()
@@ -278,7 +281,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     toast,
     renderer,
     paths,
+    attention,
   })
+
+  onCleanup(() => attention.dispose())
   const [ready, setReady] = createSignal(false)
   TuiPluginRuntime.init({
     api,

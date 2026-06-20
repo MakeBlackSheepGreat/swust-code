@@ -39,6 +39,7 @@ import { INTERNAL_TUI_PLUGINS, type InternalTuiPlugin } from "./internal"
 import { setupSlots, Slot as View } from "./slots"
 import type { HostPluginApi, HostSlots } from "./slots"
 import { ConfigPlugin } from "@/config/plugin"
+import { resolveHostAttentionSoundPaths } from "../config/tui-host-attention"
 
 type PluginLoad = {
   options: ConfigPlugin.Options | undefined
@@ -230,6 +231,37 @@ function createThemeInstaller(
     }).catch((error) => {
       log.warn("failed to lock tui plugin theme install", { path: spec, theme: src, dest, error })
     })
+  }
+}
+
+function createScopedAttention(
+  attention: TuiPluginApi["attention"],
+  scope: PluginScope,
+  root: string,
+): TuiPluginApi["attention"] {
+  return {
+    notify(input) {
+      return attention.notify(input)
+    },
+    soundboard: {
+      registerPack(pack) {
+        return scope.track(
+          attention.soundboard.registerPack({
+            ...pack,
+            sounds: resolveHostAttentionSoundPaths(root, pack.sounds, { trim: true }),
+          }),
+        )
+      },
+      activate(id, options) {
+        return attention.soundboard.activate(id, options)
+      },
+      current() {
+        return attention.soundboard.current()
+      },
+      list() {
+        return attention.soundboard.list()
+      },
+    },
   }
 }
 
@@ -532,6 +564,7 @@ function pluginApi(runtime: RuntimeState, plugin: PluginEntry, scope: PluginScop
 
   return {
     app: api.app,
+    attention: createScopedAttention(api.attention, scope, load.theme_root),
     command,
     route,
     ui: api.ui,

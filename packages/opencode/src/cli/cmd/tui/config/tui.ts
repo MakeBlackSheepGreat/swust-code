@@ -1,12 +1,14 @@
 ﻿export * as TuiConfig from "./tui"
 
 import z from "zod"
+import path from "path"
 import { mergeDeep, unique } from "remeda"
 import { Context, Effect, Fiber, Layer } from "effect"
 import { ConfigParse } from "@/config/parse"
 import * as ConfigPaths from "@/config/paths"
 import { migrateTuiConfig } from "./tui-migrate"
 import { TuiInfo } from "./tui-schema"
+import { resolveHostAttentionSoundPaths } from "./tui-host-attention"
 import { Flag } from "@/flag/flag"
 import { isRecord } from "@/util/record"
 import { Global } from "@/global"
@@ -36,6 +38,26 @@ type State = {
 export type Info = z.output<typeof Info> & {
   // Internal resolved plugin list used by runtime loading.
   plugin_origins?: ConfigPlugin.Origin[]
+}
+
+export type AttentionInfo = {
+  enabled: boolean
+  notifications: boolean
+  sound: boolean
+  volume: number
+  sound_pack: string
+  sounds: NonNullable<NonNullable<Info["attention"]>["sounds"]>
+}
+
+export function resolveAttention(input: Info): AttentionInfo {
+  return {
+    enabled: input.attention?.enabled ?? false,
+    notifications: input.attention?.notifications ?? true,
+    sound: input.attention?.sound ?? true,
+    volume: input.attention?.volume ?? 0.4,
+    sound_pack: input.attention?.sound_pack ?? "swust-code.default",
+    sounds: input.attention?.sounds ?? {},
+  }
 }
 
 export interface Interface {
@@ -209,7 +231,15 @@ async function load(text: string, configFilepath: string): Promise<Info> {
 
       // Flatten a nested "tui" key so users who wrote `{ "tui": { ... } }` inside tui.json
       // (mirroring the old swust-code.json shape) still get their settings applied.
-      return ConfigParse.schema(Info, normalize(data), configFilepath)
+      const parsed = ConfigParse.schema(Info, normalize(data), configFilepath)
+      if (!parsed.attention?.sounds) return parsed
+      return {
+        ...parsed,
+        attention: {
+          ...parsed.attention,
+          sounds: resolveHostAttentionSoundPaths(path.dirname(configFilepath), parsed.attention.sounds),
+        },
+      }
     })
     .then((data) => resolvePlugins(data, configFilepath))
     .catch((error) => {

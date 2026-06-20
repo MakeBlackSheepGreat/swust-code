@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
+import { pathToFileURL } from "url"
 import { tmpdir } from "../fixture/fixture"
 import { Instance } from "../../src/project/instance"
 import { TuiConfig } from "../../src/cli/cmd/tui/config/tui"
@@ -124,6 +125,50 @@ test("loads tui config with the same precedence order as server config paths", a
   const config = await getTuiConfig(tmp.path)
   expect(config.theme).toBe("local")
   expect(config.diff_style).toBe("stacked")
+})
+
+test("resolves attention sound paths relative to tui config file", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "tui.json"),
+        JSON.stringify(
+          {
+            attention: {
+              enabled: true,
+              notifications: false,
+              sound: false,
+              volume: 0.7,
+              sound_pack: "acme.soft",
+              sounds: {
+                default: path.join(dir, "default.mp3"),
+                question: pathToFileURL(path.join(dir, "question.mp3")).href,
+                error: "./error.mp3",
+                subagent_done: "sounds/subagent-done.mp3",
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      )
+    },
+  })
+
+  const config = await getTuiConfig(tmp.path)
+  expect(TuiConfig.resolveAttention(config)).toEqual({
+    enabled: true,
+    notifications: false,
+    sound: false,
+    volume: 0.7,
+    sound_pack: "acme.soft",
+    sounds: {
+      default: path.join(tmp.path, "default.mp3"),
+      question: path.join(tmp.path, "question.mp3"),
+      error: path.join(tmp.path, "error.mp3"),
+      subagent_done: path.join(tmp.path, "sounds", "subagent-done.mp3"),
+    },
+  })
 })
 
 test("migrates tui-specific keys from swust-code.json when tui.json does not exist", async () => {
