@@ -1,50 +1,36 @@
 <h1 align="center">龙山灵码</h1>
 
 <p align="center">
-  <img src="assets/readme/swust-code-banner.png" alt="龙山灵码" width="700">
+  <strong>SWUST Code · 基于 MiMo-Code 的终端原生 AI 编程智能体</strong>
 </p>
 
 <p align="center">
-  <strong>SWUST Code: Where Models and Agents Co-Evolve</strong>
+  中文 · <a href="README.md">English</a> ·
+  <a href="https://swust-code.dev">文档站</a> ·
+  <a href="https://github.com/MakeBlackSheepGreat/swust-code">GitHub</a>
 </p>
 
 <p align="center">
-  <code>SWUST Code</code>
+  <a href="https://swust-code.dev"><img src="https://img.shields.io/badge/docs-live-1d4ed8?style=flat-square" alt="Docs"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="License"></a>
+  <a href="https://github.com/MakeBlackSheepGreat/swust-code"><img src="https://img.shields.io/github/stars/MakeBlackSheepGreat/swust-code?style=flat-square&color=0f766e" alt="Stars"></a>
+  <img src="https://img.shields.io/badge/version-0.5.0-2563eb?style=flat-square" alt="Version">
 </p>
 
-<p align="center">
-  <a href="https://swust-code.dev"><img src="https://img.shields.io/badge/docs-live-brightgreen" alt="Docs"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
-  <a href="https://github.com/MakeBlackSheepGreat/swust-code"><img src="https://img.shields.io/github/stars/MakeBlackSheepGreat/swust-code?style=social" alt="Stars"></a>
-</p>
+> [!IMPORTANT]
+> 龙山灵码是基于 MiMo-Code 的 fork。维护原则很明确：MiMo-Code 已经具备的能力，以 MiMo 原生实现为主；MiMo-Code 没有的能力，再由 SWUST 层补齐。
 
-<p align="center">
-  中文 | <a href="README.md">English</a>
-</p>
+## 这是什么
 
----
+龙山灵码（SWUST Code）是一个面向长任务的软件工程 Agent。它可以读写代码、运行命令、管理会话、使用 MCP / LSP / 插件、维护项目长期记忆、编排子智能体，并围绕明确目标持续推进。
 
-龙山灵码（SWUST Code）是一个终端原生 AI 编程智能体，基于 [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) fork 构建。它优先继承 MiMo-Code 的原生基础能力：多 Provider 模型路由、TUI、LSP、MCP、插件、持久化记忆、checkpoint、actor / subagent 编排、任务追踪、goal 停止条件、Compose 工作流、Dream / Distill 自我进化，以及语音输入。
+CLI 命令是：
 
-在这个基础上，龙山灵码增加了 SWUST 品牌层、中文优先的产品体验、更完整的侧边栏上下文、attention 通知、任务完成 gate、文档验证、cache-stable 上下文优化、`@path` 记忆导入，以及 one-fact-per-file 记忆存储。
+```bash
+swust-code
+```
 
-> **[阅读文档](https://swust-code.dev/docs/)** — 安装、配置、Provider、TUI、Agent、权限、MCP、插件和开发者指南。
-
----
-
-## 项目定位
-
-这个 fork 遵循一个简单原则：**MiMo-Code 已经具备的能力，以 MiMo-Code 原生实现为主；MiMo-Code 没有的能力，再由 SWUST 层补齐。**
-
-| 层级 | 提供能力 |
-|------|----------|
-| **MiMo-Code 基座** | Provider 集成、TUI/server 运行时、LSP、MCP、插件、记忆、checkpoint、actor/subagent、任务、goal、Compose、Dream/Distill、语音 |
-| **SWUST 层** | 龙山灵码品牌、中文本地化、SWUST 侧边栏/attention 体验、任务 gate 策略、文档验证、记忆导入/fact-store 工具、cache-stable prompt 布局 |
-| **兼容层** | OpenAI 兼容 Provider、MiMo 语音模型配置、Claude Code 认证导入、项目/全局配置文件 |
-
-AI 服务商名称会保持原样。`MiMo Auto`、`小米 MiMo 平台`、`mimo/mimo-auto`、`xiaomi/mimo-*` 等模型 ID 指向原服务商能力，不做品牌改名。
-
----
+AI 服务商名称保持原样。`MiMo Auto`、`小米 MiMo 平台`、`mimo/mimo-auto`、`xiaomi/mimo-*` 都指向原服务商或模型 ID，不做品牌改名。
 
 ## 快速开始
 
@@ -55,254 +41,129 @@ curl -fsSL https://raw.githubusercontent.com/MakeBlackSheepGreat/swust-code/main
 # 或通过 npm 安装
 npm install -g @swust-code/cli
 
-# 运行
+# 启动 TUI
 swust-code
 ```
 
-首次启动会自动引导配置：
+首次启动会进入 Provider 配置向导：
 
-- **MiMo Auto（限时免费）** — 匿名通道，零配置
-- **小米 MiMo 平台** — OAuth 登录
-- **从 Claude Code 导入** — 一步迁移已有认证
-- **自定义 Provider** — 在 TUI 内添加任意 OpenAI 兼容 API
+| 选项 | 适用场景 |
+|------|----------|
+| **MiMo Auto** | 想使用零配置的限时免费通道 |
+| **小米 MiMo 平台** | 想通过 MiMo OAuth 登录 |
+| **从 Claude Code 导入** | 已经有 Claude Code 凭证 |
+| **自定义 Provider** | 使用 OpenAI 兼容网关或其他模型服务商 |
 
-<details>
-<summary><strong>WSL：剪贴板问题</strong></summary>
+## 常用命令
 
-如果在 WSL 上复制出现乱码，安装 `xsel`：
+| 命令 | 用途 |
+|------|------|
+| `swust-code` | 启动交互式 TUI |
+| `swust-code run "解释这个仓库"` | 从 shell 运行一次提示 |
+| `swust-code run --goal "修复类型错误" "开始"` | 带自治停止条件运行 |
+| `/goal <目标>` | 在 TUI 内设置目标 |
+| `/memory <查询>` | 搜索持久化项目记忆 |
+| `/dream` | 从近期会话中整合长期项目知识 |
+| `/distill` | 将重复工作流沉淀为 skill、subagent 或 command |
+| `/paste-image` | 从剪贴板附加图片 |
+| `/model`、`/agent`、`/mcp`、`/skill`、`/effort` | 用常见别名打开现有 MiMo/SWUST TUI 控件 |
 
-```bash
-sudo apt install xsel
-```
+## 核心能力
 
-</details>
+### MiMo-Code 基座
 
----
+龙山灵码继承 MiMo-Code 当前主线能力：
 
-## 核心特性
+- 终端 TUI、server runtime、Web / Desktop 入口
+- 多 Provider 模型路由与 OpenAI 兼容服务商
+- LSP、MCP、插件、自定义命令、技能系统
+- 持久化记忆、checkpoint、上下文重建
+- actor / subagent 编排与任务追踪
+- `goal`、`compose`、Dream / Distill、语音输入
 
-### 智能体
+### SWUST 层
+
+SWUST 层聚焦品牌、中文体验和工程防护：
+
+- 龙山灵码品牌与中文本地化
+- 更完整的侧边栏上下文：goal、task、todo、LSP、MCP、变更文件、token、费用、缓存状态
+- attention 通知与声音包配置
+- agent 停止前的未完成任务 gate
+- Bash 命令安全分析
+- 文档验证工具
+- cache-stable 上下文布局
+- `@path` 记忆导入与 one-fact-per-file 记忆存储
+
+## 智能体
 
 | 智能体 | 说明 |
 |--------|------|
 | **build** | 默认开发智能体，具备完整工具权限 |
-| **plan** | 只读分析模式，适合代码探索和方案设计 |
-| **compose** | 结构化编排模式，适合 specs-driven 和 skill-driven 工作流 |
-| **goal** | 自主目标模式，持续工作到请求完成、完成验证或明确受阻 |
+| **plan** | 只读探索和方案设计 |
+| **compose** | 面向 spec、skill、评审、TDD、验证、合并的结构化编排 |
+| **goal** | 持续工作，直到独立 judge 判断停止条件已满足 |
 
-按 `Tab` 可以在主智能体间切换。运行时可按需创建子智能体，追踪生命周期、取消任务、后台执行，并把子智能体工作与父会话保持关联。
+在 TUI 中按 `Tab` 可以切换主智能体。运行时可按需创建调查、实现、评审和 checkpoint writer 子智能体，并保留父会话上下文。
 
-### 记忆与 Checkpoint
+## 记忆与 Checkpoint
 
-持久化记忆基于 SQLite FTS5 搜索，并继承 MiMo-Code 的 checkpoint 栈：
+龙山灵码会跨会话保留项目知识：
 
-- **项目记忆** (`MEMORY.md`) — 项目知识、规则和架构决策
-- **会话检查点** (`checkpoint.md`) — 自动维护的结构化状态快照
-- **笔记暂存** (`notes.md`) — Agent 临时记录区
-- **任务进展** (`tasks/<id>/progress.md`) — 按任务记录的执行日志
-- **Fact store** — 每个事实一个 markdown 文件，带 frontmatter 和生成索引
-- **`@path` 导入** — 记忆文档内联引用其他文件
-
-当会话恢复或接近上下文上限时，龙山灵码会从 checkpoint、记忆、笔记、任务进展和近期对话中重建有效上下文，避免 agent 重新理解项目。
-
-### Goal 与任务 Gate
-
-`/goal` 可为当前会话设置自主停止条件。当 agent 尝试停止时，独立 judge 模型会评估目标是否真正满足。任务 gate 会进一步检查未完成任务状态，避免主 agent 或符合条件的子 agent 过早结束。
-
-### Compose 工作流
-
-Compose 模式继承 MiMo-Code 的结构化开发流程：规划、实现、审查、TDD、调试、验证、合并等阶段可通过内置 skills 和 subagents 协同执行。
-
-### TUI 侧边栏与 Attention
-
-SWUST TUI 保留 MiMo/OpenTUI 的终端体验，并加入更适合实际开发的侧边栏：
-
-- 工作目录与指令文件可见性
-- goal、task、todo、LSP、MCP、变更文件等区块
-- 上下文窗口健康度、token 用量、运行状态、费用和缓存指标
-- 免费模型与 Provider 配置的 getting-started 提示
-- 可配置的 attention 通知与声音包
-
-### 安全与验证
-
-龙山灵码保留 Provider / Tool 权限模型，并在 SWUST 层加入更严格的防护：
-
-- 未完成任务的 task gate 检查
-- 高风险 Bash 命令执行前的安全分析
-- 面向 spec-driven 文件的文档验证工具
-- 记忆写入路径保护
-- cache-stable prompt 前缀，提高 Provider 缓存命中率
-
-### 语音输入
-
-语音输入基于 TenVAD 和 MiMo ASR 实现实时流式转写。通过 `/voice` 激活后，音频会按停顿分片，并逐段追加到输入框。MiMo 托管 ASR 需要 MiMo 登录，并依赖 `sox`（macOS 上 `brew install sox`，其他平台安装对应包）。
-
-<details>
-<summary><strong>WSLg 音频配置</strong></summary>
-
-```bash
-sudo apt install -y sox pulseaudio libasound2-plugins
-export PULSE_SERVER=unix:/mnt/wslg/PulseServer
+```text
+~/.local/share/swust-code/memory/
+  global/MEMORY.md
+  projects/<project-id>/MEMORY.md
+  projects/<project-id>/facts/<fact>.md
+  sessions/<session-id>/checkpoint.md
+  sessions/<session-id>/notes.md
+  sessions/<session-id>/tasks/<task-id>/progress.md
 ```
 
-</details>
-
-<details>
-<summary><strong>SSH 远程音频（Mac -> 远程主机）</strong></summary>
-
-```bash
-# Mac（本地）
-brew install pulseaudio
-pulseaudio --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1" --exit-idle-time=-1 --daemonize
-# 在 ~/.ssh/config 中添加: RemoteForward 4713 127.0.0.1:4713
-
-# 远程主机
-apt install -y pulseaudio pulseaudio-utils sox
-export PULSE_SERVER=tcp:127.0.0.1:4713
-# 验证: pactl info
-```
-
-</details>
-
-<details>
-<summary><strong>非 MiMo 渠道语音输入（OpenRouter、内部 API 等）</strong></summary>
-
-语音输入可通过 `voice` 配置字段路由到其他 OpenAI 兼容 provider。ASR 模型（`mimo-v2.5-asr`）仅在 MiMo 平台可用；语音控制模式（`mimo-v2.5`）可通过 OpenRouter 和兼容中转平台使用。
-
-**OpenRouter（仅语音控制）：**
-
-使用 `/connect` 连接 OpenRouter 后添加：
-
-```jsonc
-{
-  "voice": {
-    "control_model": "openrouter/xiaomi/mimo-v2.5"
-  }
-}
-```
-
-**内部 / 自建中转平台（ASR + 语音控制）：**
-
-```jsonc
-{
-  "provider": {
-    "internal": {
-      "options": {
-        "baseURL": "https://your-api-gateway.example.com/v1",
-        "apiKey": "sk-..."
-      },
-      "models": {
-        "xiaomi/mimo-v2.5-asr": { "name": "MiMo-V2.5-ASR" },
-        "xiaomi/mimo-v2.5": { "name": "MiMo-V2.5" }
-      }
-    }
-  },
-  "voice": {
-    "asr_model": "internal/xiaomi/mimo-v2.5-asr",
-    "control_model": "internal/xiaomi/mimo-v2.5"
-  }
-}
-```
-
-自定义 provider 必须在 `models` 中注册至少一个模型才能被系统识别。`voice.*_model` 中的模型名会直接传给 API，不必与注册的 key 完全一致。
-
-</details>
-
-### Dream & Distill
-
-- **`/dream`** — 扫描近期会话轨迹，将持久知识提取到项目记忆，并清理过时条目
-- **`/distill`** — 发现重复工作流，将高置信度候选打包成可复用 skill、subagent 或 command
-
----
+记忆通过 SQLite FTS5 搜索，并在会话恢复或接近上下文上限时和 checkpoint 一起重建上下文。长任务中，Agent 不需要反复重新理解项目。
 
 ## 配置
 
-龙山灵码使用 `swust-code.json` / `swust-code.jsonc` 管理运行时配置，使用 `tui.json` / `tui.jsonc` 管理 TUI 专属配置。
+运行时配置使用 `swust-code.json` 或 `swust-code.jsonc`。
 
 常见位置：
 
 - 全局运行时配置：`~/.config/swust-code/swust-code.json`
-- 全局 TUI 配置：`~/.config/swust-code/tui.json`
 - 项目运行时配置：项目根目录的 `swust-code.json`
+- 全局 TUI 配置：`~/.config/swust-code/tui.json`
 - 项目 TUI 配置：项目根目录的 `tui.json`
 
-主要配置范围包括 Provider、模型、权限、Agent、命令、MCP server、插件、记忆/checkpoint 行为、快捷键、主题，以及 Max Mode 等实验性能力。
-
----
-
-## 架构
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│                  CLI / TUI / Web / Desktop               │
-├──────────────────────────────────────────────────────────┤
-│                    Session Runtime                       │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
-│  │ Memory      │ │ Checkpoint  │ │ Goal / Task Gates   │ │
-│  │ Context     │ │ Compaction  │ │ Compose / Actors    │ │
-│  └─────────────┘ └─────────────┘ └─────────────────────┘ │
-├──────────────────────────────────────────────────────────┤
-│        Tools / Permissions / MCP / LSP / Plugins          │
-├──────────────────────────────────────────────────────────┤
-│        SQLite FTS5 + Drizzle ORM + Effect-TS + Bun        │
-└──────────────────────────────────────────────────────────┘
-```
-
-| 领域 | 技术 |
-|------|------|
-| 运行时 | Bun 1.3.11 |
-| Effect 系统 | Effect-TS 4 beta |
-| 数据库 | SQLite + Drizzle ORM + FTS5 |
-| LLM 集成 | Vercel AI SDK 与 OpenAI 兼容 Provider |
-| 终端 UI | SolidJS + OpenTUI |
-| Monorepo | Bun workspaces + Turborepo |
-
----
+配置范围包括 Provider、模型、权限、Agent、命令、MCP server、插件、记忆 / checkpoint 行为、快捷键、主题和实验性功能。
 
 ## 开发
 
 ```bash
-bun install              # 安装依赖
-bun run dev              # 以开发模式运行 CLI
-bun turbo typecheck      # 检查全部包类型
+bun install
+bun run dev
+bun turbo typecheck
 ```
 
-包和命令名称：
-
-- npm 包：`@swust-code/cli`
-- CLI 命令：`swust-code`
-- 仓库包管理器：`bun@1.3.11`
-
----
+| 项目 | 值 |
+|------|----|
+| npm 包 | `@swust-code/cli` |
+| CLI 命令 | `swust-code` |
+| 包管理器 | `bun@1.3.11` |
+| 当前声明版本 | `0.5.0` |
 
 ## 文档
 
-完整文档请访问 **[swust-code.dev/docs](https://swust-code.dev/docs/)**。
-
----
-
-## 社区
-
-扫描二维码加入社区群聊：
-
-<p align="center">
-  <img src="assets/readme/community-qrcode.jpg" alt="社区群聊二维码" width="240">
-</p>
-
----
+- **文档站：** <https://swust-code.dev>
+- **快速开始：** <https://swust-code.dev/guide/start>
+- **命令参考：** <https://swust-code.dev/api/commands>
+- **架构说明：** <https://swust-code.dev/dev/architecture>
 
 ## 致谢
 
-龙山灵码建立在多个开源项目的工作之上：
+龙山灵码建立在这些开源项目之上：
 
-- [**MiMo-Code**](https://github.com/XiaomiMiMo/MiMo-Code) by 小米 — 当前 fork 的基座，提供原生记忆、checkpoint、actor、goal、Compose、Dream/Distill、语音、TUI、Provider、MCP、LSP 和插件体系。
-- [**OpenCode**](https://github.com/anomalyco/opencode) by Anomaly Co. — 终端原生 coding agent 生态中的重要上游传承。
-- [**DevEco Code**](https://github.com/nicognaW/deveco-code) by nicognaW — SWUST 层文档验证思路的参考来源。
-- [**DeepSeek-Reasonix**](https://github.com/esengine/DeepSeek-Reasonix) by esengine — SWUST 层 cache-stable 上下文与记忆组织思路的参考来源。
-
-感谢这些项目的维护者和贡献者在开源协议下发布他们的工作。
-
----
+- [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) by 小米：当前运行时、TUI、Provider、记忆、checkpoint、actor、goal、Compose、Dream/Distill、语音、MCP、LSP 和插件体系的基座。
+- [OpenCode](https://github.com/anomalyco/opencode)：终端原生 coding agent 生态中的重要上游传承。
+- [DevEco Code](https://github.com/nicognaW/deveco-code)：文档验证思路的参考来源。
+- [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix)：cache-stable 上下文与记忆组织思路的参考来源。
 
 ## 许可证
 
