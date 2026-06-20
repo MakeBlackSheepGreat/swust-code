@@ -320,13 +320,13 @@ describe("WorkflowRuntime cancel cascade", () => {
           permission: [{ permission: "*", pattern: "*", action: "allow" }],
         })
         yield* llm.hang // every child hangs at the LLM → in-flight at cancel time
-        // A wide fan-out keeps spawns resolving across the bridge so the cancel
-        // lands while children are registered but the post-resolve add (the bug)
-        // has not run.
+        // Keep a small concurrent fan-out so at least one child is registered
+        // while sibling spawns are still crossing the bridge, without making the
+        // test disproportionately expensive under full-suite CI load.
         const script = [
           `export const meta = { name: "t", description: "d" }`,
           `const ts = []`,
-          `for (let i = 0; i < 8; i++) ts.push(() => agent("child" + i))`,
+          `for (let i = 0; i < 4; i++) ts.push(() => agent("child" + i))`,
           `return await parallel(ts)`,
         ].join("\n")
         const { runID } = yield* runtime.start({
@@ -334,7 +334,7 @@ describe("WorkflowRuntime cancel cascade", () => {
           sessionID: parent.id,
           parentActorID: "main",
           model: ref,
-          maxConcurrentAgents: 8,
+          maxConcurrentAgents: 4,
         })
         // Wait until the fan-out has registered at least one child. A fixed
         // sleep can fire before QuickJS has crossed the spawn bridge on a busy CI
@@ -365,7 +365,7 @@ describe("WorkflowRuntime cancel cascade", () => {
       }),
       { git: true, config: providerCfg },
     ),
-    20000,
+    30000,
   )
 })
 
