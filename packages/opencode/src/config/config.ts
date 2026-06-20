@@ -460,11 +460,15 @@ type State = {
   consoleState: ConsoleState
 }
 
+export type Unset = {
+  agent?: Record<string, Array<"model" | "variant" | "steps">>
+}
+
 export interface Interface {
   readonly get: () => Effect.Effect<Info>
   readonly getGlobal: () => Effect.Effect<Info>
   readonly getConsoleState: () => Effect.Effect<ConsoleState>
-  readonly update: (config: Info) => Effect.Effect<void>
+  readonly update: (config: Info, unset?: Unset) => Effect.Effect<void>
   readonly updateGlobal: (config: Info) => Effect.Effect<Info>
   readonly invalidate: (wait?: boolean) => Effect.Effect<void>
   readonly directories: () => Effect.Effect<string[]>
@@ -503,6 +507,16 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
 function writable(info: Info) {
   const { plugin_origins: _plugin_origins, mcp_origins: _mcp_origins, ...next } = info
   return next
+}
+
+function mergeConfigUpdate(existing: Info, config: Info, unset?: Unset) {
+  const base = writable(existing)
+  for (const [name, fields] of Object.entries(unset?.agent ?? {})) {
+    const agent = base.agent?.[name]
+    if (!agent) continue
+    for (const field of fields) delete agent[field]
+  }
+  return mergeDeep(base, writable(config))
 }
 
 export const ConfigDirectoryTypoError = NamedError.create(
@@ -966,13 +980,11 @@ export const layer = Layer.effect(
       )
     })
 
-    const update = Effect.fn("Config.update")(function* (config: Info) {
+    const update = Effect.fn("Config.update")(function* (config: Info, unset?: Unset) {
       const dir = yield* InstanceState.directory
       const file = path.join(dir, "config.json")
       const existing = yield* loadFile(file)
-      yield* fs
-        .writeFileString(file, JSON.stringify(mergeDeep(writable(existing), writable(config)), null, 2))
-        .pipe(Effect.orDie)
+      yield* fs.writeFileString(file, JSON.stringify(mergeConfigUpdate(existing, config, unset), null, 2)).pipe(Effect.orDie)
       yield* Effect.promise(() => Instance.dispose())
     })
 

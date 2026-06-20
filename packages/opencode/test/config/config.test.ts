@@ -55,6 +55,8 @@ const it = testEffect(layer)
 const load = () => Effect.runPromise(Config.Service.use((svc) => svc.get()).pipe(Effect.scoped, Effect.provide(layer)))
 const save = (config: Config.Info) =>
   Effect.runPromise(Config.Service.use((svc) => svc.update(config)).pipe(Effect.scoped, Effect.provide(layer)))
+const saveWithUnset = (config: Config.Info, unset: Config.Unset) =>
+  Effect.runPromise(Config.Service.use((svc) => svc.update(config, unset)).pipe(Effect.scoped, Effect.provide(layer)))
 const clear = (wait = false) =>
   Effect.runPromise(Config.Service.use((svc) => svc.invalidate(wait)).pipe(Effect.scoped, Effect.provide(layer)))
 const listDirs = () =>
@@ -988,6 +990,45 @@ test("updates config and writes to file", async () => {
 
       const writtenConfig = await Filesystem.readJson<{ model: string }>(path.join(tmp.path, "config.json"))
       expect(writtenConfig.model).toBe("updated/model")
+    },
+  })
+})
+
+test("updates config can clear selected agent overrides", async () => {
+  await using tmp = await tmpdir()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      await Filesystem.write(
+        path.join(tmp.path, "config.json"),
+        JSON.stringify({
+          agent: {
+            general: {
+              model: "mimo/mimo-auto",
+              variant: "high",
+              steps: 8,
+              description: "keep me",
+            },
+          },
+        }),
+      )
+
+      await saveWithUnset({ agent: { general: {} } } as any, { agent: { general: ["model", "variant", "steps"] } })
+
+      const writtenConfig = await Filesystem.readJson<{
+        agent: {
+          general: {
+            model?: string
+            variant?: string
+            steps?: number
+            description?: string
+          }
+        }
+      }>(path.join(tmp.path, "config.json"))
+      expect(writtenConfig.agent.general.model).toBeUndefined()
+      expect(writtenConfig.agent.general.variant).toBeUndefined()
+      expect(writtenConfig.agent.general.steps).toBeUndefined()
+      expect(writtenConfig.agent.general.description).toBe("keep me")
     },
   })
 })

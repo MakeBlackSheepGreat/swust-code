@@ -131,6 +131,7 @@ export interface SpawnInput {
   context: ContextMode
   tools: ToolWhitelist
   model?: { providerID: ProviderID; modelID: ModelID }
+  variant?: string
   background: boolean
   parentActorID?: string
   task_id?: string // Spec ②: bound user-task ID for postStop progress.md validation
@@ -206,6 +207,7 @@ export const layer = Layer.effect(
       task: string
       task_id?: string
       model?: { providerID: ProviderID; modelID: ModelID }
+      variant?: string
       source: "spawn" | "hook"
       provenance?: MessageV2.Provenance
       format?: MessageV2.OutputFormat
@@ -217,6 +219,7 @@ export const layer = Layer.effect(
         source: input.source,
         provenance: input.provenance,
         model: input.model,
+        variant: input.variant,
         task_id: input.task_id,
         parts: [{ type: "text", text: input.task }],
         ...(input.format ? { format: input.format } : {}),
@@ -246,6 +249,7 @@ export const layer = Layer.effect(
       description?: string
       background: boolean
       model?: { providerID: ProviderID; modelID: ModelID }
+      variant?: string
       lifecycle: "ephemeral" | "persistent"
       task_id?: string
       // True for non-specialized subagents (those that received
@@ -617,6 +621,7 @@ export const layer = Layer.effect(
         description: input.description,
         background: input.background,
         model: input.model,
+        variant: input.variant,
         lifecycle: input.lifecycle ?? "persistent",
         task_id: input.task_id,
         format: input.format,
@@ -672,6 +677,7 @@ export const layer = Layer.effect(
         description: input.description,
         background: input.background,
         model: input.model,
+        variant: input.variant,
         lifecycle: input.lifecycle ?? "ephemeral",
         task_id: input.task_id,
         gateEligible,

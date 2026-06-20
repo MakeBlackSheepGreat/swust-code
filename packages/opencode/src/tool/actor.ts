@@ -708,6 +708,7 @@ export const ActorTool = Tool.define(
           context: op.context ?? "none",
           tools: next.toolAllowlist ? [...next.toolAllowlist] : "INHERIT",
           model,
+          variant: next.variant,
           background,
           task_id: effectiveTaskId,
           ...(op.output_schema

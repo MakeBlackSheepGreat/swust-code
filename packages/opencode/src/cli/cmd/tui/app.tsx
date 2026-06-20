@@ -75,6 +75,7 @@ import { createTuiAttention } from "./attention"
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
+import { DialogSubagentSettings } from "./component/dialog-subagent-settings"
 
 function rendererConfig(_config: TuiConfig.Info, plainTerminal: boolean): CliRendererConfig {
   const mouseEnabled = !plainTerminal && !Flag.SWUST_CODE_DISABLE_MOUSE && (_config.mouse ?? true)
@@ -553,6 +554,18 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       onSelect: () => {
         dialog.replace(() => <DialogAgent />)
+      },
+    },
+    {
+      title: t("tui.command.subagent.settings.title"),
+      value: "subagent.settings",
+      category: "agent",
+      slash: {
+        name: "subagent",
+        aliases: ["subagents"],
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogSubagentSettings />)
       },
     },
     {
