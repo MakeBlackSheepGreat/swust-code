@@ -161,8 +161,8 @@ describe("installation", () => {
       const layer = testLayer(
         () => jsonResponse({}),
         (cmd, args) => {
-          if (cmd === "curl" && args.includes("https://github.com/XiaomiMiMo/MiMo-Code/releases/latest"))
-            return "HTTP/2 302\r\nlocation: https://github.com/XiaomiMiMo/MiMo-Code/releases/tag/v0.1.1\r\n"
+          if (cmd === "curl" && args.includes("https://github.com/MakeBlackSheepGreat/swust-code/releases/latest"))
+            return "HTTP/2 302\r\nlocation: https://github.com/MakeBlackSheepGreat/swust-code/releases/tag/v0.5.0\r\n"
           return ""
         },
       )
@@ -170,7 +170,7 @@ describe("installation", () => {
       const result = await Effect.runPromise(
         Installation.Service.use((svc) => svc.latest("curl")).pipe(Effect.provide(layer)),
       )
-      expect(result).toBe("0.1.1")
+      expect(result).toBe("0.5.0")
     })
 
     test("dies for unsupported channels (brew/choco/scoop/unknown)", async () => {

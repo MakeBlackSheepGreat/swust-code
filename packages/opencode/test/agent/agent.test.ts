@@ -708,13 +708,14 @@ test("defaultAgent throws when all primary agents are disabled", async () => {
         build: { disable: true },
         plan: { disable: true },
         compose: { disable: true },
+        goal: { disable: true },
       },
     },
   })
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
-      // build, plan, and compose are disabled, no primary-capable agents remain
+      // build, plan, compose, and goal are disabled, no primary-capable agents remain
       await expect(load(tmp.path, (svc) => svc.defaultAgent())).rejects.toThrow("no primary visible agent found")
     },
   })

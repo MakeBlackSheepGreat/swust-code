@@ -1,7 +1,7 @@
-﻿{
+{
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@swust-code/sdk",
-  "version": "0.1.1",
+  "version": "0.5.0",
   "description": "TypeScript SDK for the SWUST Code API",
   "keywords": ["swust-code", "ai", "sdk", "coding-assistant"],
   "type": "module",

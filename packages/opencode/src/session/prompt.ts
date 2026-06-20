@@ -960,6 +960,24 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
         throw error
       }
+      const taskToolModel =
+        taskAgent.modelRef && taskAgent.modelRef.includes("/")
+          ? Provider.parseModel(taskAgent.modelRef)
+          : (taskAgent.model ?? { providerID: taskModel.providerID, modelID: taskModel.id })
+      if (part.state.status === "running") {
+        part = yield* sessions.updatePart({
+          ...part,
+          state: {
+            ...part.state,
+            title: task.description,
+            metadata: {
+              ...part.state.metadata,
+              sessionId: sessionID,
+              model: taskToolModel,
+            },
+          },
+        } satisfies MessageV2.ToolPart)
+      }
 
       let error: Error | undefined
       const taskAbort = new AbortController()
@@ -1051,17 +1069,23 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       }
 
       if (!result) {
+        const current = yield* sessions.getPart({
+          sessionID,
+          messageID: assistantMessage.id,
+          partID: part.id,
+        })
+        const currentPart = current?.type === "tool" ? current : part
         yield* sessions.updatePart({
-          ...part,
+          ...currentPart,
           state: {
             status: "error",
             error: error ? `Tool execution failed: ${error.message}` : "Tool execution failed",
             time: {
-              start: part.state.status === "running" ? part.state.time.start : Date.now(),
+              start: currentPart.state.status === "running" ? currentPart.state.time.start : Date.now(),
               end: Date.now(),
             },
-            metadata: part.state.status === "pending" ? undefined : part.state.metadata,
-            input: part.state.input,
+            metadata: currentPart.state.status === "pending" ? undefined : currentPart.state.metadata,
+            input: currentPart.state.input,
           },
         } satisfies MessageV2.ToolPart)
       }
@@ -1269,7 +1293,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         Effect.exit,
       )
 
-      if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {
+      if (Exit.isFailure(exit) && !aborted && !Cause.hasInterruptsOnly(exit.cause)) {
         return yield* Effect.failCause(exit.cause)
       }
 

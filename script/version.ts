@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bun
+#!/usr/bin/env bun
 
 import { Script } from "@swust-code/script"
 import { $ } from "bun"
