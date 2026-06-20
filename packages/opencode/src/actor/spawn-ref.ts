@@ -13,4 +13,24 @@
 // invariant.
 import type { Interface as ActorInterface } from "./spawn"
 
-export const spawnRef: { current: ActorInterface | undefined } = { current: undefined }
+const stack: ActorInterface[] = []
+
+export const spawnRef: {
+  current: ActorInterface | undefined
+  push: (impl: ActorInterface) => () => void
+} = {
+  get current() {
+    return stack.at(-1)
+  },
+  set current(value) {
+    stack.length = 0
+    if (value) stack.push(value)
+  },
+  push(impl) {
+    stack.push(impl)
+    return () => {
+      const index = stack.lastIndexOf(impl)
+      if (index >= 0) stack.splice(index, 1)
+    }
+  },
+}

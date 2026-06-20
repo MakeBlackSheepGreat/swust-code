@@ -24,7 +24,7 @@ afterEach(async () => {
 
 describe("CheckpointSplitoverPlugin (integration)", () => {
   test("triggerActorPreStop(checkpoint-writer) on over-budget file → continue=true with EXTRACTION reason", async () => {
-    await using tmp = await tmpdir({})
+    await using tmp = await tmpdir({ git: true })
 
     const sessionID = ("s_" + Math.random().toString(36).slice(2, 10)) as SessionID
 
@@ -113,6 +113,7 @@ describe("CheckpointSplitoverPlugin spawn-loop integration", () => {
     let sessionIDForCleanup: SessionID | undefined
     try {
       await using tmp = await tmpdir({
+        git: true,
         init: async (dir) => {
           await Bun.write(
             `${dir}/swust-code.json`,
@@ -234,6 +235,7 @@ describe("CheckpointContext producer (tryStartCheckpointWriter)", () => {
     let sessionIDForCleanup: SessionID | undefined
     try {
       await using tmp = await tmpdir({
+        git: true,
         init: async (dir) => {
           await Bun.write(
             `${dir}/swust-code.json`,
@@ -403,6 +405,7 @@ describe("parentSessionID end-to-end (Axis A wiring)", () => {
 
     try {
       await using tmp = await tmpdir({
+        git: true,
         init: async (dir) => {
           await Bun.write(
             `${dir}/swust-code.json`,

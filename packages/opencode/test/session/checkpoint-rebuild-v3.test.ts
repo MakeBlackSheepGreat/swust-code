@@ -41,6 +41,7 @@ describe("renderRebuildContext v3", () => {
         const out = yield* cp.renderRebuildContext(sess.id)
         expect(out).toBe("")
       }),
+      { git: true },
     ),
   )
 
@@ -71,7 +72,7 @@ describe("renderRebuildContext v3", () => {
         const session = yield* Session.Service
         const sess = yield* session.create({ title: "Test" })
         const root = yield* memory.root()
-        const projDir = path.join(root, "projects", "global")
+        const projDir = path.join(root, "projects", Instance.project.id)
         yield* Effect.promise(() => fs.mkdir(projDir, { recursive: true }))
         yield* Effect.promise(() =>
           fs.writeFile(path.join(projDir, "memory.md"), "用 Bun 不用 npm"),
@@ -83,6 +84,7 @@ describe("renderRebuildContext v3", () => {
         // No global/MEMORY.md written → no spurious Global memory header.
         expect(out).not.toContain("## Global memory")
       }),
+      { git: true },
     ),
   )
 

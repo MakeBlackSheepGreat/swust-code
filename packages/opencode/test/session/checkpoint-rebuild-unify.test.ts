@@ -95,6 +95,7 @@ describe("SessionCheckpoint.insertRebuildBoundary", () => {
         expect(after.some((m) => m.info.id === m3.id)).toBe(true)
         expect(after.length).toBe(3)
       }),
+      { git: true },
     ),
   )
 })

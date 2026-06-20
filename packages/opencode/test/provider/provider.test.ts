@@ -2612,7 +2612,7 @@ test("plugin config enabled and disabled providers are honored", async () => {
   })
 })
 
-test("opencode and opencode-go providers are disabled by MimoFreeAuthPlugin", async () => {
+test("MimoAuthPlugin keeps authenticated opencode providers available", async () => {
   await using base = await tmpdir({
     init: async (dir) => {
       await Bun.write(
@@ -2636,9 +2636,9 @@ test("opencode and opencode-go providers are disabled by MimoFreeAuthPlugin", as
     fn: async () => list(),
   })
 
-  // MimoFreeAuthPlugin always pushes opencode/opencode-go into disabled_providers,
-  // so they should not appear even when the user supplies an apiKey or auth record.
-  expect(opencodeProviderPresent(providers)).toBe(false)
+  // MiMo auth should not force-disable the native opencode providers. The
+  // opencode loader itself is responsible for hiding unauthenticated/free tiers.
+  expect(opencodeProviderPresent(providers)).toBe(true)
   expect(providers[ProviderID.make("opencode-go")]).toBeUndefined()
   // The replacement free provider is registered by a private plugin (src/private/)
   // that only exists in the internal build. Skip these assertions in open-source.
