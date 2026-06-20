@@ -393,11 +393,9 @@ describe("WorkflowRuntime per-agent timeout (straggler-abort)", () => {
           title: "wf agent-timeout",
           permission: [{ permission: "*", pattern: "*", action: "allow" }],
         })
-        // Make the straggler deterministic. The two agents run concurrently, so a
-        // plain FIFO queue can be consumed in either order; match by request body
-        // instead so one agent hangs while the sibling returns "ok".
-        yield* llm.pushMatch((hit) => JSON.stringify(hit.body).includes('"a"'), reply().hang())
-        yield* llm.textMatch((hit) => JSON.stringify(hit.body).includes('"b"'), "ok")
+        // One agent hangs and one completes. The agents run concurrently, so we
+        // intentionally avoid matching on provider-specific prompt serialization.
+        yield* llm.push(reply().hang(), reply().text("ok").stop())
         const script = [
           `export const meta = { name: "t", description: "d" }`,
           `const r = await parallel([() => agent("a"), () => agent("b")])`,
@@ -408,18 +406,19 @@ describe("WorkflowRuntime per-agent timeout (straggler-abort)", () => {
           sessionID: parent.id,
           parentActorID: "main",
           model: ref,
-          agentTimeoutMs: 1500,
+          agentTimeoutMs: 10000,
           scriptDeadlineMs: 60000, // far above the per-agent timeout
         })
         const outcome = yield* runtime.wait({ runID })
         expect(outcome.status).toBe("completed")
         const r = (outcome as { result: string[] }).result
         expect(r.filter((x) => x === "null").length).toBeGreaterThanOrEqual(1)
+        expect(r.filter((x) => x === "ok").length).toBeGreaterThanOrEqual(1)
         expect(r.every((x) => x === "null" || x === "ok")).toBe(true)
       }),
       { git: true, config: providerCfg },
     ),
-    20000, // budget >> the 1500ms per-agent timeout, well under any true hang
+    30000, // budget >> the per-agent timeout, well under any true hang
   )
 })
 

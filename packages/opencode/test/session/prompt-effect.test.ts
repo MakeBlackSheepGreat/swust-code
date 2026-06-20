@@ -1385,13 +1385,18 @@ unix(
             yield* prompt.cancel(chat.id)
 
             const exit = yield* Fiber.await(sh)
-            expect(Exit.isSuccess(exit)).toBe(true)
+            const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+            const tool = msgs
+              .flatMap((msg) => msg.parts)
+              .find(
+                (part): part is CompletedToolPart =>
+                  part.type === "tool" && part.tool === "bash" && part.state.status === "completed",
+              )
+            expect(tool?.state.output).toContain("User aborted the command")
             if (Exit.isSuccess(exit)) {
               expect(exit.value.info.role).toBe("assistant")
-              const tool = completedTool(exit.value.parts)
-              if (tool) {
-                expect(tool.state.output).toContain("User aborted the command")
-              }
+              const resultTool = completedTool(exit.value.parts)
+              expect(resultTool?.state.output).toContain("User aborted the command")
             }
           }),
         { git: true, config: cfg },
