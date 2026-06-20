@@ -144,12 +144,18 @@ bun run dev
 bun turbo typecheck
 ```
 
-Maintainers can publish npm releases by setting the repository secret `NPM_TOKEN`, then pushing a semver tag that matches `packages/opencode/package.json`:
+Maintainers publish npm releases through npm trusted publishing from GitHub Actions. Configure the GitHub trusted publisher against workflow file `npm-release.yml`, then push a semver tag that matches `packages/opencode/package.json`:
 
 ```bash
 git tag v0.6.0
 git push swust-code v0.6.0
 ```
+
+Important release note:
+
+- Trusted publishing is configured per npm package.
+- SWUST Code publishes `@swust-code/cli` plus the platform binary packages under `@swust-code/swust-code-*`.
+- npm only allows trusted publisher setup after a package exists on the registry, so a brand-new package namespace still needs one bootstrap publish before trusted publishing can fully take over.
 
 Package and runtime details:
 

@@ -32,7 +32,8 @@ jobs:
       - name: Setup npm registry
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.14.0
+          package-manager-cache: false
           registry-url: https://registry.npmjs.org
 
       - name: Resolve release version
@@ -49,16 +50,11 @@ jobs:
           fi
           echo "version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Verify npm authentication
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        shell: bash
+      - name: Prepare trusted publishing toolchain
         run: |
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "::error::Missing repository secret NPM_TOKEN"
-            exit 1
-          fi
-          npm whoami
+          npm install -g npm@^11.5.1
+          node --version
+          npm --version
 
       - name: Run typecheck
         run: bun typecheck
@@ -82,8 +78,6 @@ jobs:
 
       - name: Publish packages to npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
           SWUST_CODE_CHANNEL: latest
           SWUST_CODE_VERSION: ${{ steps.version.outputs.version }}
         run: bun run --cwd packages/opencode ./script/publish.ts

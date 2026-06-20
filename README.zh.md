@@ -144,12 +144,18 @@ bun run dev
 bun turbo typecheck
 ```
 
-维护者发布 npm 版本时，需要先配置仓库 Secret `NPM_TOKEN`，再推送与 `packages/opencode/package.json` 一致的语义化 tag：
+维护者发布 npm 版本时，使用 GitHub Actions + npm trusted publishing。先在 npm 侧把 GitHub trusted publisher 绑定到工作流文件 `npm-release.yml`，再推送与 `packages/opencode/package.json` 一致的语义化 tag：
 
 ```bash
 git tag v0.6.0
 git push swust-code v0.6.0
 ```
+
+发布注意事项：
+
+- trusted publishing 是按 npm 包分别配置的。
+- SWUST Code 不仅发布 `@swust-code/cli`，还会发布 `@swust-code/swust-code-*` 平台二进制包。
+- npm 只有在包已经存在于 registry 后，才能完成 trusted publisher 绑定；因此全新包名的第一次发布，仍然需要先做一次 bootstrap 发布，之后才能完全切换到 trusted publishing。
 
 | 项目 | 值 |
 |------|----|
