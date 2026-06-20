@@ -1,12 +1,11 @@
 {
   "name": "@swust-code/ui",
-  "version": "1.17.4",
+  "version": "0.5.0",
   "type": "module",
   "license": "MIT",
   "exports": {
     "./package.json": "./package.json",
     "./*": "./src/components/*.tsx",
-    "./session-diff": "./src/components/session-diff.ts",
     "./i18n/*": "./src/i18n/*.ts",
     "./pierre": "./src/pierre/index.ts",
     "./pierre/*": "./src/pierre/*.ts",
@@ -22,17 +21,12 @@
     "./icons/file-type": "./src/components/file-icons/types.ts",
     "./icons/app": "./src/components/app-icons/types.ts",
     "./fonts/*": "./src/assets/fonts/*",
-    "./audio/*": "./src/assets/audio/*",
-    "./v2/*.css": "./src/v2/components/*.css",
-    "./v2/*": "./src/v2/components/*.tsx",
-    "./v2/styles/*": "./src/v2/styles/*"
+    "./audio/*": "./src/assets/audio/*"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "bun test src --only-failures",
     "dev": "vite",
-    "generate:tailwind": "bun run script/tailwind.ts",
-    "generate:v2-oc2": "bun run script/build-oc2-v2-overrides.ts"
+    "generate:tailwind": "bun run script/tailwind.ts"
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
@@ -49,8 +43,8 @@
   },
   "dependencies": {
     "@kobalte/core": "catalog:",
-    "@swust-code/core": "workspace:*",
     "@swust-code/sdk": "workspace:*",
+    "@swust-code/shared": "workspace:*",
     "@pierre/diffs": "catalog:",
     "@shikijs/transformers": "3.9.2",
     "@solid-primitives/bounds": "0.1.3",

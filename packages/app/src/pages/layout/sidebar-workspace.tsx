@@ -1,10 +1,10 @@
-import { useNavigate, useParams } from "@solidjs/router"
+﻿import { useNavigate, useParams } from "@solidjs/router"
 import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { createMediaQuery } from "@solid-primitives/media"
-import { base64Encode } from "@swust-code/core/util/encode"
-import { getFilename } from "@swust-code/core/util/path"
+import { base64Encode } from "@swust-code/shared/util/encode"
+import { getFilename } from "@swust-code/shared/util/path"
 import { Button } from "@swust-code/ui/button"
 import { Collapsible } from "@swust-code/ui/collapsible"
 import { DropdownMenu } from "@swust-code/ui/dropdown-menu"
@@ -14,12 +14,11 @@ import { Spinner } from "@swust-code/ui/spinner"
 import { Tooltip } from "@swust-code/ui/tooltip"
 import { type Session } from "@swust-code/sdk/v2/client"
 import { type LocalProject } from "@/context/layout"
-import { useServerSync, useQueryOptions } from "@/context/server-sync"
+import { loadSessionsQuery, useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
-import { pathKey } from "@/utils/path-key"
 import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
-import { sortedRootSessions } from "./helpers"
-import { useIsFetching } from "@tanstack/solid-query"
+import { sortedRootSessions, workspaceKey } from "./helpers"
+import { useQuery } from "@tanstack/solid-query"
 
 type InlineEditorComponent = (props: {
   id: string
@@ -60,7 +59,7 @@ export const WorkspaceDragOverlay = (props: {
   activeWorkspace: Accessor<string | undefined>
   workspaceLabel: (directory: string, branch?: string, projectId?: string) => string
 }): JSX.Element => {
-  const serverSync = useServerSync()
+  const globalSync = useGlobalSync()
   const language = useLanguage()
   const label = createMemo(() => {
     const project = props.sidebarProject()
@@ -68,7 +67,7 @@ export const WorkspaceDragOverlay = (props: {
     const directory = props.activeWorkspace()
     if (!directory) return
 
-    const [workspaceStore] = serverSync.child(directory, { bootstrap: false })
+    const [workspaceStore] = globalSync.child(directory, { bootstrap: false })
     const kind =
       directory === project.worktree ? language.t("workspace.type.local") : language.t("workspace.type.sandbox")
     const name = props.workspaceLabel(directory, workspaceStore.vcs?.branch, project.id)
@@ -299,11 +298,10 @@ export const SortableWorkspace = (props: {
 }): JSX.Element => {
   const navigate = useNavigate()
   const params = useParams()
-  const serverSync = useServerSync()
-  const queryOptions = useQueryOptions()
+  const globalSync = useGlobalSync()
   const language = useLanguage()
   const sortable = createSortable(props.directory)
-  const [workspaceStore, setWorkspaceStore] = serverSync.child(props.directory, { bootstrap: false })
+  const [workspaceStore, setWorkspaceStore] = globalSync.child(props.directory, { bootstrap: false })
   const [menu, setMenu] = createStore({
     open: false,
     pendingRename: false,
@@ -311,7 +309,7 @@ export const SortableWorkspace = (props: {
   const slug = createMemo(() => base64Encode(props.directory))
   const sessions = createMemo(() => sortedRootSessions(workspaceStore, props.sortNow()))
   const local = createMemo(() => props.directory === props.project.worktree)
-  const active = createMemo(() => pathKey(props.ctx.currentDir()) === pathKey(props.directory))
+  const active = createMemo(() => workspaceKey(props.ctx.currentDir()) === workspaceKey(props.directory))
   const workspaceValue = createMemo(() => {
     const branch = workspaceStore.vcs?.branch
     const name = branch ?? getFilename(props.directory)
@@ -321,14 +319,14 @@ export const SortableWorkspace = (props: {
   const boot = createMemo(() => open() || active())
   const count = createMemo(() => sessions()?.length ?? 0)
   const hasMore = createMemo(() => workspaceStore.sessionTotal > count())
-  const fetching = useIsFetching(() => queryOptions.sessions(pathKey(props.directory)))
+  const query = useQuery(() => ({ ...loadSessionsQuery(props.project.worktree) }))
   const busy = createMemo(() => props.ctx.isBusy(props.directory))
-  const loading = () => fetching() > 0 && count() === 0
+  const loading = () => query.isLoading && count() === 0
   const touch = createMediaQuery("(hover: none)")
   const showNew = createMemo(() => !loading() && (touch() || count() === 0 || (active() && !params.id)))
   const loadMore = async () => {
     setWorkspaceStore("limit", (limit) => (limit ?? 0) + 5)
-    await serverSync.project.loadSessions(props.directory)
+    await globalSync.project.loadSessions(props.directory)
   }
 
   const workspaceEditActive = createMemo(() => props.ctx.editorOpen(`workspace:${props.directory}`))
@@ -357,7 +355,7 @@ export const SortableWorkspace = (props: {
 
   createEffect(() => {
     if (!boot()) return
-    serverSync.child(props.directory, { bootstrap: true })
+    globalSync.child(props.directory, { bootstrap: true })
   })
 
   return (
@@ -428,7 +426,7 @@ export const SortableWorkspace = (props: {
             mobile={props.mobile}
             ctx={props.ctx}
             showNew={showNew}
-            loading={loading}
+            loading={() => query.isLoading && count() === 0}
             sessions={sessions}
             hasMore={hasMore}
             loadMore={loadMore}
@@ -446,22 +444,21 @@ export const LocalWorkspace = (props: {
   sortNow: Accessor<number>
   mobile?: boolean
 }): JSX.Element => {
-  const serverSync = useServerSync()
-  const queryOptions = useQueryOptions()
+  const globalSync = useGlobalSync()
   const language = useLanguage()
   const workspace = createMemo(() => {
-    const [store, setStore] = serverSync.child(props.project.worktree)
+    const [store, setStore] = globalSync.child(props.project.worktree)
     return { store, setStore }
   })
   const slug = createMemo(() => base64Encode(props.project.worktree))
   const sessions = createMemo(() => sortedRootSessions(workspace().store, props.sortNow()))
   const count = createMemo(() => sessions()?.length ?? 0)
-  const fetching = useIsFetching(() => queryOptions.sessions(pathKey(props.project.worktree)))
+  const query = useQuery(() => ({ ...loadSessionsQuery(props.project.worktree) }))
   const hasMore = createMemo(() => workspace().store.sessionTotal > count())
-  const loading = () => fetching() > 0 && count() === 0
+  const loading = () => query.isLoading && count() === 0
   const loadMore = async () => {
     workspace().setStore("limit", (limit) => (limit ?? 0) + 5)
-    await serverSync.project.loadSessions(props.project.worktree)
+    await globalSync.project.loadSessions(props.project.worktree)
   }
 
   return (

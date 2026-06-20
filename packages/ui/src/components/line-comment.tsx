@@ -1,5 +1,5 @@
-import { useFilteredList } from "@swust-code/ui/hooks"
-import { getDirectory, getFilename } from "@swust-code/core/util/path"
+﻿import { useFilteredList } from "@swust-code/ui/hooks"
+import { getDirectory, getFilename } from "@swust-code/shared/util/path"
 import { createSignal, For, onMount, Show, splitProps, type JSX } from "solid-js"
 import { Button } from "./button"
 import { FileIcon } from "./file-icon"
@@ -240,7 +240,6 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
     },
     key: (item) => item.path,
     filterKeys: ["path"],
-    skipFilter: () => true,
     onSelect: selectMention,
   })
 

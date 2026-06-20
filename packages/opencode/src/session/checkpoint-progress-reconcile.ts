@@ -2,6 +2,9 @@ import fs from "fs/promises"
 import path from "path"
 import { checkpointPath, tasksDir } from "./checkpoint-paths"
 import type { SessionID } from "./schema"
+import { Log } from "../util"
+
+const log = Log.create({ service: "session.progress-reconcile" })
 
 export interface ProgressDiffItem {
   taskId: string
@@ -10,8 +13,8 @@ export interface ProgressDiffItem {
   prior?: number
 }
 
-// Parse written-at field from markdown frontmatter.
-// Returns null when frontmatter or field is absent.
+// Parse written-at field from markdown frontmatter
+// Returns null when frontmatter or field is absent
 export function parseWrittenAt(body: string): number | null {
   const fm = body.match(/^---\n([\s\S]*?)\n---\n/)
   if (!fm) return null
@@ -22,10 +25,13 @@ export function parseWrittenAt(body: string): number | null {
   return value
 }
 
-// Parse main checkpoint.md for last-reconciled-written-at markers.
-// Returns Map of task ID to reconciled timestamp.
+// Parse main checkpoint.md for last-reconciled-written-at markers
+// Returns Map of task ID to reconciled timestamp
 export function parseReconciledMap(mainCheckpoint: string): Map<string, number> {
   const map = new Map<string, number>()
+  // Negative lookbehind on backtick avoids matching a marker quoted inside a
+  // code span (blast radius is tiny — at most one missed reconcile round — but
+  // cheap to harden).
   const re = /(?<!`)\(progress:\s*tasks\/([^/]+)\/progress\.md,\s*last-reconciled-written-at:\s*(\d+)\)/g
   for (const m of mainCheckpoint.matchAll(re)) {
     const value = Number(m[2])
@@ -34,8 +40,8 @@ export function parseReconciledMap(mainCheckpoint: string): Map<string, number> 
   return map
 }
 
-// Scan tasks/*/progress.md and compare written-at against prior reconciliation.
-// Returns NEW and CHANGED items; UNCHANGED and unparseable files are omitted.
+// Scan tasks/*/progress.md and compare written-at against prior reconciliation
+// Returns NEW and CHANGED items; UNCHANGED and unparseable files are omitted
 export async function buildProgressDiffItems(sessionID: SessionID): Promise<ProgressDiffItem[]> {
   const main = await Bun.file(checkpointPath(sessionID)).text().catch(() => "")
   const reconciled = parseReconciledMap(main)
@@ -58,7 +64,7 @@ export async function buildProgressDiffItems(sessionID: SessionID): Promise<Prog
       continue
     }
     const writtenAt = parseWrittenAt(body)
-    if (writtenAt === null) continue
+    if (writtenAt === null) continue // no written-at marker (e.g. subagent write incomplete); skip
 
     const prior = reconciled.get(entry)
     if (prior === undefined) {
@@ -66,13 +72,14 @@ export async function buildProgressDiffItems(sessionID: SessionID): Promise<Prog
     } else if (writtenAt > prior) {
       items.push({ taskId: entry, writtenAt, status: "CHANGED", prior })
     }
+    // else UNCHANGED: skip
   }
 
   return items
 }
 
-// Render markdown injection block for writer prompt.
-// Returns empty string when there are no NEW/CHANGED items.
+// Render markdown injection block for writer prompt
+// Returns empty string when there are no NEW/CHANGED items
 export function renderProgressDiffBlock(items: ProgressDiffItem[]): string {
   if (items.length === 0) return ""
   const lines = ["SUBAGENT PROGRESS to integrate (since last reconcile):"]
@@ -93,9 +100,12 @@ export function renderProgressDiffBlock(items: ProgressDiffItem[]): string {
   return lines.join("\n")
 }
 
-// High-level convenience: scan + render in one call.
-// Returns empty string when nothing to reconcile.
+// High-level convenience: scan + render in one call
+// Returns empty string when nothing to reconcile
 export async function buildProgressDiff(sessionID: SessionID): Promise<string> {
-  const items = await buildProgressDiffItems(sessionID).catch(() => [] as ProgressDiffItem[])
+  const items = await buildProgressDiffItems(sessionID).catch((err) => {
+    log.warn("buildProgressDiff failed; reconcile skipped this turn", { err, sessionID })
+    return [] as ProgressDiffItem[]
+  })
   return renderProgressDiffBlock(items)
 }

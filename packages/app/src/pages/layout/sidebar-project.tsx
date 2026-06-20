@@ -1,13 +1,13 @@
-import { createMemo, For, Show, type Accessor, type JSX } from "solid-js"
+﻿import { createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { base64Encode } from "@swust-code/core/util/encode"
+import { base64Encode } from "@swust-code/shared/util/encode"
 import { Button } from "@swust-code/ui/button"
 import { ContextMenu } from "@swust-code/ui/context-menu"
 import { HoverCard } from "@swust-code/ui/hover-card"
 import { Icon } from "@swust-code/ui/icon"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { useLayout, type LocalProject } from "@/context/layout"
-import { useServerSync } from "@/context/server-sync"
+import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { ProjectIcon, SessionItem, type SessionItemProps } from "./sidebar-items"
@@ -56,7 +56,6 @@ const ProjectTile = (props: {
   sidebarHovering: Accessor<boolean>
   selected: Accessor<boolean>
   active: Accessor<boolean>
-  isWorking: Accessor<boolean>
   overlay: Accessor<boolean>
   suppressHover: Accessor<boolean>
   dirs: Accessor<string[]>
@@ -144,7 +143,7 @@ const ProjectTile = (props: {
         }}
         onBlur={() => props.setOpen(false)}
       >
-        <ProjectIcon project={props.project} notify working={props.isWorking()} />
+        <ProjectIcon project={props.project} notify />
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
@@ -274,7 +273,7 @@ export const SortableProject = (props: {
   ctx: ProjectSidebarContext
   sortNow: Accessor<number>
 }): JSX.Element => {
-  const serverSync = useServerSync()
+  const globalSync = useGlobalSync()
   const language = useLanguage()
   const sortable = createSortable(props.project.worktree)
   const selected = createMemo(() => props.ctx.currentProject()?.worktree === props.project.worktree)
@@ -294,23 +293,17 @@ export const SortableProject = (props: {
   const hoverOpen = () => isHoverProject() && preview() && !selected() && !state.menu
 
   const label = (directory: string) => {
-    const [data] = serverSync.child(directory, { bootstrap: false })
+    const [data] = globalSync.child(directory, { bootstrap: false })
     const kind =
       directory === props.project.worktree ? language.t("workspace.type.local") : language.t("workspace.type.sandbox")
     const name = props.ctx.workspaceLabel(directory, data.vcs?.branch, props.project.id)
     return `${kind} : ${name}`
   }
 
-  const projectStore = createMemo(() => serverSync.child(props.project.worktree, { bootstrap: false })[0])
-  const isWorking = createMemo(() =>
-    dirs().some((directory) => {
-      const [store] = serverSync.child(directory, { bootstrap: false })
-      return Object.keys(store.session_status).some((id) => store.session_working(id))
-    }),
-  )
+  const projectStore = createMemo(() => globalSync.child(props.project.worktree, { bootstrap: false })[0])
   const projectSessions = createMemo(() => sortedRootSessions(projectStore(), props.sortNow()))
   const workspaceSessions = (directory: string) => {
-    const [data] = serverSync.child(directory, { bootstrap: false })
+    const [data] = globalSync.child(directory, { bootstrap: false })
     return sortedRootSessions(data, props.sortNow())
   }
   const tile = () => (
@@ -320,7 +313,6 @@ export const SortableProject = (props: {
       sidebarHovering={props.ctx.sidebarHovering}
       selected={selected}
       active={active}
-      isWorking={isWorking}
       overlay={overlay}
       suppressHover={() => state.suppressHover}
       dirs={dirs}

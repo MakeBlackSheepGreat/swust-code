@@ -1,33 +1,21 @@
-import { createSimpleContext } from "@swust-code/ui/context"
+﻿import { createSimpleContext } from "@swust-code/ui/context"
 import type { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
 import type { Accessor } from "solid-js"
-import type { DesktopMenuAction } from "../desktop-menu"
 import { ServerConnection } from "./server"
-import type { WslServersPlatform } from "../wsl/types"
-import type { UpdaterPlatform } from "../updater"
 
 type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
-type OpenAttachmentPickerOptions = {
-  title?: string
-  multiple?: boolean
-  accept?: string[]
-  extensions?: string[]
-  defaultPath?: string
-}
+type OpenFilePickerOptions = { title?: string; multiple?: boolean; accept?: string[]; extensions?: string[] }
 type SaveFilePickerOptions = { title?: string; defaultPath?: string }
-type PlatformName = "web" | "desktop"
-type DesktopOS = "macos" | "windows" | "linux"
+type UpdateInfo = { updateAvailable: boolean; version?: string }
 
-export type FatalRendererErrorLog = {
-  error: string
-  url: string
-  version?: string
-  platform: PlatformName
-  os?: DesktopOS
-}
+export type Platform = {
+  /** Platform discriminator */
+  platform: "web" | "desktop"
 
-type PlatformBase = {
+  /** Desktop OS (Tauri only) */
+  os?: "macos" | "windows" | "linux"
+
   /** App version */
   version?: string
 
@@ -49,20 +37,23 @@ type PlatformBase = {
   /** Send a system notification (optional deep link) */
   notify(title: string, description?: string, href?: string): Promise<void>
 
-  /** Open a native attachment picker and read selected files sequentially (desktop only) */
-  openAttachmentPickerDialog?(
-    opts: OpenAttachmentPickerOptions,
-    onFile: (file: File) => Promise<unknown>,
-  ): Promise<void>
+  /** Open directory picker dialog (native on Tauri, server-backed on web) */
+  openDirectoryPickerDialog?(opts?: OpenDirectoryPickerOptions): Promise<PickerPaths>
 
-  /** Open a native save file picker dialog (desktop only) */
+  /** Open native file picker dialog (Tauri only) */
+  openFilePickerDialog?(opts?: OpenFilePickerOptions): Promise<PickerPaths>
+
+  /** Save file picker dialog (Tauri only) */
   saveFilePickerDialog?(opts?: SaveFilePickerOptions): Promise<string | null>
 
   /** Storage mechanism, defaults to localStorage */
   storage?: (name?: string) => SyncStorage | AsyncStorage
 
-  /** Application-global desktop updater */
-  updater?: UpdaterPlatform
+  /** Check for updates (Tauri only) */
+  checkUpdate?(): Promise<UpdateInfo>
+
+  /** Install updates (Tauri only) */
+  update?(): Promise<void>
 
   /** Fetch override */
   fetch?: typeof fetch
@@ -73,8 +64,11 @@ type PlatformBase = {
   /** Set the default server URL to use on app startup (platform-specific) */
   setDefaultServer?(url: ServerConnection.Key | null): Promise<void> | void
 
-  /** Manage WSL sidecar servers (Electron on Windows only) */
-  wslServers?: WslServersPlatform
+  /** Get the configured WSL integration (desktop only) */
+  getWslEnabled?(): Promise<boolean>
+
+  /** Set the configured WSL integration (desktop only) */
+  setWslEnabled?(config: boolean): Promise<void> | void
 
   /** Get the preferred display backend (desktop only) */
   getDisplayBackend?(): Promise<DisplayBackend | null> | DisplayBackend | null
@@ -88,37 +82,12 @@ type PlatformBase = {
   /** Webview zoom level (desktop only) */
   webviewZoom?: Accessor<number>
 
-  /** Get whether native pinch/Ctrl-scroll zoom gestures are enabled (desktop only) */
-  getPinchZoomEnabled?(): Promise<boolean> | boolean
-
-  /** Allow native pinch/Ctrl-scroll zoom gestures (desktop only) */
-  setPinchZoomEnabled?(enabled: boolean): Promise<void> | void
-
-  /** Run a desktop-only menu action from the app chrome */
-  runDesktopMenuAction?(action: DesktopMenuAction): Promise<void> | void
-
   /** Check if an editor app exists (desktop only) */
   checkAppExists?(appName: string): Promise<boolean>
 
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
-
-  /** Export collected diagnostic logs (desktop only) */
-  exportDebugLogs?(): Promise<string>
-
-  /** Record a fatal renderer error in platform logs (desktop only) */
-  recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
 }
-
-export type Platform = PlatformBase &
-  (
-    | { platform: "web"; os?: never }
-    | {
-        platform: "desktop"
-        os?: DesktopOS
-        openDirectoryPickerDialog(opts?: OpenDirectoryPickerOptions): Promise<PickerPaths>
-      }
-  )
 
 export type DisplayBackend = "auto" | "wayland"
 

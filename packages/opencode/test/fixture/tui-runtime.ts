@@ -1,33 +1,8 @@
 import { spyOn } from "bun:test"
 import path from "path"
-import { resolve, type Info, type Resolved } from "@swust-code/tui/config"
-import { TuiConfig } from "../../src/config/tui"
-import { TuiKeybind } from "@swust-code/tui/config/keybind"
+import { TuiConfig } from "../../src/cli/cmd/tui/config/tui"
 
 type PluginSpec = string | [string, Record<string, unknown>]
-type PluginOrigin = {
-  spec: PluginSpec
-  scope: "global" | "local"
-  source: string
-}
-type HostResolved = Resolved & { plugin_origins?: PluginOrigin[] }
-type ResolvedInput = Omit<Info, "attention" | "keybinds" | "leader_timeout"> & {
-  attention?: Partial<Resolved["attention"]>
-  keybinds?: Partial<TuiKeybind.Keybinds>
-  leader_timeout?: number
-  plugin_origins?: PluginOrigin[]
-}
-
-export function createTuiResolvedKeybinds(input: Partial<TuiKeybind.Keybinds> = {}): Resolved["keybinds"] {
-  return resolve({ keybinds: input }, { terminalSuspend: process.platform !== "win32" }).keybinds
-}
-
-export function createTuiResolvedConfig(input: ResolvedInput = {}): HostResolved {
-  return {
-    ...resolve(input, { terminalSuspend: process.platform !== "win32" }),
-    plugin_origins: input.plugin_origins,
-  }
-}
 
 export function mockTuiRuntime(dir: string, plugin: PluginSpec[], opts?: { plugin_enabled?: Record<string, boolean> }) {
   process.env.SWUST_CODE_PLUGIN_META_FILE = path.join(dir, "plugin-meta.json")
@@ -39,11 +14,11 @@ export function mockTuiRuntime(dir: string, plugin: PluginSpec[], opts?: { plugi
   const wait = spyOn(TuiConfig, "waitForDependencies").mockResolvedValue()
   const cwd = spyOn(process, "cwd").mockImplementation(() => dir)
 
-  const config = createTuiResolvedConfig({
+  const config: TuiConfig.Info = {
     plugin,
     plugin_origins,
     ...(opts?.plugin_enabled && { plugin_enabled: opts.plugin_enabled }),
-  })
+  }
 
   return {
     config,

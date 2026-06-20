@@ -21,5 +21,3 @@ export function create<T>(name: string) {
     },
   }
 }
-
-export * as LocalContext from "./local-context"

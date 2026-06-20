@@ -1,4 +1,4 @@
-import { createContext, useContext, type Accessor, type ParentProps } from "solid-js"
+import { createComponent, createContext, useContext, type Accessor, type ParentProps } from "solid-js"
 import { dict as en } from "../i18n/en"
 
 export type UiI18nKey = keyof typeof en
@@ -29,8 +29,15 @@ const fallback: UiI18n = {
 
 const Context = createContext<UiI18n>(fallback)
 
+export const I18nContext = Context
+
 export function I18nProvider(props: ParentProps<{ value: UiI18n }>) {
-  return <Context.Provider value={props.value}>{props.children}</Context.Provider>
+  return createComponent(Context.Provider, {
+    value: props.value,
+    get children() {
+      return props.children
+    },
+  })
 }
 
 export function useI18n() {

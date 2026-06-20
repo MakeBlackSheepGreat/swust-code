@@ -1,7 +1,5 @@
-import { sampledChecksum } from "@swust-code/core/util/encode"
+﻿import { sampledChecksum } from "@swust-code/shared/util/encode"
 import {
-  areFilesEqual,
-  areOptionsEqual,
   DEFAULT_VIRTUAL_FILE_METRICS,
   type DiffLineAnnotation,
   type FileContents,
@@ -90,7 +88,6 @@ type DiffBaseProps<T> = FileDiffOptions<T> &
     mode: "diff"
     annotations?: DiffLineAnnotation<T>[]
     preloadedDiff?: DiffPreload<T>
-    virtualize?: boolean
   }
 
 type DiffPairProps<T> = DiffBaseProps<T> & {
@@ -126,7 +123,7 @@ const sharedKeys = [
 ] as const
 
 const textKeys = ["file", ...sharedKeys] as const
-const diffKeys = ["fileDiff", "before", "after", "virtualize", ...sharedKeys] as const
+const diffKeys = ["fileDiff", "before", "after", ...sharedKeys] as const
 
 // ---------------------------------------------------------------------------
 // Shared viewer hook
@@ -485,24 +482,17 @@ function notifyRendered(opts: {
 function renderViewer<I extends RenderTarget>(opts: {
   viewer: Viewer
   current: I | undefined
-  reset?: boolean
   create: () => I
-  update?: (value: I) => void
   assign: (value: I) => void
   draw: (value: I) => void
   onReady: () => void
 }) {
   clearReadyWatcher(opts.viewer.ready)
-  const reset = opts.reset === true && opts.current !== undefined
-  if (reset) opts.current?.cleanUp()
-  const next = reset || !opts.current ? opts.create() : opts.current
-  if (reset || !opts.current) {
-    opts.viewer.container.innerHTML = ""
-    opts.assign(next)
-  } else {
-    opts.update?.(next)
-  }
+  opts.current?.cleanUp()
+  const next = opts.create()
+  opts.assign(next)
 
+  opts.viewer.container.innerHTML = ""
   opts.draw(next)
 
   applyViewerScheme(opts.viewer.getHost())
@@ -576,7 +566,7 @@ function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined, enab
   }
 }
 
-function createSharedVirtualStrategy(host: () => HTMLDivElement | undefined, enabled: () => boolean): VirtualStrategy {
+function createSharedVirtualStrategy(host: () => HTMLDivElement | undefined): VirtualStrategy {
   let shared: NonNullable<ReturnType<typeof acquireVirtualizer>> | undefined
 
   const release = () => {
@@ -586,10 +576,6 @@ function createSharedVirtualStrategy(host: () => HTMLDivElement | undefined, ena
 
   return {
     get: () => {
-      if (!enabled()) {
-        release()
-        return
-      }
       if (shared) return shared.virtualizer
 
       const container = host()
@@ -872,14 +858,15 @@ function TextViewer<T>(props: TextFileProps<T>) {
   createEffect(() => {
     const opts = options()
     const workerPool = getWorkerPool("unified")
+    const isVirtual = virtual()
+
     const virtualizer = virtuals.get()
 
     renderViewer({
       viewer,
       current: instance,
-      reset: instance !== undefined,
       create: () =>
-        virtualizer
+        isVirtual && virtualizer
           ? new VirtualizedFile<T>(opts, virtualizer, codeMetrics, workerPool)
           : new PierreFile<T>(opts, workerPool),
       assign: (value) => {
@@ -920,12 +907,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
 
 function DiffViewer<T>(props: DiffFileProps<T>) {
   let instance: FileDiff<T> | undefined
-  let instanceVirtualizer: Virtualizer | undefined
-  let instanceWorkerPool: ReturnType<typeof getWorkerPool>
-  let instanceVirtualHunkSeparators: FileDiffOptions<T>["hunkSeparators"] | undefined
-  let instanceFileDiff: FileDiffMetadata | undefined
-  let instanceBefore: FileContents | undefined
-  let instanceAfter: FileContents | undefined
   let dragSide: DiffSelectionSide | undefined
   let dragEndSide: DiffSelectionSide | undefined
   let viewer!: Viewer
@@ -1010,10 +991,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     adapter,
   )
 
-  const virtuals = createSharedVirtualStrategy(
-    () => viewer.container,
-    () => local.virtualize !== false,
-  )
+  const virtuals = createSharedVirtualStrategy(() => viewer.container)
 
   const large = createMemo(() => {
     if (local.fileDiff) {
@@ -1089,66 +1067,31 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
       return sampledChecksum(contents)
     }
 
-    const before = local.before
-      ? { ...local.before, contents: beforeContents, cacheKey: cacheKey(beforeContents) }
-      : undefined
-    const after = local.after
-      ? { ...local.after, contents: afterContents, cacheKey: cacheKey(afterContents) }
-      : undefined
-    const targetChanged =
-      local.fileDiff !== undefined
-        ? instanceFileDiff !== local.fileDiff
-        : instanceFileDiff !== undefined ||
-          before === undefined ||
-          after === undefined ||
-          instanceBefore === undefined ||
-          instanceAfter === undefined ||
-          !areFilesEqual(instanceBefore, before) ||
-          !areFilesEqual(instanceAfter, after)
-    // Pierre beta virtualized instances retain their first diff target and resolve separator metrics at construction.
-    // Plain timeline diffs can retain the instance as content streams; virtualized viewers reset only when that is unsafe.
-    const reset =
-      instance !== undefined &&
-      (instanceVirtualizer !== virtualizer ||
-        instanceWorkerPool !== workerPool ||
-        (virtualizer !== undefined && (instanceVirtualHunkSeparators !== opts.hunkSeparators || targetChanged)))
-    const forceRender = !reset && instance !== undefined && !areOptionsEqual(instance.options, opts)
-
     renderViewer({
       viewer,
       current: instance,
-      reset,
       create: () =>
         virtualizer
           ? new VirtualizedFileDiff<T>(opts, virtualizer, virtualMetrics, workerPool)
           : new FileDiff<T>(opts, workerPool),
-      update: (value) => value.setOptions(opts),
       assign: (value) => {
         instance = value
-        instanceVirtualizer = virtualizer
-        instanceWorkerPool = workerPool
-        instanceVirtualHunkSeparators = virtualizer ? opts.hunkSeparators : undefined
-        instanceFileDiff = local.fileDiff
-        instanceBefore = before
-        instanceAfter = after
       },
       draw: (value) => {
         if (local.fileDiff) {
           value.render({
             fileDiff: local.fileDiff,
-            forceRender,
             lineAnnotations: [],
             containerWrapper: viewer.container,
           })
           return
         }
 
-        if (!before || !after) return
+        if (!local.before || !local.after) return
 
         value.render({
-          oldFile: before,
-          newFile: after,
-          forceRender,
+          oldFile: { ...local.before, contents: beforeContents, cacheKey: cacheKey(beforeContents) },
+          newFile: { ...local.after, contents: afterContents, cacheKey: cacheKey(afterContents) },
           lineAnnotations: [],
           containerWrapper: viewer.container,
         })
@@ -1168,12 +1111,6 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
   onCleanup(() => {
     instance?.cleanUp()
     instance = undefined
-    instanceVirtualizer = undefined
-    instanceWorkerPool = undefined
-    instanceVirtualHunkSeparators = undefined
-    instanceFileDiff = undefined
-    instanceBefore = undefined
-    instanceAfter = undefined
     virtuals.cleanup()
     dragSide = undefined
     dragEndSide = undefined

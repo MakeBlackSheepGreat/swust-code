@@ -1,4 +1,4 @@
-import { useNavigate } from "@solidjs/router"
+﻿import { useNavigate } from "@solidjs/router"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@swust-code/ui/context/dialog"
 import { previewSelectedLines } from "@swust-code/ui/pierre/selection-bridge"
@@ -13,8 +13,8 @@ import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
-import { showToast } from "@/utils/toast"
-import { findLast } from "@swust-code/core/util/array"
+import { showToast } from "@swust-code/ui/toast"
+import { findLast } from "@swust-code/shared/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@swust-code/sdk/v2"
@@ -70,9 +70,13 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   })
   const activeFileTab = tabState.activeFileTab
   const closableTab = tabState.closableTab
-  const desktopV2 = () => platform.platform === "desktop" && settings.general.newLayoutDesigns()
-  const shown = () => (desktopV2() ? settings.general.showFileTree() : true)
+  const shown = () =>
+    platform.platform !== "desktop" ||
+    import.meta.env.VITE_OPENCODE_CHANNEL !== "beta" ||
+    settings.general.showFileTree()
 
+  const idle = { type: "idle" as const }
+  const status = () => sync.data.session_status[params.id ?? ""] ?? idle
   const messages = () => {
     const id = params.id
     if (!id) return []
@@ -286,7 +290,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const sessionID = params.id
     if (!sessionID) return
 
-    if (sync.data.session_working(params.id ?? "")) {
+    if (status().type !== "idle") {
       await sdk.client.session.abort({ sessionID }).catch(() => {})
     }
 
@@ -418,26 +422,23 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }),
   ]
 
-  const fileCmds = () => {
-    const tab = closableTab()
-    return [
-      fileCommand({
-        id: "file.open",
-        title: language.t("command.file.open"),
-        description: language.t("palette.search.placeholder"),
-        keybind: "mod+k,mod+p",
-        slash: "open",
-        onSelect: openFile,
-      }),
-      tab &&
-        fileCommand({
-          id: "tab.close",
-          title: language.t("command.tab.close"),
-          keybind: "mod+w",
-          onSelect: closeTab,
-        }),
-    ].filter((v) => !!v)
-  }
+  const fileCmds = () => [
+    fileCommand({
+      id: "file.open",
+      title: language.t("command.file.open"),
+      description: language.t("palette.search.placeholder"),
+      keybind: "mod+k,mod+p",
+      slash: "open",
+      onSelect: openFile,
+    }),
+    fileCommand({
+      id: "tab.close",
+      title: language.t("command.tab.close"),
+      keybind: "mod+w",
+      disabled: !closableTab(),
+      onSelect: closeTab,
+    }),
+  ]
 
   const contextCmds = () => [
     contextCommand({
@@ -547,7 +548,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       description: language.t("command.agent.cycle.description"),
       keybind: "mod+.",
       slash: "agent",
-      disabled: desktopV2() && !settings.general.showCustomAgents(),
       onSelect: () => local.agent.move(1),
     }),
     agentCommand({
@@ -555,7 +555,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.agent.cycle.reverse"),
       description: language.t("command.agent.cycle.reverse.description"),
       keybind: "shift+mod+.",
-      disabled: desktopV2() && !settings.general.showCustomAgents(),
       onSelect: () => local.agent.move(-1),
     }),
   ]

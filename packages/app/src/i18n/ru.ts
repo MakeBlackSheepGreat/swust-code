@@ -98,9 +98,9 @@ export const dict = {
   "dialog.provider.group.popular": "Популярные",
   "dialog.provider.group.other": "Другие",
   "dialog.provider.tag.recommended": "Рекомендуемые",
-  "dialog.provider.swust-code.note": "Отобранные модели, включая Claude, GPT, Gemini и другие",
-  "dialog.provider.swust-code.tagline": "Надежные оптимизированные модели",
-  "dialog.provider.swust-codeGo.tagline": "Доступная подписка для всех",
+  "dialog.provider.opencode.note": "Отобранные модели, включая Claude, GPT, Gemini и другие",
+  "dialog.provider.opencode.tagline": "Надежные оптимизированные модели",
+  "dialog.provider.opencodeGo.tagline": "Доступная подписка для всех",
   "dialog.provider.anthropic.note": "Прямой доступ к моделям Claude, включая Pro и Max",
   "dialog.provider.copilot.note": "ИИ-модели для помощи в кодировании через GitHub Copilot",
   "dialog.provider.openai.note": "Модели GPT для быстрых и мощных задач общего ИИ",
@@ -132,13 +132,13 @@ export const dict = {
   "provider.connect.apiKey.label": "{{provider}} API ключ",
   "provider.connect.apiKey.placeholder": "API ключ",
   "provider.connect.apiKey.required": "API ключ обязателен",
-  "provider.connect.swust-codeZen.line1":
+  "provider.connect.opencodeZen.line1":
     "OpenCode Zen даёт вам доступ к отобранным надёжным оптимизированным моделям для агентов программирования.",
-  "provider.connect.swust-codeZen.line2":
+  "provider.connect.opencodeZen.line2":
     "С одним API ключом вы получите доступ к таким моделям как Claude, GPT, Gemini, GLM и другим.",
-  "provider.connect.swust-codeZen.visit.prefix": "Посетите ",
-  "provider.connect.swust-codeZen.visit.link": "swust-code.ai/zen",
-  "provider.connect.swust-codeZen.visit.suffix": " чтобы получить ваш API ключ.",
+  "provider.connect.opencodeZen.visit.prefix": "Посетите ",
+  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.suffix": " чтобы получить ваш API ключ.",
   "provider.connect.oauth.code.visit.prefix": "Посетите ",
   "provider.connect.oauth.code.visit.link": "эту ссылку",
   "provider.connect.oauth.code.visit.suffix":
@@ -227,7 +227,7 @@ export const dict = {
   "common.default": "По умолчанию",
   "common.attachment": "вложение",
 
-  "prompt.placeholder.shell": "Введите команду оболочки... {{example}}",
+  "prompt.placeholder.shell": "Введите команду оболочки...",
   "prompt.placeholder.normal": 'Спросите что угодно... "{{example}}"',
   "prompt.placeholder.simple": "Спросите что угодно...",
   "prompt.placeholder.summarizeComments": "Суммировать комментарии…",
@@ -294,12 +294,11 @@ export const dict = {
   "dialog.mcp.empty": "MCP не настроены",
 
   "dialog.lsp.empty": "LSP автоматически обнаружены по типам файлов",
-  "dialog.plugins.empty": "Плагины настроены в swust-code.json",
+  "dialog.plugins.empty": "Плагины настроены в opencode.json",
 
   "mcp.status.connected": "подключено",
   "mcp.status.failed": "ошибка",
   "mcp.status.needs_auth": "требуется авторизация",
-  "mcp.auth.clickToAuthenticate": "Нажмите, чтобы авторизоваться",
   "mcp.status.disabled": "отключено",
 
   "dialog.fork.empty": "Нет сообщений для ответвления",
@@ -449,8 +448,6 @@ export const dict = {
   "error.page.description": "Произошла ошибка при загрузке приложения.",
   "error.page.details.label": "Детали ошибки",
   "error.page.action.restart": "Перезапустить",
-  "error.page.action.report": "Сообщить об ошибке",
-  "error.page.action.reported": "Об ошибке сообщено",
   "error.page.action.checking": "Проверка...",
   "error.page.action.checkUpdates": "Проверить обновления",
   "error.page.action.updateTo": "Обновить до {{version}}",
@@ -461,7 +458,7 @@ export const dict = {
   "error.dev.rootNotFound":
     "Корневой элемент не найден. Вы забыли добавить его в index.html? Или, может быть, атрибут id был написан неправильно?",
 
-  "error.serverSync.connectFailed": "Не удалось подключиться к серверу. Запущен ли сервер по адресу `{{url}}`?",
+  "error.globalSync.connectFailed": "Не удалось подключиться к серверу. Запущен ли сервер по адресу `{{url}}`?",
   "directory.error.invalidUrl": "Недопустимая директория в URL.",
 
   "error.chain.unknown": "Неизвестная ошибка",
@@ -472,7 +469,7 @@ export const dict = {
   "error.chain.responseBody": "Тело ответа:\n{{body}}",
   "error.chain.didYouMean": "Возможно, вы имели в виду: {{suggestions}}",
   "error.chain.modelNotFound": "Модель не найдена: {{provider}}/{{model}}",
-  "error.chain.checkConfig": "Проверьте названия провайдера/модели в конфиге (swust-code.json)",
+  "error.chain.checkConfig": "Проверьте названия провайдера/модели в конфиге (opencode.json)",
   "error.chain.mcpFailed":
     'MCP сервер "{{name}}" завершился с ошибкой. Обратите внимание, что OpenCode пока не поддерживает MCP авторизацию.',
   "error.chain.providerAuthFailed": "Ошибка аутентификации провайдера ({{provider}}): {{message}}",
@@ -659,9 +656,6 @@ export const dict = {
   "settings.general.row.editToolPartsExpanded.title": "Разворачивать элементы инструмента edit",
   "settings.general.row.editToolPartsExpanded.description":
     "Показывать элементы инструментов edit, write и patch в ленте развернутыми по умолчанию",
-  "settings.general.row.showSessionProgressBar.title": "Показывать индикатор прогресса сессии",
-  "settings.general.row.showSessionProgressBar.description":
-    "Показывать анимированный индикатор прогресса вверху сессии, когда агент работает",
   "settings.general.row.wayland.title": "Использовать нативный Wayland",
   "settings.general.row.wayland.description": "Отключить X11 fallback на Wayland. Требуется перезапуск.",
   "settings.general.row.wayland.tooltip":
@@ -811,6 +805,8 @@ export const dict = {
   "settings.permissions.tool.webfetch.description": "Получение контента по URL",
   "settings.permissions.tool.websearch.title": "Web Search",
   "settings.permissions.tool.websearch.description": "Поиск в интернете",
+  "settings.permissions.tool.codesearch.title": "Code Search",
+  "settings.permissions.tool.codesearch.description": "Поиск кода в интернете",
   "settings.permissions.tool.external_directory.title": "Внешняя директория",
   "settings.permissions.tool.external_directory.description": "Доступ к файлам вне директории проекта",
   "settings.permissions.tool.doom_loop.title": "Doom Loop",
@@ -929,8 +925,8 @@ export const dict = {
   "common.key.insert": "Insert",
   "common.unknown": "неизвестно",
   "error.page.circular": "[Циклично]",
-  "error.serverSDK.noServerAvailable": "Нет доступного сервера",
-  "error.serverSDK.serverNotAvailable": "Сервер недоступен",
+  "error.globalSDK.noServerAvailable": "Нет доступного сервера",
+  "error.globalSDK.serverNotAvailable": "Сервер недоступен",
   "error.childStore.persistedCacheCreateFailed": "Не удалось создать постоянный кэш",
   "error.childStore.persistedProjectMetadataCreateFailed": "Не удалось создать постоянные метаданные проекта",
   "error.childStore.persistedProjectIconCreateFailed": "Не удалось создать постоянный значок проекта",

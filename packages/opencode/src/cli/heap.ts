@@ -1,7 +1,10 @@
 import path from "path"
 import { writeHeapSnapshot } from "node:v8"
-import { Flag } from "@swust-code/core/flag/flag"
-import { Global } from "@swust-code/core/global"
+import { Flag } from "@/flag/flag"
+import { Global } from "@/global"
+import { Log } from "@/util"
+
+const log = Log.create({ service: "heap" })
 const MINUTE = 60_000
 const LIMIT = 2 * 1024 * 1024 * 1024
 
@@ -29,9 +32,20 @@ export function start() {
       Global.Path.log,
       `heap-${process.pid}-${new Date().toISOString().replace(/[:.]/g, "")}.heapsnapshot`,
     )
+    log.warn("heap usage exceeded limit", {
+      rss: stat.rss,
+      heap: stat.heapUsed,
+      file,
+    })
+
     await Promise.resolve()
       .then(() => writeHeapSnapshot(file))
-      .catch(() => {})
+      .catch((err) => {
+        log.error("failed to write heap snapshot", {
+          error: err instanceof Error ? err.message : String(err),
+          file,
+        })
+      })
 
     lock = false
   }

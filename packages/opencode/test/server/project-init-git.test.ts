@@ -1,114 +1,122 @@
-import { afterEach, describe, expect } from "bun:test"
-import { FSUtil } from "@swust-code/core/fs-util"
-import { Effect, Layer } from "effect"
-import { HttpClientResponse } from "effect/unstable/http"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
+import { Effect } from "effect"
 import path from "path"
-import { InstanceRef } from "../../src/effect/instance-ref"
-import { InstanceBootstrap } from "../../src/project/bootstrap-service"
-import { InstanceStore } from "../../src/project/instance-store"
-import { GlobalBus, type GlobalEvent } from "../../src/bus/global"
+import { GlobalBus } from "../../src/bus/global"
 import { Snapshot } from "../../src/snapshot"
+import { Instance } from "../../src/project/instance"
+import { Server } from "../../src/server/server"
+import { Filesystem } from "../../src/util"
+import { Log } from "../../src/util"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
-import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
+import { provideInstance, tmpdir } from "../fixture/fixture"
+
+void Log.init({ print: false })
 
 afterEach(async () => {
-  await disposeAllInstances()
   await resetDatabase()
 })
 
-const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
-const testInstanceStore = InstanceStore.defaultLayer.pipe(Layer.provide(noopBootstrap))
-
-const it = testEffect(Layer.mergeAll(FSUtil.defaultLayer, Snapshot.defaultLayer, testInstanceStore, httpApiLayer))
-
-function request(directory: string, url: string, init: RequestInit = {}) {
-  return requestInDirectory(url, directory, init)
-}
-
-function json<T>(response: HttpClientResponse.HttpClientResponse) {
-  return response.json.pipe(Effect.map((value) => value as T))
-}
-
-function collectGlobalEvents() {
-  return Effect.acquireRelease(
-    Effect.sync(() => {
-      const seen: GlobalEvent[] = []
-      const on = (event: GlobalEvent) => {
-        seen.push(event)
-      }
-      GlobalBus.on("event", on)
-      return { seen, on }
-    }),
-    ({ on }) => Effect.sync(() => GlobalBus.off("event", on)),
-  )
-}
-
-const disposedEvents = (seen: GlobalEvent[], dir: string) =>
-  seen.filter((evt) => evt.directory === dir && evt.payload.type === "server.instance.disposed").length
-
 describe("project.initGit endpoint", () => {
-  it.instance("initializes git and reloads immediately", () =>
-    Effect.gen(function* () {
-      const tmp = yield* TestInstance
-      const fs = yield* FSUtil.Service
-      const events = yield* collectGlobalEvents()
+  test("initializes git and reloads immediately", async () => {
+    await using tmp = await tmpdir()
+    const app = Server.Default().app
+    const seen: { directory?: string; payload: { type: string } }[] = []
+    const fn = (evt: { directory?: string; payload: { type: string } }) => {
+      seen.push(evt)
+    }
+    const reload = Instance.reload
+    const reloadSpy = spyOn(Instance, "reload").mockImplementation((input) => reload(input))
+    GlobalBus.on("event", fn)
 
-      const init = yield* request(tmp.directory, "/project/git/init", {
+    try {
+      const init = await app.request("/project/git/init", {
         method: "POST",
+        headers: {
+          "x-swust-code-directory": tmp.path,
+        },
       })
-      const body = yield* json(init)
+      const body = await init.json()
       expect(init.status).toBe(200)
       expect(body).toMatchObject({
-        id: "global",
         vcs: "git",
-        worktree: tmp.directory,
+        worktree: tmp.path,
       })
-      // Reload behavior: bus emits exactly one server.instance.disposed for the directory.
-      expect(disposedEvents(events.seen, tmp.directory)).toBe(1)
-      expect(yield* fs.exists(path.join(tmp.directory, ".git", "opencode"))).toBe(false)
-
-      const current = yield* request(tmp.directory, "/project/current")
-      expect(current.status).toBe(200)
-      expect(yield* json(current)).toMatchObject({
-        id: "global",
-        vcs: "git",
-        worktree: tmp.directory,
-      })
-
-      const ctx = yield* InstanceStore.use.reload({ directory: tmp.directory })
-      const tracked = yield* Snapshot.Service.use((snapshot) => snapshot.track()).pipe(
-        Effect.provideService(InstanceRef, ctx),
+      // v5: a freshly-initialised git repo has a UUID, not the "global" sentinel.
+      expect(body.id).not.toBe("global")
+      expect(reloadSpy).toHaveBeenCalledTimes(1)
+      expect(seen.some((evt) => evt.directory === tmp.path && evt.payload.type === "server.instance.disposed")).toBe(
+        true,
       )
-      expect(tracked).toBeTruthy()
-    }),
-  )
+      expect(await Filesystem.exists(path.join(tmp.path, ".git", "swust-code"))).toBe(false)
 
-  it.instance(
-    "does not reload when the project is already git",
-    () =>
-      Effect.gen(function* () {
-        const tmp = yield* TestInstance
-        const events = yield* collectGlobalEvents()
+      const current = await app.request("/project/current", {
+        headers: {
+          "x-swust-code-directory": tmp.path,
+        },
+      })
+      expect(current.status).toBe(200)
+      expect(await current.json()).toMatchObject({
+        vcs: "git",
+        worktree: tmp.path,
+      })
 
-        const init = yield* request(tmp.directory, "/project/git/init", {
-          method: "POST",
-        })
-        expect(init.status).toBe(200)
-        expect(yield* json(init)).toMatchObject({
-          vcs: "git",
-          worktree: tmp.directory,
-        })
-        expect(disposedEvents(events.seen, tmp.directory)).toBe(0)
+      expect(
+        await Effect.runPromise(
+          Snapshot.Service.use((svc) => svc.track()).pipe(
+            provideInstance(tmp.path),
+            Effect.provide(Snapshot.defaultLayer),
+          ),
+        ),
+      ).toBeTruthy()
+    } finally {
+      await Instance.disposeAll()
+      reloadSpy.mockRestore()
+      GlobalBus.off("event", fn)
+    }
+  })
 
-        const current = yield* request(tmp.directory, "/project/current")
-        expect(current.status).toBe(200)
-        expect(yield* json(current)).toMatchObject({
-          vcs: "git",
-          worktree: tmp.directory,
-        })
-      }),
-    { git: true },
-  )
+  test("does not reload when the project is already git", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const app = Server.Default().app
+    const seen: { directory?: string; payload: { type: string } }[] = []
+    const fn = (evt: { directory?: string; payload: { type: string } }) => {
+      seen.push(evt)
+    }
+    const reload = Instance.reload
+    const reloadSpy = spyOn(Instance, "reload").mockImplementation((input) => reload(input))
+    GlobalBus.on("event", fn)
+
+    try {
+      const init = await app.request("/project/git/init", {
+        method: "POST",
+        headers: {
+          "x-swust-code-directory": tmp.path,
+        },
+      })
+      expect(init.status).toBe(200)
+      expect(await init.json()).toMatchObject({
+        vcs: "git",
+        worktree: tmp.path,
+      })
+      expect(
+        seen.filter((evt) => evt.directory === tmp.path && evt.payload.type === "server.instance.disposed").length,
+      ).toBe(0)
+      expect(reloadSpy).toHaveBeenCalledTimes(0)
+
+      const current = await app.request("/project/current", {
+        headers: {
+          "x-swust-code-directory": tmp.path,
+        },
+      })
+      expect(current.status).toBe(200)
+      expect(await current.json()).toMatchObject({
+        vcs: "git",
+        worktree: tmp.path,
+      })
+    } finally {
+      await Instance.disposeAll()
+      reloadSpy.mockRestore()
+      GlobalBus.off("event", fn)
+    }
+  })
 })

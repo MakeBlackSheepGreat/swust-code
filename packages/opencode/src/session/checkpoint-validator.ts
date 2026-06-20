@@ -1,4 +1,4 @@
-import { Token } from "@/util/token"
+import { Token } from "../util"
 
 export type ValidationRule =
   | "topic-missing"
@@ -30,7 +30,10 @@ export const SNAPSHOT_REQUIRED_SECTIONS = [
   "### Session metadata",
 ] as const
 
-export const LEARNING_REQUIRED_SECTIONS = ["### Discovered", "### Dead ends"] as const
+export const LEARNING_REQUIRED_SECTIONS = [
+  "### Discovered",
+  "### Dead ends",
+] as const
 
 function checkTopicAndSections(
   body: string,
@@ -38,7 +41,7 @@ function checkTopicAndSections(
   requiredSections: readonly string[],
 ): Violation[] {
   const violations: Violation[] = []
-  const firstNonEmptyLine = body.split("\n").find((line) => line.trim().length > 0) ?? ""
+  const firstNonEmptyLine = body.split("\n").find((l) => l.trim().length > 0) ?? ""
 
   if (/^# Checkpoint #\d+/.test(firstNonEmptyLine)) {
     violations.push({
@@ -69,7 +72,7 @@ function checkTopicAndSections(
     }
   }
 
-  const sectionPositions = requiredSections.map((section) => ({ section, idx: body.indexOf(section) }))
+  const sectionPositions = requiredSections.map((s) => ({ section: s, idx: body.indexOf(s) }))
   for (const pos of sectionPositions) {
     if (pos.idx === -1) {
       violations.push({
@@ -80,8 +83,7 @@ function checkTopicAndSections(
       })
     }
   }
-
-  const presentInOrder = sectionPositions.filter((pos) => pos.idx !== -1)
+  const presentInOrder = sectionPositions.filter((p) => p.idx !== -1)
   for (let i = 1; i < presentInOrder.length; i++) {
     if (presentInOrder[i].idx < presentInOrder[i - 1].idx) {
       violations.push({
@@ -120,11 +122,22 @@ export function extractDiscoveredEntries(body: string): { title: string; block: 
   return entries
 }
 
+/**
+ * Extract the title lines (first line of each top-level bullet) from a
+ * Learning markdown's `### Discovered` sub-section. Used by section 8
+ * ("learning titles index") of the rebuild context. Mirrors the writer
+ * prompt's expectation that every Discovered bullet begins with a
+ * grep-friendly ≤80-char title line.
+ */
 export function extractTitlesFromLearning(md: string): string[] {
-  return extractDiscoveredEntries(md).map((entry) => entry.title)
+  return extractDiscoveredEntries(md).map((e) => e.title)
 }
 
-export function validateLearning(body: string, filename: string, priorDiscoveredTitles: Set<string>): Violation[] {
+export function validateLearning(
+  body: string,
+  filename: string,
+  priorDiscoveredTitles: Set<string>,
+): Violation[] {
   const violations = checkTopicAndSections(body, filename, LEARNING_REQUIRED_SECTIONS)
   const entries = extractDiscoveredEntries(body)
   for (const entry of entries) {
@@ -217,11 +230,12 @@ export function validateBudgetSections(
   filename: string,
 ): Violation[] {
   const violations: Violation[] = []
+  // Parse sections by "## " header
   const sectionRe = /^## (.+)$/gm
   const matches: { title: string; index: number }[] = []
-  let match: RegExpExecArray | null
-  while ((match = sectionRe.exec(content)) !== null) {
-    matches.push({ title: match[1].trim(), index: match.index })
+  let m: RegExpExecArray | null
+  while ((m = sectionRe.exec(content)) !== null) {
+    matches.push({ title: m[1].trim(), index: m.index })
   }
 
   for (let i = 0; i < matches.length; i++) {

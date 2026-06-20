@@ -1,8 +1,8 @@
-import { withAlpha } from "@swust-code/ui/theme/color"
+﻿import { withAlpha } from "@swust-code/ui/theme/color"
 import { useTheme } from "@swust-code/ui/theme/context"
 import { resolveThemeVariant } from "@swust-code/ui/theme/resolve"
 import type { HexColor } from "@swust-code/ui/theme/types"
-import { showToast } from "@/utils/toast"
+import { showToast } from "@swust-code/ui/toast"
 import type { FitAddon, Ghostty, Terminal as Term } from "ghostty-web"
 import { type ComponentProps, createEffect, createMemo, onCleanup, onMount, splitProps } from "solid-js"
 import { SerializeAddon } from "@/addons/serialize"
@@ -15,7 +15,6 @@ import { terminalFontFamily, useSettings } from "@/context/settings"
 import type { LocalPTY } from "@/context/terminal"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
 import { terminalWriter } from "@/utils/terminal-writer"
-import { terminalWebSocketURL } from "@/utils/terminal-websocket-url"
 
 const TOGGLE_TERMINAL_ID = "terminal.toggle"
 const DEFAULT_TOGGLE_TERMINAL_KEYBIND = "ctrl+`"
@@ -66,6 +65,13 @@ const DEFAULT_TERMINAL_COLORS: Record<"light" | "dark", TerminalColors> = {
 const debugTerminal = (...values: unknown[]) => {
   if (!import.meta.env.DEV) return
   console.debug("[terminal]", ...values)
+}
+
+const errorName = (err: unknown) => {
+  if (!err || typeof err !== "object") return
+  if (!("name" in err)) return
+  const errorName = err.name
+  return typeof errorName === "string" ? errorName : undefined
 }
 
 const useTerminalUiBindings = (input: {
@@ -472,33 +478,13 @@ export const Terminal = (props: TerminalProps) => {
 
       const gone = () =>
         client.pty
-          .get({ ptyID: id }, { throwOnError: false })
-          .then((result) => result.response.status === 404)
+          .get({ ptyID: id })
+          .then(() => false)
           .catch((err) => {
+            if (errorName(err) === "NotFoundError") return true
             debugTerminal("failed to inspect terminal session", err)
             return false
           })
-
-      const connectToken = async () => {
-        const result = await client.pty
-          .connectToken(
-            { ptyID: id, directory },
-            {
-              throwOnError: false,
-              headers: { "x-opencode-ticket": "1" },
-            },
-          )
-          .catch((err: unknown) => {
-            if (err instanceof Error && err.message.includes("Request is not supported")) return
-            throw err
-          })
-        if (!result) return
-        if (result.response.status === 200 && result.data?.ticket) return result.data.ticket
-        if (result.response.status === 404 || result.response.status === 405) return
-        if (result.response.status === 403)
-          throw new Error("PTY connect ticket rejected by origin or CSRF checks. Check the server CORS config.")
-        throw new Error(`PTY connect ticket failed with ${result.response.status}`)
-      }
 
       const retry = (err: unknown) => {
         if (disposed) return
@@ -515,7 +501,7 @@ export const Terminal = (props: TerminalProps) => {
           }
           if (disposed) return
           tries += 1
-          open()
+          void open()
         }, ms)
       }
 
@@ -523,26 +509,41 @@ export const Terminal = (props: TerminalProps) => {
         if (disposed) return
         drop?.()
 
-        const ticket = await connectToken().catch((err) => {
-          fail(err)
-          return undefined
-        })
-        if (once.value) return
-        if (disposed) return
+        const next = new URL(url + `/pty/${id}/connect`)
+        next.searchParams.set("directory", directory)
+        next.searchParams.set("cursor", String(seek))
+        next.protocol = next.protocol === "https:" ? "wss:" : "ws:"
 
-        const socket = new WebSocket(
-          terminalWebSocketURL({
-            url,
-            id,
-            directory,
-            cursor: seek,
-            ticket,
-            sameOrigin,
-            username,
-            password,
-            authToken: server.current?.type === "http" ? server.current.authToken : false,
-          }),
-        )
+        if (password) {
+          // Acquire a one-time ticket so credentials don't leak in the WebSocket URL.
+          try {
+            const tokenUrl = new URL(url + `/pty/${id}/connect-token`)
+            const headers: Record<string, string> = {
+              "x-swust-code-ticket": "1",
+              Authorization: `Basic ${btoa(`${username}:${password}`)}`,
+            }
+            const res = await fetch(tokenUrl, { method: "POST", headers })
+            if (res.ok) {
+              const { ticket } = (await res.json()) as { ticket: string }
+              next.searchParams.set("ticket", ticket)
+            } else {
+              // Fallback to legacy auth_token if ticket endpoint unavailable
+              next.searchParams.set("auth_token", btoa(`${username}:${password}`))
+              if (!sameOrigin) {
+                next.username = username
+                next.password = password
+              }
+            }
+          } catch {
+            next.searchParams.set("auth_token", btoa(`${username}:${password}`))
+            if (!sameOrigin) {
+              next.username = username
+              next.password = password
+            }
+          }
+        }
+
+        const socket = new WebSocket(next)
         socket.binaryType = "arraybuffer"
         ws = socket
 
@@ -613,7 +614,7 @@ export const Terminal = (props: TerminalProps) => {
         socket.addEventListener("close", handleClose)
       }
 
-      open()
+      await open()
     }
 
     void run().catch((err) => {

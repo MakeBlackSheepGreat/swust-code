@@ -1,9 +1,10 @@
 export * as ConfigParse from "./parse"
 
 import { type ParseError as JsoncParseError, parse as parseJsoncImpl, printParseErrorCode } from "jsonc-parser"
-import { Cause, Exit, Schema as EffectSchema, SchemaIssue } from "effect"
-import type { DeepMutable } from "@swust-code/core/schema"
-import { InvalidError, JsonError } from "@swust-code/core/v1/config/error"
+import z from "zod"
+import { InvalidError, JsonError } from "./error"
+
+type Schema<T> = z.ZodType<T>
 
 export function jsonc(text: string, filepath: string): unknown {
   const errors: JsoncParseError[] = []
@@ -32,48 +33,12 @@ export function jsonc(text: string, filepath: string): unknown {
   return data
 }
 
-export function schema<S extends EffectSchema.Decoder<unknown, never>>(
-  schema: S,
-  data: unknown,
-  source: string,
-): DeepMutable<S["Type"]> {
-  const extra = topLevelExtraKeys(schema, data)
-  if (extra.length) {
-    throw new InvalidError({
-      path: source,
-      issues: [
-        {
-          code: "unrecognized_keys",
-          keys: extra,
-          path: [],
-          message: `Unrecognized key${extra.length === 1 ? "" : "s"}: ${extra.join(", ")}`,
-        },
-      ],
-    })
-  }
+export function schema<T>(schema: Schema<T>, data: unknown, source: string): T {
+  const parsed = schema.safeParse(data)
+  if (parsed.success) return parsed.data
 
-  const decoded = EffectSchema.decodeUnknownExit(schema)(data, { errors: "all", propertyOrder: "original" })
-  if (Exit.isSuccess(decoded)) return decoded.value as DeepMutable<S["Type"]>
-  const error = Cause.squash(decoded.cause)
-
-  throw new InvalidError(
-    {
-      path: source,
-      issues: EffectSchema.isSchemaError(error)
-        ? SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues.map((issue) => ({
-            ...issue,
-            message: issue.message,
-            path: issue.path?.map(String) ?? [],
-          }))
-        : [{ message: String(error), path: [] }],
-    },
-    { cause: error },
-  )
-}
-
-function topLevelExtraKeys(schema: EffectSchema.Top, data: unknown) {
-  if (typeof data !== "object" || data === null || Array.isArray(data)) return []
-  if (schema.ast._tag !== "Objects" || schema.ast.indexSignatures.length > 0) return []
-  const known = new Set(schema.ast.propertySignatures.map((item) => String(item.name)))
-  return Object.keys(data).filter((key) => !known.has(key))
+  throw new InvalidError({
+    path: source,
+    issues: parsed.error.issues,
+  })
 }

@@ -1,34 +1,28 @@
-import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
-import { matchesActor } from "@/plugin/matcher"
-import { SubagentProgressCheckerPlugin } from "@/plugin/subagent-progress-checker"
-import { metaDir, progressPath, tasksDir } from "@/session/checkpoint-paths"
-import { SessionID } from "@/session/schema"
-import type { ActorMatcher } from "@swust-code/plugin"
+import { SubagentProgressCheckerPlugin } from "../../src/plugin/subagent-progress-checker"
+import { tasksDir, progressPath } from "../../src/session/checkpoint-paths"
+import { SessionID } from "../../src/session/schema"
 
-async function withSession<T>(fn: (sessionID: SessionID) => Promise<T>): Promise<T> {
-  const sid = SessionID.make(`ses_test_${Date.now()}_${Math.random().toString(36).slice(2)}`)
+async function withTmpHome<T>(fn: (sessionID: SessionID) => Promise<T>): Promise<T> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "subagent-progress-test-"))
+  const prevHome = process.env.SWUST_CODE_HOME
+  process.env.SWUST_CODE_HOME = dir
   try {
+    const sid = SessionID.make("ses_test_" + Date.now())
     await fs.mkdir(tasksDir(sid), { recursive: true })
     return await fn(sid)
   } finally {
-    await fs.rm(metaDir(sid), { recursive: true, force: true })
+    if (prevHome === undefined) delete process.env.SWUST_CODE_HOME
+    else process.env.SWUST_CODE_HOME = prevHome
+    await fs.rm(dir, { recursive: true, force: true })
   }
 }
 
-async function hookRun() {
-  const hooks = await SubagentProgressCheckerPlugin({} as never)
-  const reg = hooks["actor.postStop"]
-  if (!reg || typeof reg === "function") throw new Error("expected object form with run")
-  return (reg as { run: (...args: any[]) => Promise<void> }).run
-}
-
-async function hookMatcher() {
-  const hooks = await SubagentProgressCheckerPlugin({} as never)
-  const reg = hooks["actor.postStop"]
-  if (!reg || typeof reg === "function") throw new Error("expected matcher form")
-  return (reg as { matcher?: ActorMatcher }).matcher
+async function getHooks() {
+  return await SubagentProgressCheckerPlugin({} as never)
 }
 
 function makeInput(sessionID: SessionID, task_id?: string, canWrite?: boolean) {
@@ -48,48 +42,55 @@ function makeInput(sessionID: SessionID, task_id?: string, canWrite?: boolean) {
   }
 }
 
-const FIVE_SECTION_BODY = [
-  "## §1 Task identity",
-  "- task_id: T7",
-  "",
-  "## §2 Subagent intent",
-  "Do X.",
-  "",
-  "## §3 Files and code sections",
-  "- a.ts: read",
-  "",
-  "## §4 Verbatim commands",
-  "```",
-  "ls",
-  "```",
-  "",
-  "## §5 Outcome and discoveries",
-  "- Outcome: success",
-].join("\n")
-
 describe("SubagentProgressCheckerPlugin postStop", () => {
-  test("no task_id -> no-op", async () => {
-    await withSession(async (sid) => {
+  test("no task_id → no-op", async () => {
+    await withTmpHome(async (sid) => {
+      const hooks = await getHooks()
+      const reg = hooks["actor.postStop"]
+      if (!reg || typeof reg === "function") throw new Error("expected object form with run")
+      const fn = (reg as { run: (...args: any[]) => Promise<void> }).run
       const output: { continue?: boolean; reason?: string } = {}
-      await (await hookRun())(makeInput(sid, undefined), output)
+      await fn(makeInput(sid, undefined), output)
       expect(output.continue).toBeUndefined()
       expect(output.reason).toBeUndefined()
     })
   })
 
-  test("canWrite=false -> skip", async () => {
-    await withSession(async (sid) => {
+  test("canWrite=false → skip (read-only agent, no nudge even when file missing)", async () => {
+    await withTmpHome(async (sid) => {
+      const hooks = await getHooks()
+      const reg = hooks["actor.postStop"]
+      if (!reg || typeof reg === "function") throw new Error("expected object form with run")
+      const fn = (reg as { run: (...args: any[]) => Promise<void> }).run
       const output: { continue?: boolean; reason?: string } = {}
-      await (await hookRun())(makeInput(sid, "T4", false), output)
+      // task-bound AND file missing, but agent cannot write → must NOT nudge.
+      await fn(makeInput(sid, "T4", false), output)
       expect(output.continue).toBeUndefined()
       expect(output.reason).toBeUndefined()
     })
   })
 
-  test("canWrite=true -> nudges when file is missing", async () => {
-    await withSession(async (sid) => {
+  test("canWrite=true → still nudges when file missing (writable agent unchanged)", async () => {
+    await withTmpHome(async (sid) => {
+      const hooks = await getHooks()
+      const reg = hooks["actor.postStop"]
+      if (!reg || typeof reg === "function") throw new Error("expected object form with run")
+      const fn = (reg as { run: (...args: any[]) => Promise<void> }).run
       const output: { continue?: boolean; reason?: string } = {}
-      await (await hookRun())(makeInput(sid, "T4", true), output)
+      await fn(makeInput(sid, "T4", true), output)
+      expect(output.continue).toBe(true)
+      expect(output.reason).toContain(progressPath(sid, "T4"))
+    })
+  })
+
+  test("file missing → continue=true with full template feedback", async () => {
+    await withTmpHome(async (sid) => {
+      const hooks = await getHooks()
+      const reg = hooks["actor.postStop"]
+      if (!reg || typeof reg === "function") throw new Error("expected object form with run")
+      const fn = (reg as { run: (...args: any[]) => Promise<void> }).run
+      const output: { continue?: boolean; reason?: string } = {}
+      await fn(makeInput(sid, "T4"), output)
       expect(output.continue).toBe(true)
       expect(output.reason).toContain(progressPath(sid, "T4"))
       expect(output.reason).toContain("## §1 Task identity")
@@ -97,14 +98,24 @@ describe("SubagentProgressCheckerPlugin postStop", () => {
     })
   })
 
-  test("file exists with all 5 sections -> PASS and frontmatter injected", async () => {
-    await withSession(async (sid) => {
+  test("file exists with all 5 sections → PASS, frontmatter injected", async () => {
+    await withTmpHome(async (sid) => {
       const fp = progressPath(sid, "T7")
       await fs.mkdir(path.dirname(fp), { recursive: true })
-      await Bun.write(fp, FIVE_SECTION_BODY)
+      const body =
+        "## §1 Task identity\n- task_id: T7\n\n" +
+        "## §2 Subagent intent\nDo X.\n\n" +
+        "## §3 Files and code sections\n- a.ts: read\n\n" +
+        "## §4 Verbatim commands\n```\nls\n```\n\n" +
+        "## §5 Outcome and discoveries\n- Outcome: success\n"
+      await Bun.write(fp, body)
 
+      const hooks = await getHooks()
+      const reg = hooks["actor.postStop"]
+      if (!reg || typeof reg === "function") throw new Error("expected object form with run")
+      const fn = (reg as { run: (...args: any[]) => Promise<void> }).run
       const output: { continue?: boolean; reason?: string } = {}
-      await (await hookRun())(makeInput(sid, "T7"), output)
+      await fn(makeInput(sid, "T7"), output)
 
       expect(output.continue).toBeUndefined()
       const after = await Bun.file(fp).text()
@@ -114,31 +125,23 @@ describe("SubagentProgressCheckerPlugin postStop", () => {
     })
   })
 
-  test("file exists missing a section -> continue=true and lists missing section", async () => {
-    await withSession(async (sid) => {
+  test("file exists missing §3 → continue=true, reason lists §3", async () => {
+    await withTmpHome(async (sid) => {
       const fp = progressPath(sid, "T9")
       await fs.mkdir(path.dirname(fp), { recursive: true })
-      await Bun.write(
-        fp,
-        [
-          "## §1 Task identity",
-          "- task_id: T9",
-          "",
-          "## §2 Subagent intent",
-          "Do X.",
-          "",
-          "## §4 Verbatim commands",
-          "```",
-          "ls",
-          "```",
-          "",
-          "## §5 Outcome and discoveries",
-          "- Outcome: success",
-        ].join("\n"),
-      )
+      const body =
+        "## §1 Task identity\n- task_id: T9\n\n" +
+        "## §2 Subagent intent\nDo X.\n\n" +
+        "## §4 Verbatim commands\n```\nls\n```\n\n" +
+        "## §5 Outcome and discoveries\n- Outcome: success\n"
+      await Bun.write(fp, body)
 
+      const hooks = await getHooks()
+      const reg = hooks["actor.postStop"]
+      if (!reg || typeof reg === "function") throw new Error("expected object form with run")
+      const fn = (reg as { run: (...args: any[]) => Promise<void> }).run
       const output: { continue?: boolean; reason?: string } = {}
-      await (await hookRun())(makeInput(sid, "T9"), output)
+      await fn(makeInput(sid, "T9"), output)
 
       expect(output.continue).toBe(true)
       expect(output.reason).toContain("missing required sections")
@@ -146,41 +149,79 @@ describe("SubagentProgressCheckerPlugin postStop", () => {
     })
   })
 
-  test("frontmatter is idempotent", async () => {
-    await withSession(async (sid) => {
+  test("frontmatter idempotent — second PASS replaces, doesn't stack", async () => {
+    await withTmpHome(async (sid) => {
       const fp = progressPath(sid, "T2")
       await fs.mkdir(path.dirname(fp), { recursive: true })
-      await Bun.write(fp, FIVE_SECTION_BODY.replace("T7", "T2"))
-      const run = await hookRun()
+      const body =
+        "## §1 Task identity\n- task_id: T2\n\n" +
+        "## §2 Subagent intent\nDo X.\n\n" +
+        "## §3 Files and code sections\n- a.ts: read\n\n" +
+        "## §4 Verbatim commands\n```\nls\n```\n\n" +
+        "## §5 Outcome and discoveries\n- Outcome: success\n"
+      await Bun.write(fp, body)
 
-      await run(makeInput(sid, "T2"), {})
+      const hooks = await getHooks()
+      const reg = hooks["actor.postStop"]
+      if (!reg || typeof reg === "function") throw new Error("expected object form with run")
+      const fn = (reg as { run: (...args: any[]) => Promise<void> }).run
+
+      await fn(makeInput(sid, "T2"), {})
       const afterFirst = await Bun.file(fp).text()
       const firstMatch = afterFirst.match(/^---\nwritten-at: (\d+)\n---\n/)
       expect(firstMatch).not.toBeNull()
 
-      await new Promise((resolve) => setTimeout(resolve, 5))
-      await run(makeInput(sid, "T2"), {})
+      await new Promise((r) => setTimeout(r, 5))
+
+      await fn(makeInput(sid, "T2"), {})
       const afterSecond = await Bun.file(fp).text()
       const secondMatch = afterSecond.match(/^---\nwritten-at: (\d+)\n---\n/)
       expect(secondMatch).not.toBeNull()
       expect(Number(secondMatch![1])).toBeGreaterThanOrEqual(Number(firstMatch![1]))
-      expect(afterSecond.match(/^---/gm) ?? []).toHaveLength(2)
+
+      const fmCount = (afterSecond.match(/^---/gm) ?? []).length
+      expect(fmCount).toBe(2) // opening --- and closing ---
     })
   })
 })
 
-describe("SubagentProgressCheckerPlugin matcher", () => {
-  test("fires for built-in task subagents and custom subagents", async () => {
-    const matcher = await hookMatcher()
-    for (const agentType of ["general", "explore", "build", "my-custom-reviewer"]) {
-      expect(matchesActor(matcher, { mode: "subagent", agentType })).toBe(true)
+// ---------------------------------------------------------------------------
+// C1 regression: matcher must fire for built-in subagent types
+// ---------------------------------------------------------------------------
+//
+// Previously the plugin had no matcher field; matchesActor's default path
+// returned !isBuiltIn(agentType), so the plugin silently no-op'd for
+// general/explore/build/etc. — the exact built-in subagents that bind to
+// task_id in production. The new excludeOnly form bypasses that early-return.
+
+import { matchesActor } from "../../src/plugin/matcher"
+
+describe("SubagentProgressCheckerPlugin matcher (C1 regression)", () => {
+  test("matcher fires for built-in subagents (general / explore / build)", async () => {
+    const hooks = await getHooks()
+    const reg = hooks["actor.postStop"]
+    if (!reg || typeof reg === "function") throw new Error("expected matcher form")
+    const matcher = (reg as { matcher?: import("@swust-code/plugin").ActorMatcher }).matcher
+    for (const at of ["general", "explore", "build"]) {
+      expect(matchesActor(matcher, { mode: "subagent", agentType: at })).toBe(true)
     }
   })
 
-  test("excludes internal agents that lack task_id semantics", async () => {
-    const matcher = await hookMatcher()
-    for (const agentType of ["checkpoint-writer", "title", "summary", "dream", "distill", "compaction", "main"]) {
-      expect(matchesActor(matcher, { mode: "subagent", agentType })).toBe(false)
+  test("matcher excludes internal subagents that lack task_id semantics", async () => {
+    const hooks = await getHooks()
+    const reg = hooks["actor.postStop"]
+    if (!reg || typeof reg === "function") throw new Error("expected matcher form")
+    const matcher = (reg as { matcher?: import("@swust-code/plugin").ActorMatcher }).matcher
+    for (const at of ["checkpoint-writer", "title", "summary", "dream", "distill", "compaction", "main"]) {
+      expect(matchesActor(matcher, { mode: "subagent", agentType: at })).toBe(false)
     }
+  })
+
+  test("matcher fires for user-defined custom subagents (not built-in, not in exclude list)", async () => {
+    const hooks = await getHooks()
+    const reg = hooks["actor.postStop"]
+    if (!reg || typeof reg === "function") throw new Error("expected matcher form")
+    const matcher = (reg as { matcher?: import("@swust-code/plugin").ActorMatcher }).matcher
+    expect(matchesActor(matcher, { mode: "subagent", agentType: "my-custom-reviewer" })).toBe(true)
   })
 })

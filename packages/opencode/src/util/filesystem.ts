@@ -1,12 +1,10 @@
-import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
+﻿import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
 import { realpathSync } from "fs"
-import { dirname, isAbsolute, join, resolve as pathResolve, win32 } from "path"
+import { dirname, join, relative, resolve as pathResolve, win32 } from "path"
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
-import { Glob } from "@swust-code/core/util/glob"
-import { FSUtil } from "@swust-code/core/fs-util"
-import { fileURLToPath } from "url"
+import { Glob } from "@swust-code/shared/util/glob"
 
 // Fast sync version for metadata checks
 export async function exists(p: string): Promise<boolean> {
@@ -144,12 +142,6 @@ export function resolve(p: string): string {
   }
 }
 
-export function resolveFilePath(root: string, file: string): string {
-  const raw = file.startsWith("file://") ? fileURLToPath(file) : file
-  if (isAbsolute(raw)) return raw
-  return pathResolve(root, raw)
-}
-
 export function windowsPath(p: string): string {
   if (process.platform !== "win32") return p
   return (
@@ -164,11 +156,13 @@ export function windowsPath(p: string): string {
   )
 }
 export function overlaps(a: string, b: string) {
-  return FSUtil.overlaps(a, b)
+  const relA = relative(a, b)
+  const relB = relative(b, a)
+  return !relA || !relA.startsWith("..") || !relB || !relB.startsWith("..")
 }
 
 export function contains(parent: string, child: string) {
-  return FSUtil.contains(parent, child)
+  return !relative(parent, child).startsWith("..")
 }
 
 export async function findUp(
@@ -247,5 +241,3 @@ export async function globUp(pattern: string, start: string, stop?: string) {
   }
   return result
 }
-
-export * as Filesystem from "./filesystem"

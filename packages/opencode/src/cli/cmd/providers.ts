@@ -1,71 +1,60 @@
-import type { Argv } from "yargs"
-import { Auth } from "../../auth"
-import { importAll, mergeImportedCredentials } from "../../auth/import"
+﻿import { Auth } from "../../auth"
+import { AppRuntime } from "../../effect/app-runtime"
 import { cmd } from "./cmd"
-import { CliError, effectCmd, fail } from "../effect-cmd"
+import * as prompts from "@clack/prompts"
 import { UI } from "../ui"
-import * as Prompt from "../effect/prompt"
-import { ModelsDev } from "@swust-code/core/models-dev"
-
+import { ModelsDev } from "../../provider"
 import { map, pipe, sortBy, values } from "remeda"
 import path from "path"
+import fs from "fs"
+import { pathToFileURL } from "url"
 import os from "os"
-import { Config } from "@/config/config"
-import { Global } from "@swust-code/core/global"
+import { Config } from "../../config"
+import { Global } from "../../global"
 import { Plugin } from "../../plugin"
+import { t } from "../i18n"
+import { Instance } from "../../project/instance"
 import type { Hooks } from "@swust-code/plugin"
-import { Process } from "@/util/process"
-import { errorMessage } from "@/util/error"
+import { Process } from "../../util"
 import { text } from "node:stream/consumers"
-import { Effect, Option } from "effect"
+import { Effect } from "effect"
+import * as readline from "readline"
 
 type PluginAuth = NonNullable<Hooks["auth"]>
 
-const promptValue = <Value>(value: Option.Option<Value>) => {
-  if (Option.isNone(value)) return Effect.die(new UI.CancelledError())
-  return Effect.succeed(value.value)
-}
+const put = (key: string, info: Auth.Info) =>
+  AppRuntime.runPromise(
+    Effect.gen(function* () {
+      const auth = yield* Auth.Service
+      yield* auth.set(key, info)
+    }),
+  )
 
-const put = Effect.fn("Cli.providers.put")(function* (key: string, info: Auth.Info) {
-  const auth = yield* Auth.Service
-  yield* Effect.orDie(auth.set(key, info))
-})
-
-const cliTry = <Value>(message: string, fn: () => PromiseLike<Value>) =>
-  Effect.tryPromise({
-    try: fn,
-    catch: (error) => new CliError({ message: message + errorMessage(error) }),
-  })
-
-const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
-  plugin: { auth: PluginAuth },
-  provider: string,
-  methodName?: string,
-) {
-  const index = yield* Effect.gen(function* () {
-    if (!methodName) {
-      if (plugin.auth.methods.length <= 1) return 0
-      return yield* promptValue(
-        yield* Prompt.select({
-          message: "Login method",
-          options: plugin.auth.methods.map((x, index) => ({
-            label: x.label,
-            value: index,
-          })),
-        }),
-      )
-    }
+async function handlePluginAuth(plugin: { auth: PluginAuth }, provider: string, methodName?: string): Promise<boolean> {
+  let index = 0
+  if (methodName) {
     const match = plugin.auth.methods.findIndex((x) => x.label.toLowerCase() === methodName.toLowerCase())
     if (match === -1) {
-      return yield* fail(
+      prompts.log.error(
         `Unknown method "${methodName}" for ${provider}. Available: ${plugin.auth.methods.map((x) => x.label).join(", ")}`,
       )
+      process.exit(1)
     }
-    return match
-  })
+    index = match
+  } else if (plugin.auth.methods.length > 1) {
+    const method = await prompts.select({
+      message: "Login method",
+      options: plugin.auth.methods.map((x, index) => ({
+        label: x.label,
+        value: index.toString(),
+      })),
+    })
+    if (prompts.isCancel(method)) throw new UI.CancelledError()
+    index = parseInt(method)
+  }
   const method = plugin.auth.methods[index]
 
-  yield* Effect.sleep("10 millis")
+  await new Promise((r) => setTimeout(r, 10))
   const inputs: Record<string, string> = {}
   if (method.prompts) {
     for (const prompt of method.prompts) {
@@ -77,44 +66,46 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
       }
       if (prompt.condition && !prompt.condition(inputs)) continue
       if (prompt.type === "select") {
-        const value = yield* Prompt.select({
+        const value = await prompts.select({
           message: prompt.message,
           options: prompt.options,
         })
-        inputs[prompt.key] = yield* promptValue(value)
-        continue
+        if (prompts.isCancel(value)) throw new UI.CancelledError()
+        inputs[prompt.key] = value
+      } else {
+        const value = await prompts.text({
+          message: prompt.message,
+          placeholder: prompt.placeholder,
+          validate: prompt.validate ? (v) => prompt.validate!(v ?? "") : undefined,
+        })
+        if (prompts.isCancel(value)) throw new UI.CancelledError()
+        inputs[prompt.key] = value
       }
-      const value = yield* Prompt.text({
-        message: prompt.message,
-        placeholder: prompt.placeholder,
-        validate: prompt.validate ? (v) => prompt.validate!(v ?? "") : undefined,
-      })
-      inputs[prompt.key] = yield* promptValue(value)
     }
   }
 
   if (method.type === "oauth") {
-    const authorize = yield* cliTry("Failed to authorize: ", () => method.authorize(inputs))
+    const authorize = await method.authorize(inputs)
 
     if (authorize.url) {
-      yield* Prompt.log.info("Go to: " + authorize.url)
+      prompts.log.info("Go to: " + authorize.url)
     }
 
     if (authorize.method === "auto") {
       if (authorize.instructions) {
-        yield* Prompt.log.info(authorize.instructions)
+        prompts.log.info(authorize.instructions)
       }
-      const spinner = Prompt.spinner()
-      yield* spinner.start("Waiting for authorization...")
-      const result = yield* cliTry("Failed to authorize: ", () => authorize.callback())
+      const spinner = prompts.spinner()
+      spinner.start("Waiting for authorization...")
+      const result = await authorize.callback()
       if (result.type === "failed") {
-        yield* spinner.stop("Failed to authorize", 1)
+        spinner.stop("Failed to authorize", 1)
       }
       if (result.type === "success") {
         const saveProvider = result.provider ?? provider
         if ("refresh" in result) {
-          const { type: _, provider: __, refresh, access, expires, ...extraFields } = result
-          yield* put(saveProvider, {
+          const { type: _, provider: __, refresh, access, expires, metadata: _m, ...extraFields } = result
+          await put(saveProvider, {
             type: "oauth",
             refresh,
             access,
@@ -123,31 +114,31 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
           })
         }
         if ("key" in result) {
-          yield* put(saveProvider, {
+          await put(saveProvider, {
             type: "api",
             key: result.key,
             ...(result.metadata ? { metadata: result.metadata } : {}),
           })
         }
-        yield* spinner.stop("Login successful")
+        spinner.stop("Login successful")
       }
     }
 
     if (authorize.method === "code") {
-      const code = yield* Prompt.text({
+      const code = await prompts.text({
         message: "Paste the authorization code here: ",
         validate: (x) => (x && x.length > 0 ? undefined : "Required"),
       })
-      const authorizationCode = yield* promptValue(code)
-      const result = yield* cliTry("Failed to authorize: ", () => authorize.callback(authorizationCode))
+      if (prompts.isCancel(code)) throw new UI.CancelledError()
+      const result = await authorize.callback(code)
       if (result.type === "failed") {
-        yield* Prompt.log.error("Failed to authorize")
+        prompts.log.error("Failed to authorize")
       }
       if (result.type === "success") {
         const saveProvider = result.provider ?? provider
         if ("refresh" in result) {
-          const { type: _, provider: __, refresh, access, expires, ...extraFields } = result
-          yield* put(saveProvider, {
+          const { type: _, provider: __, refresh, access, expires, metadata: _m, ...extraFields } = result
+          await put(saveProvider, {
             type: "oauth",
             refresh,
             access,
@@ -156,59 +147,47 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
           })
         }
         if ("key" in result) {
-          yield* put(saveProvider, {
+          await put(saveProvider, {
             type: "api",
             key: result.key,
             ...(result.metadata ? { metadata: result.metadata } : {}),
           })
         }
-        yield* Prompt.log.success("Login successful")
+        prompts.log.success("Login successful")
       }
     }
 
-    yield* Prompt.outro("Done")
+    prompts.outro("Done")
     return true
   }
 
   if (method.type === "api") {
-    const key = yield* Prompt.password({
-      message: "Enter your API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-    })
-    const apiKey = yield* promptValue(key)
-
-    const metadata = Object.keys(inputs).length ? { metadata: inputs } : {}
-    const authorizeApi = method.authorize
-    if (!authorizeApi) {
-      yield* put(provider, {
-        type: "api",
-        key: apiKey,
-        ...metadata,
+    if (method.authorize) {
+      const key = await prompts.password({
+        message: "Enter your API key",
+        validate: (x) => (x && x.length > 0 ? undefined : "Required"),
       })
-      yield* Prompt.outro("Done")
+      if (prompts.isCancel(key)) throw new UI.CancelledError()
+
+      const result = await method.authorize(inputs)
+      if (result.type === "failed") {
+        prompts.log.error("Failed to authorize")
+      }
+      if (result.type === "success") {
+        const saveProvider = result.provider ?? provider
+        await put(saveProvider, {
+          type: "api",
+          key: result.key ?? key,
+        })
+        prompts.log.success("Login successful")
+      }
+      prompts.outro("Done")
       return true
     }
-
-    const result = yield* cliTry("Failed to authorize: ", () => authorizeApi(inputs))
-    if (result.type === "failed") {
-      yield* Prompt.log.error("Failed to authorize")
-    }
-    if (result.type === "success") {
-      const saveProvider = result.provider ?? provider
-      const merged = { ...(metadata.metadata ?? {}), ...(result.metadata ?? {}) }
-      yield* put(saveProvider, {
-        type: "api",
-        key: result.key ?? apiKey,
-        ...(Object.keys(merged).length ? { metadata: merged } : {}),
-      })
-      yield* Prompt.log.success("Login successful")
-    }
-    yield* Prompt.outro("Done")
-    return true
   }
 
   return false
-})
+}
 
 export function resolvePluginProviders(input: {
   hooks: Hooks[]
@@ -237,6 +216,115 @@ export function resolvePluginProviders(input: {
   return result
 }
 
+// Dynamically load the optional free-login entry (src/ext/free-login.ts), if
+// present. Returns its handler when available, otherwise undefined. Computed
+// path so builds without the extension still resolve cleanly.
+async function loadFreeLogin(): Promise<(() => Promise<void>) | undefined> {
+  const file = path.join(import.meta.dir, "..", "..", "ext", "free-login.ts")
+  if (!fs.existsSync(file)) return undefined
+  try {
+    const mod = await import(/* @vite-ignore */ pathToFileURL(file).href)
+    return typeof mod.mimoFreeLogin === "function" ? mod.mimoFreeLogin : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function mimoLogin() {
+  const hooks = await AppRuntime.runPromise(
+    Effect.gen(function* () {
+      const plugin = yield* Plugin.Service
+      return yield* plugin.list()
+    }),
+  )
+  const mimoHook = hooks.findLast((h) => h.auth?.provider === "xiaomi")
+  if (!mimoHook?.auth) {
+    prompts.log.error("MiMo auth plugin not found")
+    return
+  }
+
+  const method = mimoHook.auth.methods[0]
+  if (method.type !== "oauth") return
+
+  const authorize = await method.authorize()
+  if (authorize.method !== "auto") return
+
+  prompts.log.info(`Browser didn't open? Use the url below to sign in:\n${authorize.url}`)
+
+  const browserPromise = authorize.callback().catch(() => ({ type: "failed" as const }))
+
+  const MAX_RETRIES = 3
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const raceResult = await raceCallbackAndStdin(browserPromise)
+
+    if (raceResult.source === "browser") {
+      if (raceResult.data.type === "success" && "key" in raceResult.data) {
+        await put("xiaomi", {
+          type: "api",
+          key: raceResult.data.key,
+          ...(raceResult.data.metadata ? { metadata: raceResult.data.metadata } : {}),
+        })
+        prompts.log.success("Login successful")
+        prompts.outro("Done")
+        return
+      }
+      prompts.log.error("Login failed")
+      prompts.outro("Done")
+      return
+    }
+
+    const callbackResult = await authorize.callback(raceResult.input)
+    if (callbackResult.type === "success" && "key" in callbackResult) {
+      await put("xiaomi", {
+        type: "api",
+        key: callbackResult.key,
+        ...(callbackResult.metadata ? { metadata: callbackResult.metadata } : {}),
+      })
+      prompts.log.success("Login successful")
+      prompts.outro("Done")
+      return
+    }
+
+    const remaining = MAX_RETRIES - attempt - 1
+    if (remaining > 0) {
+      prompts.log.error(t("cli.providers.mimo_login.decrypt_retry", { remaining }))
+    } else {
+      prompts.log.error(t("cli.providers.mimo_login.decrypt_exhausted"))
+    }
+  }
+}
+
+function raceCallbackAndStdin<T>(
+  browserPromise: Promise<T>,
+): Promise<{ source: "browser"; data: T } | { source: "paste"; input: string }> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+
+    let settled = false
+    const cleanup = () => {
+      if (settled) return
+      settled = true
+      rl.close()
+    }
+
+    browserPromise.then((data) => {
+      if (settled) return
+      cleanup()
+      process.stdout.write("\n")
+      resolve({ source: "browser", data })
+    })
+
+    rl.question("Paste code here if prompted > ", (answer) => {
+      if (settled) return
+      const trimmed = answer.trim()
+      if (trimmed.length > 0) {
+        cleanup()
+        resolve({ source: "paste", input: trimmed })
+      }
+    })
+  })
+}
+
 export const ProvidersCommand = cmd({
   command: "providers",
   aliases: ["auth"],
@@ -246,35 +334,35 @@ export const ProvidersCommand = cmd({
       .command(ProvidersListCommand)
       .command(ProvidersLoginCommand)
       .command(ProvidersLogoutCommand)
-      .command(ProvidersImportCommand)
+      .command(ProvidersWhoamiCommand)
       .demandCommand(),
   async handler() {},
 })
 
-export const ProvidersListCommand = effectCmd({
+export const ProvidersListCommand = cmd({
   command: "list",
   aliases: ["ls"],
   describe: "list providers and credentials",
-  // Lists global credentials + provider env vars; no project instance needed.
-  instance: false,
-  handler: Effect.fn("Cli.providers.list")(function* (_args) {
-    const authSvc = yield* Auth.Service
-    const modelsDev = yield* ModelsDev.Service
-
+  async handler(_args) {
     UI.empty()
     const authPath = path.join(Global.Path.data, "auth.json")
     const homedir = os.homedir()
     const displayPath = authPath.startsWith(homedir) ? authPath.replace(homedir, "~") : authPath
-    yield* Prompt.intro(`Credentials ${UI.Style.TEXT_DIM}${displayPath}`)
-    const results = Object.entries(yield* Effect.orDie(authSvc.all()))
-    const database = yield* modelsDev.get()
+    prompts.intro(`Credentials ${UI.Style.TEXT_DIM}${displayPath}`)
+    const results = await AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const auth = yield* Auth.Service
+        return Object.entries(yield* auth.all())
+      }),
+    )
+    const database = await ModelsDev.get()
 
     for (const [providerID, result] of results) {
       const name = database[providerID]?.name || providerID
-      yield* Prompt.log.info(`${name} ${UI.Style.TEXT_DIM}${result.type}`)
+      prompts.log.info(`${name} ${UI.Style.TEXT_DIM}${result.type}`)
     }
 
-    yield* Prompt.outro(`${results.length} credentials`)
+    prompts.outro(`${results.length} credentials`)
 
     const activeEnvVars: Array<{ provider: string; envVar: string }> = []
 
@@ -291,26 +379,24 @@ export const ProvidersListCommand = effectCmd({
 
     if (activeEnvVars.length > 0) {
       UI.empty()
-      yield* Prompt.intro("Environment")
+      prompts.intro("Environment")
 
       for (const { provider, envVar } of activeEnvVars) {
-        yield* Prompt.log.info(`${provider} ${UI.Style.TEXT_DIM}${envVar}`)
+        prompts.log.info(`${provider} ${UI.Style.TEXT_DIM}${envVar}`)
       }
 
-      yield* Prompt.outro(`${activeEnvVars.length} environment variable` + (activeEnvVars.length === 1 ? "" : "s"))
+      prompts.outro(`${activeEnvVars.length} environment variable` + (activeEnvVars.length === 1 ? "" : "s"))
     }
-  }),
+  },
 })
 
-export const ProvidersLoginCommand = effectCmd({
+export const ProvidersLoginCommand = cmd({
   command: "login [url]",
   describe: "log in to a provider",
-  // URL login skips instance bootstrap, which would load remote config with the stale token and crash before re-auth.
-  instance: (args) => !args.url,
-  builder: (yargs: Argv) =>
+  builder: (yargs) =>
     yargs
       .positional("url", {
-        describe: "authenticate a provider",
+        describe: "swust-code auth provider",
         type: "string",
       })
       .option("provider", {
@@ -323,291 +409,284 @@ export const ProvidersLoginCommand = effectCmd({
         describe: "login method label (skips method selection)",
         type: "string",
       }),
-  handler: Effect.fn("Cli.providers.login")(function* (args) {
-    const authSvc = yield* Auth.Service
+  async handler(args) {
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        UI.empty()
+        prompts.intro("Add credential")
+        if (args.url) {
+          const url = args.url.replace(/\/+$/, "")
+          const wellknown = (await fetch(`${url}/.well-known/opencode`).then((x) => x.json())) as {
+            auth: { command: string[]; env: string }
+          }
+          prompts.log.info(`Running \`${wellknown.auth.command.join(" ")}\``)
+          const proc = Process.spawn(wellknown.auth.command, {
+            stdout: "pipe",
+          })
+          if (!proc.stdout) {
+            prompts.log.error("Failed")
+            prompts.outro("Done")
+            return
+          }
+          const [exit, token] = await Promise.all([proc.exited, text(proc.stdout)])
+          if (exit !== 0) {
+            prompts.log.error("Failed")
+            prompts.outro("Done")
+            return
+          }
+          await put(url, {
+            type: "wellknown",
+            key: wellknown.auth.env,
+            token: token.trim(),
+          })
+          prompts.log.success("Logged into " + url)
+          prompts.outro("Done")
+          return
+        }
+        await ModelsDev.refresh(true).catch(() => {})
 
-    UI.empty()
-    yield* Prompt.intro("Add credential")
-    if (args.url) {
-      const url = args.url.replace(/\/+$/, "")
-      const wellknown = (yield* cliTry(`Failed to load auth provider metadata from ${url}: `, () =>
-        fetch(`${url}/.well-known/opencode`).then((x) => x.json()),
-      )) as {
-        auth: { command: string[]; env: string }
-      }
-      yield* Prompt.log.info(`Running \`${wellknown.auth.command.join(" ")}\``)
-      const abort = new AbortController()
-      const proc = Process.spawn(wellknown.auth.command, { stdout: "pipe", stderr: "inherit", abort: abort.signal })
-      if (!proc.stdout) {
-        yield* Prompt.log.error("Failed")
-        yield* Prompt.outro("Done")
-        return
-      }
-      const [exit, token] = yield* cliTry("Failed to run auth provider command: ", () =>
-        Promise.all([proc.exited, text(proc.stdout!)]),
-      ).pipe(Effect.ensuring(Effect.sync(() => abort.abort())))
-      if (exit !== 0) {
-        yield* Prompt.log.error("Failed")
-        yield* Prompt.outro("Done")
-        return
-      }
-      yield* Effect.orDie(authSvc.set(url, { type: "wellknown", key: wellknown.auth.env, token: token.trim() }))
-      yield* Prompt.log.success("Logged into " + url)
-      yield* Prompt.outro("Done")
-      return
-    }
+        const config = await AppRuntime.runPromise(Config.Service.use((cfg) => cfg.get()))
 
-    const cfgSvc = yield* Config.Service
-    const pluginSvc = yield* Plugin.Service
-    const modelsDev = yield* ModelsDev.Service
-    yield* Effect.ignore(modelsDev.refresh(true))
+        const disabled = new Set(config.disabled_providers ?? [])
+        const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
 
-    const config = yield* cfgSvc.get()
-
-    const disabled = new Set(config.disabled_providers ?? [])
-    const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
-
-    const allProviders = yield* modelsDev.get()
-    const providers: Record<string, (typeof allProviders)[string]> = {}
-    for (const [key, value] of Object.entries(allProviders)) {
-      if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) providers[key] = value
-    }
-    const hooks = yield* pluginSvc.list()
-
-    const priority: Record<string, number> = {
-      opencode: 0,
-      openai: 1,
-      "github-copilot": 2,
-      google: 3,
-      anthropic: 4,
-      openrouter: 5,
-      vercel: 6,
-    }
-    const pluginProviders = resolvePluginProviders({
-      hooks,
-      existingProviders: providers,
-      disabled,
-      enabled,
-      providerNames: Object.fromEntries(Object.entries(config.provider ?? {}).map(([id, p]) => [id, p.name])),
-    })
-    const options = [
-      ...pipe(
-        providers,
-        values(),
-        sortBy(
-          (x) => priority[x.id] ?? 99,
-          (x) => x.name ?? x.id,
-        ),
-        map((x) => ({
-          label: x.name,
-          value: x.id,
-          hint: {
-            opencode: "recommended",
-            openai: "ChatGPT Plus/Pro or API key",
-          }[x.id],
-        })),
-      ),
-      ...pluginProviders.map((x) => ({
-        label: x.name,
-        value: x.id,
-        hint: "plugin",
-      })),
-    ]
-
-    let provider: string
-    if (args.provider) {
-      const input = args.provider
-      const byID = options.find((x) => x.value === input)
-      const byName = options.find((x) => x.label.toLowerCase() === input.toLowerCase())
-      const match = byID ?? byName
-      if (!match) {
-        return yield* fail(`Unknown provider "${input}"`)
-      }
-      provider = match.value
-    } else {
-      provider = yield* promptValue(
-        yield* Prompt.autocomplete({
-          message: "Select provider",
-          maxItems: 8,
-          options: [...options, { value: "other", label: "Other" }],
-        }),
-      )
-    }
-
-    const plugin = hooks.findLast((x) => x.auth?.provider === provider)
-    if (plugin && plugin.auth) {
-      const handled = yield* handlePluginAuth({ auth: plugin.auth! }, provider, args.method)
-      if (handled) return
-    }
-
-    if (provider === "other") {
-      provider = (yield* promptValue(
-        yield* Prompt.text({
-          message: "Enter provider id",
-          validate: (x) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
-        }),
-      )).replace(/^@ai-sdk\//, "")
-
-      const customPlugin = hooks.findLast((x) => x.auth?.provider === provider)
-      if (customPlugin && customPlugin.auth) {
-        const handled = yield* handlePluginAuth({ auth: customPlugin.auth! }, provider, args.method)
-        if (handled) return
-      }
-
-      yield* Prompt.log.warn(
-        `This only stores a credential for ${provider} - you will need configure it in swust-code.json, check the docs for examples.`,
-      )
-    }
-
-    if (provider === "amazon-bedrock") {
-      yield* Prompt.log.info(
-        "Amazon Bedrock authentication priority:\n" +
-          "  1. Bearer token (AWS_BEARER_TOKEN_BEDROCK or /connect)\n" +
-          "  2. AWS credential chain (profile, access keys, IAM roles, EKS IRSA)\n\n" +
-          "Configure via swust-code.json options (profile, region, endpoint) or\n" +
-          "AWS environment variables (AWS_PROFILE, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_WEB_IDENTITY_TOKEN_FILE).",
-      )
-    }
-
-    if (provider === "opencode") {
-      yield* Prompt.log.info("Create an api key at https://opencode.ai/auth")
-    }
-
-    if (provider === "vercel") {
-      yield* Prompt.log.info("You can create an api key at https://vercel.link/ai-gateway-token")
-    }
-
-    if (["cloudflare", "cloudflare-ai-gateway"].includes(provider)) {
-      yield* Prompt.log.info(
-        "Cloudflare AI Gateway can be configured with CLOUDFLARE_GATEWAY_ID, CLOUDFLARE_ACCOUNT_ID, and CLOUDFLARE_API_TOKEN environment variables. Read more: https://opencode.ai/docs/providers/#cloudflare-ai-gateway",
-      )
-    }
-
-    if (provider === "snowflake-cortex") {
-      const account = yield* promptValue(
-        yield* Prompt.text({
-          message: "Snowflake Account Identifier",
-          placeholder: "xy12345.us-east-1",
-          validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-        }),
-      )
-      const pat = yield* promptValue(
-        yield* Prompt.password({
-          message: "Programmatic Access Token (PAT)",
-          validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-        }),
-      )
-      yield* Effect.orDie(authSvc.set(provider, { type: "api", key: pat, metadata: { account } }))
-      yield* Prompt.outro("Done")
-      return
-    }
-
-    const key = yield* Prompt.password({
-      message: "Enter your API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-    })
-    const apiKey = yield* promptValue(key)
-    yield* Effect.orDie(authSvc.set(provider, { type: "api", key: apiKey }))
-
-    yield* Prompt.outro("Done")
-  }),
-})
-
-export const ProvidersLogoutCommand = effectCmd({
-  command: "logout [provider]",
-  describe: "log out from a configured provider",
-  builder: (yargs) =>
-    yargs.positional("provider", {
-      describe: "provider id or name to log out from",
-      type: "string",
-    }),
-  // Removes a global auth credential; no project instance needed.
-  instance: false,
-  handler: Effect.fn("Cli.providers.logout")(function* (args) {
-    const authSvc = yield* Auth.Service
-    const modelsDev = yield* ModelsDev.Service
-
-    UI.empty()
-    const credentials: Array<[string, Auth.Info]> = Object.entries(yield* Effect.orDie(authSvc.all()))
-    yield* Prompt.intro("Remove credential")
-    if (credentials.length === 0) {
-      yield* Prompt.log.error("No credentials found")
-      return
-    }
-    const database = yield* modelsDev.get()
-    const options = credentials.map(([key, value]) => ({
-      label: (database[key]?.name || key) + UI.Style.TEXT_DIM + " (" + value.type + ")",
-      value: key,
-    }))
-    const provider = args.provider
-      ? options.find(
-          (option) =>
-            option.value === args.provider ||
-            database[option.value]?.name?.toLowerCase() === args.provider?.toLowerCase(),
-        )?.value
-      : yield* promptValue(
-          yield* Prompt.autocomplete({
-            message: "Select provider",
-            maxItems: 8,
-            options,
+        const providers = await ModelsDev.get().then((x) => {
+          const filtered: Record<string, (typeof x)[string]> = {}
+          for (const [key, value] of Object.entries(x)) {
+            if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) {
+              filtered[key] = value
+            }
+          }
+          return filtered
+        })
+        const hooks = await AppRuntime.runPromise(
+          Effect.gen(function* () {
+            const plugin = yield* Plugin.Service
+            return yield* plugin.list()
           }),
         )
-    if (!provider) return yield* fail(`Unknown configured provider "${args.provider}"`)
-    yield* Effect.orDie(authSvc.remove(provider))
-    yield* Prompt.outro("Logout successful")
-  }),
+
+        const priority: Record<string, number> = {
+          opencode: 0,
+          openai: 1,
+          "github-copilot": 2,
+          google: 3,
+          anthropic: 4,
+          openrouter: 5,
+          vercel: 6,
+        }
+        const pluginProviders = resolvePluginProviders({
+          hooks,
+          existingProviders: providers,
+          disabled,
+          enabled,
+          providerNames: Object.fromEntries(Object.entries(config.provider ?? {}).map(([id, p]) => [id, p.name])),
+        })
+        const options = [
+          ...pipe(
+            providers,
+            values(),
+            sortBy(
+              (x) => priority[x.id] ?? 99,
+              (x) => x.name ?? x.id,
+            ),
+            map((x) => ({
+              label: x.name,
+              value: x.id,
+              hint: {
+                opencode: "recommended",
+                openai: "ChatGPT Plus/Pro or API key",
+              }[x.id],
+            })),
+          ),
+          ...pluginProviders.map((x) => ({
+            label: x.name,
+            value: x.id,
+            hint: "plugin",
+          })),
+        ]
+
+        const freeLogin = await loadFreeLogin()
+        let provider: string
+        if (args.provider === "xiaomi") {
+          await mimoLogin()
+          return
+        } else if ((args.provider === "mimo" || args.provider === "mimo-free") && freeLogin) {
+          await freeLogin()
+          return
+        } else if (args.provider) {
+          const input = args.provider
+          const byID = options.find((x) => x.value === input)
+          const byName = options.find((x) => x.label.toLowerCase() === input.toLowerCase())
+          const match = byID ?? byName
+          if (!match) {
+            prompts.log.error(`Unknown provider "${input}"`)
+            process.exit(1)
+          }
+          provider = match.value
+        } else {
+          const choice = await prompts.select({
+            message: t("cli.providers.select"),
+            options: [
+              { label: "MiMo", value: "xiaomi", hint: t("cli.providers.mimo.recommended_hint") },
+              ...(freeLogin
+                ? [{ label: "MiMo Auto (free)", value: "mimo-free", hint: t("cli.providers.mimo_free.hint") }]
+                : []),
+              { label: t("cli.providers.other"), value: "__other__" },
+            ],
+          })
+          if (prompts.isCancel(choice)) throw new UI.CancelledError()
+
+          if (choice === "xiaomi") {
+            await mimoLogin()
+            return
+          }
+
+          if (choice === "mimo-free" && freeLogin) {
+            await freeLogin()
+            return
+          }
+
+          const selected = await prompts.autocomplete({
+            message: t("cli.providers.select"),
+            maxItems: 8,
+            options: [
+              ...options,
+              {
+                value: "other",
+                label: "Other",
+              },
+            ],
+          })
+          if (prompts.isCancel(selected)) throw new UI.CancelledError()
+          provider = selected as string
+        }
+
+        const plugin = hooks.findLast((x) => x.auth?.provider === provider)
+        if (plugin && plugin.auth) {
+          const handled = await handlePluginAuth({ auth: plugin.auth }, provider, args.method)
+          if (handled) return
+        }
+
+        if (provider === "other") {
+          const custom = await prompts.text({
+            message: "Enter provider id",
+            validate: (x) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
+          })
+          if (prompts.isCancel(custom)) throw new UI.CancelledError()
+          provider = custom.replace(/^@ai-sdk\//, "")
+
+          const customPlugin = hooks.findLast((x) => x.auth?.provider === provider)
+          if (customPlugin && customPlugin.auth) {
+            const handled = await handlePluginAuth({ auth: customPlugin.auth }, provider, args.method)
+            if (handled) return
+          }
+
+          prompts.log.warn(
+            `This only stores a credential for ${provider} - you will need configure it in swust-code.json, check the docs for examples.`,
+          )
+        }
+
+        if (provider === "amazon-bedrock") {
+          prompts.log.info(
+            "Amazon Bedrock authentication priority:\n" +
+              "  1. Bearer token (AWS_BEARER_TOKEN_BEDROCK or /connect)\n" +
+              "  2. AWS credential chain (profile, access keys, IAM roles, EKS IRSA)\n\n" +
+              "Configure via swust-code.json options (profile, region, endpoint) or\n" +
+              "AWS environment variables (AWS_PROFILE, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_WEB_IDENTITY_TOKEN_FILE).",
+          )
+        }
+
+        if (provider === "opencode") {
+          prompts.log.info("Create an api key at https://opencode.ai/auth")
+        }
+
+        if (provider === "vercel") {
+          prompts.log.info("You can create an api key at https://vercel.link/ai-gateway-token")
+        }
+
+        if (["cloudflare", "cloudflare-ai-gateway"].includes(provider)) {
+          prompts.log.info(
+            "Cloudflare AI Gateway can be configured with CLOUDFLARE_GATEWAY_ID, CLOUDFLARE_ACCOUNT_ID, and CLOUDFLARE_API_TOKEN environment variables. Read more: https://opencode.ai/docs/providers/#cloudflare-ai-gateway",
+          )
+        }
+
+        const key = await prompts.password({
+          message: "Enter your API key",
+          validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+        })
+        if (prompts.isCancel(key)) throw new UI.CancelledError()
+        await put(provider, {
+          type: "api",
+          key,
+        })
+
+        prompts.outro("Done")
+      },
+    })
+  },
 })
 
-const ProvidersImportCommand = effectCmd({
-  command: "import",
-  describe: "import credentials from MiMo-Code, Claude Code, or environment variables",
-  handler: Effect.fn("Cli.providers.import")(function* () {
+export const ProvidersLogoutCommand = cmd({
+  command: "logout",
+  describe: "log out from a configured provider",
+  async handler(_args) {
     UI.empty()
-    const auth = yield* Auth.Service
-
-    // Scan all sources
-    const results = importAll()
-
-    // Display results
-    for (const result of results) {
-      if (result.imported.length > 0) {
-        for (const item of result.imported) {
-          console.log(`  ${UI.Style.TEXT_SUCCESS}✓${UI.Style.TEXT_NORMAL} ${result.source}: ${item.provider} (${item.type})`)
-        }
-      }
-      if (result.skipped.length > 0 && result.source !== "Environment Variables") {
-        for (const item of result.skipped) {
-          console.log(`  ${UI.Style.TEXT_DIM}○${UI.Style.TEXT_NORMAL} ${result.source}: ${item.provider} — ${item.reason}`)
-        }
-      }
-      if (result.errors.length > 0) {
-        for (const err of result.errors) {
-          console.log(`  ${UI.Style.TEXT_WARNING}⚠${UI.Style.TEXT_NORMAL} ${result.source}: ${err}`)
-        }
-      }
-    }
-
-    // Merge and write
-    const merged = mergeImportedCredentials()
-    const providers = Object.keys(merged)
-
-    if (providers.length === 0) {
-      console.log(`\n${UI.Style.TEXT_DIM}No credentials found to import.${UI.Style.TEXT_NORMAL}`)
-      console.log(`\nSet an API key via environment variable:`)
-      console.log(`  export ANTHROPIC_API_KEY="your-key"`)
-      console.log(`  export OPENAI_API_KEY="your-key"`)
-      console.log(`  export DEEPSEEK_API_KEY="your-key"`)
+    const credentials: Array<[string, Auth.Info]> = await AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const auth = yield* Auth.Service
+        return Object.entries(yield* auth.all())
+      }),
+    )
+    prompts.intro("Remove credential")
+    if (credentials.length === 0) {
+      prompts.log.error("No credentials found")
       return
     }
+    const database = await ModelsDev.get()
+    const selected = await prompts.select({
+      message: "Select provider",
+      options: credentials.map(([key, value]) => ({
+        label: (database[key]?.name || key) + UI.Style.TEXT_DIM + " (" + value.type + ")",
+        value: key,
+      })),
+    })
+    if (prompts.isCancel(selected)) throw new UI.CancelledError()
+    const providerID = selected as string
+    await AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const auth = yield* Auth.Service
+        yield* auth.remove(providerID)
+      }),
+    )
+    prompts.outro("Logout successful")
+  },
+})
 
-    console.log(`\n${UI.Style.TEXT_SUCCESS}Found ${providers.length} provider(s)${UI.Style.TEXT_NORMAL}: ${providers.join(", ")}`)
-
-    // Write to auth.json
-    for (const [provider, entry] of Object.entries(merged)) {
-      yield* Effect.orDie(auth.set(provider, entry as Auth.Info))
+export const ProvidersWhoamiCommand = cmd({
+  command: "whoami",
+  describe: "show current logged-in user info",
+  async handler(_args) {
+    UI.empty()
+    prompts.intro("Current user")
+    const info = await AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const auth = yield* Auth.Service
+        return yield* auth.get("xiaomi")
+      }),
+    )
+    if (!info) {
+      prompts.log.error("Not logged in. Run `swust-code auth login` to log in.")
+      return
     }
-
-    console.log(`\n${UI.Style.TEXT_SUCCESS}Credentials imported successfully.${UI.Style.TEXT_NORMAL}`)
-    console.log(`Run 'swust-code providers list' to verify.`)
-  }),
+    if (info.type === "api" && info.metadata) {
+      prompts.log.info(`Provider: MiMo`)
+      prompts.log.info(`User ID: ${info.metadata.uid ?? "unknown"}`)
+    } else {
+      prompts.log.info(`Provider: MiMo`)
+      prompts.log.info(`Type: ${info.type}`)
+    }
+    prompts.outro("")
+  },
 })

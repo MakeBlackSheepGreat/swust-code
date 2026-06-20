@@ -1,4 +1,4 @@
-import { base64Decode } from "@swust-code/core/util/encode"
+﻿import { base64Decode } from "@swust-code/shared/util/encode"
 
 export function decode64(value: string | undefined) {
   if (value === undefined) return

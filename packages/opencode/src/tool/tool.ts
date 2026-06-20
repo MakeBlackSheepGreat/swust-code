@@ -1,11 +1,10 @@
-import { PermissionV1 } from "@swust-code/core/v1/permission"
-import { Effect, Schema } from "effect"
-import { SessionV1 } from "@swust-code/core/v1/session"
-import type { JSONSchema7 } from "@ai-sdk/provider"
+import z from "zod"
+import { Effect } from "effect"
 import type { MessageV2 } from "../session/message-v2"
 import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
+import { RecoverableError } from "./recoverable"
 import { Agent } from "@/agent/agent"
 
 export interface Metadata {
@@ -15,82 +14,59 @@ export interface Metadata {
 // TODO: remove this hack
 export type DynamicDescription = (agent: Agent.Info) => Effect.Effect<string>
 
-/**
- * Raised when the LLM calls a tool with arguments that fail the parameter
- * schema. This is the canonical "rewrite the input" tool error: the typed
- * error class makes it matchable upstream, and its `message` getter produces
- * the model-facing prose that the AI SDK feeds back as the tool result.
- */
-export class InvalidArgumentsError extends Schema.TaggedErrorClass<InvalidArgumentsError>()(
-  "ToolInvalidArgumentsError",
-  {
-    tool: Schema.String,
-    detail: Schema.String,
-  },
-) {
-  override get message() {
-    return `The ${this.tool} tool was called with invalid arguments: ${this.detail}.\nPlease rewrite the input so it satisfies the expected schema.`
-  }
-}
-
 export type Context<M extends Metadata = Metadata> = {
   sessionID: SessionID
   messageID: MessageID
   agent: string
+  actorID?: string
+  taskId?: string
   abort: AbortSignal
   callID?: string
   extra?: { [key: string]: unknown }
-  messages: SessionV1.WithParts[]
+  messages: MessageV2.WithParts[]
   metadata(input: { title?: string; metadata?: M }): Effect.Effect<void>
-  ask(input: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">): Effect.Effect<void>
+  ask(input: Omit<Permission.Request, "id" | "sessionID" | "tool">): Effect.Effect<void>
 }
 
 export interface ExecuteResult<M extends Metadata = Metadata> {
   title: string
   metadata: M
   output: string
-  attachments?: Omit<SessionV1.FilePart, "id" | "sessionID" | "messageID">[]
+  attachments?: Omit<MessageV2.FilePart, "id" | "sessionID" | "messageID">[]
 }
 
-export interface Def<
-  Parameters extends Schema.Decoder<unknown> = Schema.Decoder<unknown>,
-  M extends Metadata = Metadata,
-> {
+export interface Def<Parameters extends z.ZodType = z.ZodType, M extends Metadata = Metadata> {
   id: string
   description: string
   parameters: Parameters
-  jsonSchema?: JSONSchema7
-  execute(args: Schema.Schema.Type<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>>
-  formatValidationError?(error: unknown): string
+  execute(args: z.infer<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>>
+  formatValidationError?(error: z.ZodError): string
   shell?: {
     description: string
-    parse(script: string): Effect.Effect<Schema.Schema.Type<Parameters>[], unknown>
-    recover?(rawArgs: unknown): Schema.Schema.Type<Parameters> | undefined
+    parse(script: string): Effect.Effect<z.infer<Parameters>[], unknown>
+    // Optional recovery for shell-mode calls that arrive shaped like the tool's
+    // JSON args (no usable `script`). Returns the tool's parsed JSON shape to be
+    // routed to execute, or undefined if rawArgs can't be lifted. Lets shell mode
+    // transparently accept a JSON-shape call instead of erroring.
+    recover?(rawArgs: unknown): z.infer<Parameters> | undefined
   }
 }
-export type DefWithoutID<
-  Parameters extends Schema.Decoder<unknown> = Schema.Decoder<unknown>,
-  M extends Metadata = Metadata,
-> = Omit<Def<Parameters, M>, "id">
+export type DefWithoutID<Parameters extends z.ZodType = z.ZodType, M extends Metadata = Metadata> = Omit<
+  Def<Parameters, M>,
+  "id"
+>
 
-export interface Info<
-  Parameters extends Schema.Decoder<unknown> = Schema.Decoder<unknown>,
-  M extends Metadata = Metadata,
-> {
+export interface Info<Parameters extends z.ZodType = z.ZodType, M extends Metadata = Metadata> {
   id: string
   init: () => Effect.Effect<DefWithoutID<Parameters, M>>
 }
 
-type Init<Parameters extends Schema.Decoder<unknown>, M extends Metadata> =
+type Init<Parameters extends z.ZodType, M extends Metadata> =
   | DefWithoutID<Parameters, M>
   | (() => Effect.Effect<DefWithoutID<Parameters, M>>)
 
 export type InferParameters<T> =
-  T extends Info<infer P, any>
-    ? Schema.Schema.Type<P>
-    : T extends Effect.Effect<Info<infer P, any>, any, any>
-      ? Schema.Schema.Type<P>
-      : never
+  T extends Info<infer P, any> ? z.infer<P> : T extends Effect.Effect<Info<infer P, any>, any, any> ? z.infer<P> : never
 export type InferMetadata<T> =
   T extends Info<any, infer M> ? M : T extends Effect.Effect<Info<any, infer M>, any, any> ? M : never
 
@@ -101,7 +77,19 @@ export type InferDef<T> =
       ? Def<P, M>
       : never
 
-function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadata>(
+// Builds the agent-facing message for an argument-validation failure. zod v4's
+// prettifyError gives a precise, path-annotated breakdown (which field, what was
+// expected vs received) — far more actionable than dumping the raw issue JSON —
+// so we surface that directly for ZodErrors and keep a generic fallback for
+// anything else.
+export function validationErrorMessage(id: string, error: unknown): string {
+  if (error instanceof z.ZodError) {
+    return `Invalid arguments for the ${id} tool:\n${z.prettifyError(error)}`
+  }
+  return `The ${id} tool was called with invalid arguments: ${error}.\nPlease rewrite the input so it satisfies the expected schema.`
+}
+
+function wrap<Parameters extends z.ZodType, Result extends Metadata>(
   id: string,
   init: Init<Parameters, Result>,
   truncate: Truncate.Interface,
@@ -110,10 +98,6 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
   return () =>
     Effect.gen(function* () {
       const toolInfo = typeof init === "function" ? { ...(yield* init()) } : { ...init }
-      // Compile the parser closure once per tool init; `decodeUnknownEffect`
-      // allocates a new closure per call, so hoisting avoids re-closing it for
-      // every LLM tool invocation.
-      const decode = Schema.decodeUnknownEffect(toolInfo.parameters)
       const execute = toolInfo.execute
       toolInfo.execute = (args, ctx) => {
         const attrs = {
@@ -123,16 +107,19 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
           ...(ctx.callID ? { "tool.call_id": ctx.callID } : {}),
         }
         return Effect.gen(function* () {
-          const decoded = yield* decode(args).pipe(
-            Effect.mapError(
-              (error) =>
-                new InvalidArgumentsError({
-                  tool: id,
-                  detail: toolInfo.formatValidationError ? toolInfo.formatValidationError(error) : String(error),
-                }),
-            ),
-          )
-          const result = yield* execute(decoded as Schema.Schema.Type<Parameters>, ctx)
+          yield* Effect.try({
+            try: () => toolInfo.parameters.parse(args),
+            catch: (error) => {
+              // Bad arguments are always agent-recoverable: the model sees the
+              // message and rewrites the call next turn. Mark it so the TUI
+              // renders it muted instead of alarming the user with a red block.
+              if (error instanceof z.ZodError && toolInfo.formatValidationError) {
+                return new RecoverableError(toolInfo.formatValidationError(error), { cause: error })
+              }
+              return new RecoverableError(validationErrorMessage(id, error), { cause: error })
+            },
+          })
+          const result = yield* execute(args, ctx)
           if (result.metadata.truncated !== undefined) {
             return result
           }
@@ -153,12 +140,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
     })
 }
 
-export function define<
-  Parameters extends Schema.Decoder<unknown>,
-  Result extends Metadata,
-  R,
-  ID extends string = string,
->(
+export function define<Parameters extends z.ZodType, Result extends Metadata, R, ID extends string = string>(
   id: ID,
   init: Effect.Effect<Init<Parameters, Result>, never, R>,
 ): Effect.Effect<Info<Parameters, Result>, never, R | Truncate.Service | Agent.Service> & { id: ID } {
@@ -173,9 +155,7 @@ export function define<
   )
 }
 
-export function init<P extends Schema.Decoder<unknown>, M extends Metadata>(
-  info: Info<P, M>,
-): Effect.Effect<Def<P, M>> {
+export function init<P extends z.ZodType, M extends Metadata>(info: Info<P, M>): Effect.Effect<Def<P, M>> {
   return Effect.gen(function* () {
     const init = yield* info.init()
     return {
@@ -184,5 +164,3 @@ export function init<P extends Schema.Decoder<unknown>, M extends Metadata>(
     }
   })
 }
-
-export * as Tool from "./tool"

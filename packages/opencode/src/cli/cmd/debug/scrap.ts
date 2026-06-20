@@ -1,4 +1,6 @@
 import { EOL } from "os"
+import { Project } from "../../../project"
+import { Log } from "../../../util"
 import { cmd } from "../cmd"
 
 export const ScrapCommand = cmd({
@@ -6,10 +8,9 @@ export const ScrapCommand = cmd({
   describe: "list all known projects",
   builder: (yargs) => yargs,
   async handler() {
-    const { Project } = await import("@/project/project")
-    const { makeRuntime } = await import("@swust-code/core/effect/runtime")
-    const runtime = makeRuntime(Project.Service, Project.defaultLayer)
-    const list = await runtime.runPromise((project) => project.list())
+    const timer = Log.Default.time("scrap")
+    const list = await Project.list()
     process.stdout.write(JSON.stringify(list, null, 2) + EOL)
+    timer.stop()
   },
 })

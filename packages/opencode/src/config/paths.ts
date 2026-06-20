@@ -1,18 +1,20 @@
-export * as ConfigPaths from "./paths"
+﻿export * as ConfigPaths from "./paths"
 
 import path from "path"
-import { Flag } from "@swust-code/core/flag/flag"
-import { Global } from "@swust-code/core/global"
+import { Filesystem } from "@/util"
+import { Flag } from "@/flag/flag"
+import { Global } from "@/global"
 import { unique } from "remeda"
+import { JsonError } from "./error"
 import * as Effect from "effect/Effect"
-import { FSUtil } from "@swust-code/core/fs-util"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 
 export const files = Effect.fn("ConfigPaths.projectFiles")(function* (
   name: string,
   directory: string,
   worktree?: string,
 ) {
-  const afs = yield* FSUtil.Service
+  const afs = yield* AppFileSystem.Service
   return (yield* afs.up({
     targets: [`${name}.jsonc`, `${name}.json`],
     start: directory,
@@ -21,7 +23,7 @@ export const files = Effect.fn("ConfigPaths.projectFiles")(function* (
 })
 
 export const directories = Effect.fn("ConfigPaths.directories")(function* (directory: string, worktree?: string) {
-  const afs = yield* FSUtil.Service
+  const afs = yield* AppFileSystem.Service
   return unique([
     Global.Path.config,
     ...(!Flag.SWUST_CODE_DISABLE_PROJECT_CONFIG
@@ -40,6 +42,32 @@ export const directories = Effect.fn("ConfigPaths.directories")(function* (direc
   ])
 })
 
+export const claudeCommandDirectories = Effect.fn("ConfigPaths.claudeCommandDirectories")(function* (
+  directory: string,
+  worktree?: string,
+) {
+  if (Flag.SWUST_CODE_DISABLE_CLAUDE_CODE_COMMANDS) return []
+  const afs = yield* AppFileSystem.Service
+  return unique([
+    path.join(Global.Path.home, ".claude"),
+    ...(!Flag.SWUST_CODE_DISABLE_PROJECT_CONFIG
+      ? yield* afs.up({
+          targets: [".claude"],
+          start: directory,
+          stop: worktree,
+        })
+      : []),
+  ])
+})
+
 export function fileInDirectory(dir: string, name: string) {
   return [path.join(dir, `${name}.json`), path.join(dir, `${name}.jsonc`)]
+}
+
+/** Read a config file, returning undefined for missing files and throwing JsonError for other failures. */
+export async function readFile(filepath: string) {
+  return Filesystem.readText(filepath).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") return
+    throw new JsonError({ path: filepath }, { cause: err })
+  })
 }

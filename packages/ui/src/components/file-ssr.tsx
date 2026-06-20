@@ -128,12 +128,8 @@ function DiffSSRViewer<T>(props: SSRDiffFileProps<T>) {
             prerenderedHTML: local.preloadedDiff.prerenderedHTML,
           }
         : {
-            oldFile: local.before
-              ? { ...local.before, contents: typeof local.before.contents === "string" ? local.before.contents : "" }
-              : local.before,
-            newFile: local.after
-              ? { ...local.after, contents: typeof local.after.contents === "string" ? local.after.contents : "" }
-              : local.after,
+            oldFile: local.before,
+            newFile: local.after,
             lineAnnotations: annotations,
             fileContainer: fileDiffRef,
             containerWrapper: container,

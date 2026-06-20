@@ -1,52 +1,46 @@
-import { LayerNode } from "@swust-code/core/effect/layer-node"
-import { InstanceState } from "@/effect/instance-state"
+import { BusEvent } from "@/bus/bus-event"
+import { Bus } from "@/bus"
+import { InstanceState } from "@/effect"
 import { SessionID } from "./schema"
-import { NonNegativeInt } from "@swust-code/core/schema"
-import { Effect, Layer, Context, Schema } from "effect"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { EventV2 } from "@swust-code/core/event"
+import { Effect, Layer, Context } from "effect"
+import z from "zod"
 
-export const Info = Schema.Union([
-  Schema.Struct({
-    type: Schema.Literal("idle"),
-  }),
-  Schema.Struct({
-    type: Schema.Literal("retry"),
-    attempt: NonNegativeInt,
-    message: Schema.String,
-    action: Schema.optional(
-      Schema.Struct({
-        reason: Schema.String,
-        provider: Schema.String,
-        title: Schema.String,
-        message: Schema.String,
-        label: Schema.String,
-        link: Schema.optional(Schema.String),
-      }),
-    ),
-    next: NonNegativeInt,
-  }),
-  Schema.Struct({
-    type: Schema.Literal("busy"),
-  }),
-]).annotate({ identifier: "SessionStatus" })
-export type Info = Schema.Schema.Type<typeof Info>
+export const Info = z
+  .union([
+    z.object({
+      type: z.literal("idle"),
+    }),
+    z.object({
+      type: z.literal("retry"),
+      attempt: z.number(),
+      message: z.string(),
+      next: z.number(),
+    }),
+    z.object({
+      type: z.literal("busy"),
+      message: z.string().optional(),
+    }),
+  ])
+  .meta({
+    ref: "SessionStatus",
+  })
+export type Info = z.infer<typeof Info>
 
 export const Event = {
-  Status: EventV2.define({
-    type: "session.status",
-    schema: {
-      sessionID: SessionID,
+  Status: BusEvent.define(
+    "session.status",
+    z.object({
+      sessionID: SessionID.zod,
       status: Info,
-    },
-  }),
+    }),
+  ),
   // deprecated
-  Idle: EventV2.define({
-    type: "session.idle",
-    schema: {
-      sessionID: SessionID,
-    },
-  }),
+  Idle: BusEvent.define(
+    "session.idle",
+    z.object({
+      sessionID: SessionID.zod,
+    }),
+  ),
 }
 
 export interface Interface {
@@ -55,12 +49,12 @@ export interface Interface {
   readonly set: (sessionID: SessionID, status: Info) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/SessionStatus") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/SessionStatus") {}
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const events = yield* EventV2Bridge.Service
+    const bus = yield* Bus.Service
 
     const state = yield* InstanceState.make(
       Effect.fn("SessionStatus.state")(() => Effect.succeed(new Map<SessionID, Info>())),
@@ -77,9 +71,9 @@ export const layer = Layer.effect(
 
     const set = Effect.fn("SessionStatus.set")(function* (sessionID: SessionID, status: Info) {
       const data = yield* InstanceState.get(state)
-      yield* events.publish(Event.Status, { sessionID, status })
+      yield* bus.publish(Event.Status, { sessionID, status })
       if (status.type === "idle") {
-        yield* events.publish(Event.Idle, { sessionID })
+        yield* bus.publish(Event.Idle, { sessionID })
         data.delete(sessionID)
         return
       }
@@ -90,8 +84,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(EventV2Bridge.defaultLayer))
-
-export const node = LayerNode.make(layer, [EventV2Bridge.node])
+export const defaultLayer = layer.pipe(Layer.provide(Bus.layer))
 
 export * as SessionStatus from "./status"

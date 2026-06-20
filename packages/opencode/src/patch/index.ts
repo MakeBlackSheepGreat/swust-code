@@ -1,13 +1,17 @@
-import { Effect, Schema } from "effect"
+import z from "zod"
 import * as path from "path"
-import { FSUtil } from "@swust-code/core/fs-util"
-import * as Bom from "../util/bom"
+import * as fs from "fs/promises"
+import { readFileSync } from "fs"
+import { Log } from "../util"
 
-export const PatchSchema = Schema.Struct({
-  patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
+const log = Log.create({ service: "patch" })
+
+// Schema definitions
+export const PatchSchema = z.object({
+  patchText: z.string().describe("The full patch text that describes all changes to be made"),
 })
 
-export type PatchParams = Schema.Schema.Type<typeof PatchSchema>
+export type PatchParams = z.infer<typeof PatchSchema>
 
 // Core types matching the Rust implementation
 export interface ApplyPatchArgs {
@@ -301,17 +305,18 @@ export function maybeParseApplyPatch(
 interface ApplyPatchFileUpdate {
   unified_diff: string
   content: string
-  bom: boolean
 }
 
-export function deriveNewContentsFromChunks(
-  filePath: string,
-  chunks: UpdateFileChunk[],
-  originalText: string,
-): ApplyPatchFileUpdate {
-  const originalContent = Bom.split(originalText)
+export function deriveNewContentsFromChunks(filePath: string, chunks: UpdateFileChunk[]): ApplyPatchFileUpdate {
+  // Read original file content
+  let originalContent: string
+  try {
+    originalContent = readFileSync(filePath, "utf-8")
+  } catch (error) {
+    throw new Error(`Failed to read file ${filePath}: ${error}`, { cause: error })
+  }
 
-  let originalLines = originalContent.text.split("\n")
+  let originalLines = originalContent.split("\n")
 
   // Drop trailing empty element for consistent line counting
   if (originalLines.length > 0 && originalLines[originalLines.length - 1] === "") {
@@ -326,16 +331,14 @@ export function deriveNewContentsFromChunks(
     newLines.push("")
   }
 
-  const next = Bom.split(newLines.join("\n"))
-  const newContent = next.text
+  const newContent = newLines.join("\n")
 
   // Generate unified diff
-  const unifiedDiff = generateUnifiedDiff(originalContent.text, newContent)
+  const unifiedDiff = generateUnifiedDiff(originalContent, newContent)
 
   return {
     unified_diff: unifiedDiff,
     content: newContent,
-    bom: originalContent.bom || next.bom,
   }
 }
 
@@ -417,11 +420,11 @@ function applyReplacements(lines: string[], replacements: Array<[number, number,
 // Normalize Unicode punctuation to ASCII equivalents (like Rust's normalize_unicode)
 function normalizeUnicode(str: string): string {
   return str
-    .replace(/[‘’‚‛]/g, "'") // single quotes
-    .replace(/[“”„‟]/g, '"') // double quotes
-    .replace(/[‐‑‒–—―]/g, "-") // dashes
-    .replace(/…/g, "...") // ellipsis
-    .replace(/ /g, " ") // non-breaking space
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'") // single quotes
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"') // double quotes
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, "-") // dashes
+    .replace(/\u2026/g, "...") // ellipsis
+    .replace(/\u00A0/g, " ") // non-breaking space
 }
 
 type Comparator = (a: string, b: string) => boolean
@@ -511,12 +514,10 @@ function generateUnifiedDiff(oldContent: string, newContent: string): string {
 }
 
 // Apply hunks to filesystem
-export const applyHunksToFiles = Effect.fn("Patch.applyHunksToFiles")(function* (hunks: Hunk[]) {
+export async function applyHunksToFiles(hunks: Hunk[]): Promise<AffectedPaths> {
   if (hunks.length === 0) {
-    return yield* Effect.fail(new Error("No files were modified."))
+    throw new Error("No files were modified.")
   }
-
-  const fs = yield* FSUtil.Service
 
   const added: string[] = []
   const modified: string[] = []
@@ -524,58 +525,66 @@ export const applyHunksToFiles = Effect.fn("Patch.applyHunksToFiles")(function* 
 
   for (const hunk of hunks) {
     switch (hunk.type) {
-      case "add": {
-        yield* fs.writeWithDirs(hunk.path, hunk.contents)
+      case "add":
+        // Create parent directories
+        const addDir = path.dirname(hunk.path)
+        if (addDir !== "." && addDir !== "/") {
+          await fs.mkdir(addDir, { recursive: true })
+        }
+
+        await fs.writeFile(hunk.path, hunk.contents, "utf-8")
         added.push(hunk.path)
-        yield* Effect.logInfo(`Added file: ${hunk.path}`)
+        log.info(`Added file: ${hunk.path}`)
         break
-      }
 
-      case "delete": {
-        yield* fs.remove(hunk.path)
+      case "delete":
+        await fs.unlink(hunk.path)
         deleted.push(hunk.path)
-        yield* Effect.logInfo(`Deleted file: ${hunk.path}`)
+        log.info(`Deleted file: ${hunk.path}`)
         break
-      }
 
-      case "update": {
-        const originalText = yield* fs.readFileString(hunk.path)
-        const fileUpdate = deriveNewContentsFromChunks(hunk.path, hunk.chunks, originalText)
+      case "update":
+        const fileUpdate = deriveNewContentsFromChunks(hunk.path, hunk.chunks)
 
         if (hunk.move_path) {
-          yield* fs.writeWithDirs(hunk.move_path, Bom.join(fileUpdate.content, fileUpdate.bom))
-          yield* fs.remove(hunk.path)
+          // Handle file move
+          const moveDir = path.dirname(hunk.move_path)
+          if (moveDir !== "." && moveDir !== "/") {
+            await fs.mkdir(moveDir, { recursive: true })
+          }
+
+          await fs.writeFile(hunk.move_path, fileUpdate.content, "utf-8")
+          await fs.unlink(hunk.path)
           modified.push(hunk.move_path)
-          yield* Effect.logInfo(`Moved file: ${hunk.path} -> ${hunk.move_path}`)
+          log.info(`Moved file: ${hunk.path} -> ${hunk.move_path}`)
         } else {
-          yield* fs.writeWithDirs(hunk.path, Bom.join(fileUpdate.content, fileUpdate.bom))
+          // Regular update
+          await fs.writeFile(hunk.path, fileUpdate.content, "utf-8")
           modified.push(hunk.path)
-          yield* Effect.logInfo(`Updated file: ${hunk.path}`)
+          log.info(`Updated file: ${hunk.path}`)
         }
         break
-      }
     }
   }
 
-  return { added, modified, deleted } satisfies AffectedPaths
-})
+  return { added, modified, deleted }
+}
 
 // Main patch application function
-export const applyPatch = Effect.fn("Patch.applyPatch")(function* (patchText: string) {
+export async function applyPatch(patchText: string): Promise<AffectedPaths> {
   const { hunks } = parsePatch(patchText)
-  return yield* applyHunksToFiles(hunks)
-})
+  return applyHunksToFiles(hunks)
+}
 
-type MaybeApplyPatchVerifiedResult =
+// Async version of maybeParseApplyPatchVerified
+export async function maybeParseApplyPatchVerified(
+  argv: string[],
+  cwd: string,
+): Promise<
   | { type: MaybeApplyPatchVerified.Body; action: ApplyPatchAction }
   | { type: MaybeApplyPatchVerified.CorrectnessError; error: Error }
   | { type: MaybeApplyPatchVerified.NotApplyPatch }
-
-// Effectful verified-parse: needs FSUtil.Service to read existing files
-export const maybeParseApplyPatchVerified = Effect.fn("Patch.maybeParseApplyPatchVerified")(function* (
-  argv: string[],
-  cwd: string,
-) {
+> {
   // Detect implicit patch invocation (raw patch without apply_patch command)
   if (argv.length === 1) {
     try {
@@ -583,7 +592,7 @@ export const maybeParseApplyPatchVerified = Effect.fn("Patch.maybeParseApplyPatc
       return {
         type: MaybeApplyPatchVerified.CorrectnessError,
         error: new Error(ApplyPatchError.ImplicitInvocation),
-      } satisfies MaybeApplyPatchVerifiedResult
+      }
     } catch {
       // Not a patch, continue
     }
@@ -592,9 +601,8 @@ export const maybeParseApplyPatchVerified = Effect.fn("Patch.maybeParseApplyPatc
   const result = maybeParseApplyPatch(argv)
 
   switch (result.type) {
-    case MaybeApplyPatch.Body: {
-      const fs = yield* FSUtil.Service
-      const args = result.args
+    case MaybeApplyPatch.Body:
+      const { args } = result
       const effectiveCwd = args.workdir ? path.resolve(cwd, args.workdir) : cwd
       const changes = new Map<string, ApplyPatchFileChange>()
 
@@ -612,39 +620,27 @@ export const maybeParseApplyPatchVerified = Effect.fn("Patch.maybeParseApplyPatc
             })
             break
 
-          case "delete": {
+          case "delete":
+            // For delete, we need to read the current content
             const deletePath = path.resolve(effectiveCwd, hunk.path)
-            const content = yield* fs.readFileString(deletePath).pipe(Effect.catch(() => Effect.succeed(undefined)))
-            if (content === undefined) {
+            try {
+              const content = await fs.readFile(deletePath, "utf-8")
+              changes.set(resolvedPath, {
+                type: "delete",
+                content,
+              })
+            } catch {
               return {
                 type: MaybeApplyPatchVerified.CorrectnessError,
                 error: new Error(`Failed to read file for deletion: ${deletePath}`),
-              } satisfies MaybeApplyPatchVerifiedResult
+              }
             }
-            changes.set(resolvedPath, {
-              type: "delete",
-              content,
-            })
             break
-          }
 
-          case "update": {
+          case "update":
             const updatePath = path.resolve(effectiveCwd, hunk.path)
-            const originalText = yield* fs
-              .readFileString(updatePath)
-              .pipe(
-                Effect.catch((cause) =>
-                  Effect.succeed(new Error(`Failed to read file ${updatePath}: ${cause}`, { cause })),
-                ),
-              )
-            if (originalText instanceof Error) {
-              return {
-                type: MaybeApplyPatchVerified.CorrectnessError,
-                error: originalText,
-              } satisfies MaybeApplyPatchVerifiedResult
-            }
             try {
-              const fileUpdate = deriveNewContentsFromChunks(updatePath, hunk.chunks, originalText)
+              const fileUpdate = deriveNewContentsFromChunks(updatePath, hunk.chunks)
               changes.set(resolvedPath, {
                 type: "update",
                 unified_diff: fileUpdate.unified_diff,
@@ -655,10 +651,9 @@ export const maybeParseApplyPatchVerified = Effect.fn("Patch.maybeParseApplyPatc
               return {
                 type: MaybeApplyPatchVerified.CorrectnessError,
                 error: error as Error,
-              } satisfies MaybeApplyPatchVerifiedResult
+              }
             }
             break
-          }
         }
       }
 
@@ -669,18 +664,17 @@ export const maybeParseApplyPatchVerified = Effect.fn("Patch.maybeParseApplyPatc
           patch: args.patch,
           cwd: effectiveCwd,
         },
-      } satisfies MaybeApplyPatchVerifiedResult
-    }
+      }
 
     case MaybeApplyPatch.PatchParseError:
       return {
         type: MaybeApplyPatchVerified.CorrectnessError,
         error: result.error,
-      } satisfies MaybeApplyPatchVerifiedResult
+      }
 
     case MaybeApplyPatch.NotApplyPatch:
-      return { type: MaybeApplyPatchVerified.NotApplyPatch } satisfies MaybeApplyPatchVerifiedResult
+      return { type: MaybeApplyPatchVerified.NotApplyPatch }
   }
-})
+}
 
 export * as Patch from "."

@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+﻿import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { Prompt } from "@/context/prompt"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
@@ -61,8 +61,6 @@ beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
     useNavigate: () => () => undefined,
     useParams: () => params,
-    useLocation: () => ({}),
-    useSearchParams: () => [{}, () => undefined],
   }))
 
   mock.module("@swust-code/sdk/v2/client", () => ({
@@ -76,7 +74,7 @@ beforeAll(async () => {
     showToast: () => 0,
   }))
 
-  mock.module("@swust-code/core/util/encode", () => ({
+  mock.module("@swust-code/shared/util/encode", () => ({
     base64Encode: (value: string) => value,
   }))
 
@@ -105,16 +103,6 @@ beforeAll(async () => {
     }),
   }))
 
-  mock.module("@/context/server", () => ({
-    useServer: () => ({ key: "server-key" }),
-  }))
-
-  mock.module("@/context/tabs", () => ({
-    useTabs: () => ({
-      promoteDraft: () => undefined,
-    }),
-  }))
-
   mock.module("@/context/prompt", () => ({
     usePrompt: () => ({
       current: () => promptValue,
@@ -139,7 +127,6 @@ beforeAll(async () => {
   mock.module("@/context/sdk", () => ({
     useSDK: () => {
       const sdk = {
-        scope: "local",
         directory: "/repo/main",
         client: rootClient,
         url: "http://localhost:4096",
@@ -175,8 +162,8 @@ beforeAll(async () => {
     }),
   }))
 
-  mock.module("@/context/server-sync", () => ({
-    useServerSync: () => ({
+  mock.module("@/context/global-sync", () => ({
+    useGlobalSync: () => ({
       child: (directory: string) => {
         syncedDirectories.push(directory)
         storedSessions[directory] ??= []

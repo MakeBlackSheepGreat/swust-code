@@ -1,26 +1,28 @@
-import { EventV2 } from "@swust-code/core/event"
+import { BusEvent } from "@/bus/bus-event"
 import { SessionID } from "@/session/schema"
-import { Schema } from "effect"
+import z from "zod"
 import { Task, TaskEventKind } from "./schema"
 
-export const Created = EventV2.define({
-  type: "task.created",
-  schema: {
-    sessionID: SessionID,
+export const Created = BusEvent.define(
+  "task.created",
+  z.object({
+    sessionID: SessionID.zod,
     task: Task,
-  },
-})
+  }),
+)
 
-export const UpdatedKind = Schema.Literals(["started", "unstarted", "blocked", "unblocked", "done", "abandoned", "renamed"])
-export type UpdatedKind = Schema.Schema.Type<typeof UpdatedKind>
+// `kind` narrows the lifecycle transition that produced this event. `created`
+// is excluded — new rows ride [[Created]] so external consumers can split
+// "row appeared" from "row mutated" without an if-kind branch (matching
+// actor.registered vs actor.status).
+export const UpdatedKind = TaskEventKind.exclude(["created"])
+export type UpdatedKind = z.infer<typeof UpdatedKind>
 
-export const Updated = EventV2.define({
-  type: "task.updated",
-  schema: {
-    sessionID: SessionID,
+export const Updated = BusEvent.define(
+  "task.updated",
+  z.object({
+    sessionID: SessionID.zod,
     task: Task,
     kind: UpdatedKind,
-  },
-})
-
-void TaskEventKind
+  }),
+)

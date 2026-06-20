@@ -1,7 +1,4 @@
-import { LayerNode } from "@swust-code/core/effect/layer-node"
-import { httpClient } from "@swust-code/core/effect/layer-node-platform"
 import { Cache, Clock, Duration, Effect, Layer, Option, Schema, SchemaGetter, Context } from "effect"
-import { serviceUse } from "@swust-code/core/effect/service-use"
 import {
   FetchHttpClient,
   HttpClient,
@@ -182,9 +179,7 @@ export interface Interface {
   readonly poll: (input: Login) => Effect.Effect<PollResult, AccountError>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/Account") {}
-
-export const use = serviceUse(Service)
+export class Service extends Context.Service<Service, Interface>()("@opencode/Account") {}
 
 export const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpClient> = Layer.effect(
   Service,
@@ -456,8 +451,6 @@ export const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(AccountRepo.defaultLayer), Layer.provide(FetchHttpClient.layer))
-
-export const node = LayerNode.make(layer, [AccountRepo.node, httpClient])
+export const defaultLayer = layer.pipe(Layer.provide(AccountRepo.layer), Layer.provide(FetchHttpClient.layer))
 
 export * as Account from "./account"

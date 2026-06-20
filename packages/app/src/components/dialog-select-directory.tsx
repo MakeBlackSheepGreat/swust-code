@@ -1,21 +1,20 @@
-import { useDialog } from "@swust-code/ui/context/dialog"
+﻿import { useDialog } from "@swust-code/ui/context/dialog"
 import { Dialog } from "@swust-code/ui/dialog"
 import { FileIcon } from "@swust-code/ui/file-icon"
 import { List } from "@swust-code/ui/list"
 import type { ListRef } from "@swust-code/ui/list"
-import { getDirectory, getFilename } from "@swust-code/core/util/path"
+import { getDirectory, getFilename } from "@swust-code/shared/util/path"
 import fuzzysort from "fuzzysort"
 import { createMemo, createResource, createSignal } from "solid-js"
-import { ServerSDK } from "@/context/server-sdk"
+import { useGlobalSDK } from "@/context/global-sdk"
+import { useGlobalSync } from "@/context/global-sync"
+import { useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
-import { ServerConnection } from "@/context/server"
-import { useGlobal } from "@/context/global"
 
 interface DialogSelectDirectoryProps {
   title?: string
   multiple?: boolean
   onSelect: (result: string | string[] | null) => void
-  server: ServerConnection.Any
 }
 
 type Row = {
@@ -128,7 +127,11 @@ function uniqueRows(rows: Row[]) {
   })
 }
 
-function useDirectorySearch(args: { sdk: ServerSDK; start: () => string | undefined; home: () => string }) {
+function useDirectorySearch(args: {
+  sdk: ReturnType<typeof useGlobalSDK>
+  start: () => string | undefined
+  home: () => string
+}) {
   const cache = new Map<string, Promise<Array<{ name: string; absolute: string }>>>()
   let current = 0
 
@@ -243,8 +246,9 @@ function useDirectorySearch(args: { sdk: ServerSDK; start: () => string | undefi
 }
 
 export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
-  const global = useGlobal()
-  const { sync, sdk, ...serverCtx } = global.createServerCtx(props.server)
+  const sync = useGlobalSync()
+  const sdk = useGlobalSDK()
+  const layout = useLayout()
   const dialog = useDialog()
   const language = useLanguage()
 
@@ -275,7 +279,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   })
 
   const recentProjects = createMemo(() => {
-    const projects = serverCtx.projects.list()
+    const projects = layout.projects.list()
     const byProject = new Map<string, number>()
 
     for (const project of projects) {
@@ -320,7 +324,6 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   return (
     <Dialog title={props.title ?? language.t("command.project.open")}>
       <List
-        class="px-3"
         search={{ placeholder: language.t("dialog.directory.search.placeholder"), autofocus: true }}
         emptyMessage={language.t("dialog.directory.empty")}
         loadingMessage={language.t("common.loading")}

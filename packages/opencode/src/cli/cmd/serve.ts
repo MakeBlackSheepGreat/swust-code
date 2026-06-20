@@ -1,24 +1,21 @@
-import { Effect } from "effect"
-import { effectCmd } from "../effect-cmd"
+import { Server } from "../../server/server"
+import { cmd } from "./cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
-import { Flag } from "@swust-code/core/flag/flag"
+import { Flag } from "../../flag/flag"
 
-export const ServeCommand = effectCmd({
+export const ServeCommand = cmd({
   command: "serve",
   builder: (yargs) => withNetworkOptions(yargs),
   describe: "starts a headless swust-code server",
-  // Server loads instances per-request via x-opencode-directory header — no
-  // need for an ambient project InstanceContext at startup.
-  instance: false,
-  handler: Effect.fn("Cli.serve")(function* (args) {
-    const { Server } = yield* Effect.promise(() => import("../../server/server"))
+  handler: async (args) => {
     if (!Flag.SWUST_CODE_SERVER_PASSWORD) {
       console.log("Warning: SWUST_CODE_SERVER_PASSWORD is not set; server is unsecured.")
     }
-    const opts = yield* resolveNetworkOptions(args)
-    const server = yield* Effect.promise(() => Server.listen(opts))
+    const opts = await resolveNetworkOptions(args)
+    const server = await Server.listen(opts)
     console.log(`swust-code server listening on http://${server.hostname}:${server.port}`)
 
-    yield* Effect.never
-  }),
+    await new Promise(() => {})
+    await server.stop()
+  },
 })

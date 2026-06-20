@@ -5,13 +5,6 @@ import { fileURLToPath } from "url"
 
 const theme = fileURLToPath(new URL("./public/oc-theme-preload.js", import.meta.url))
 
-const channel = (() => {
-  const raw = process.env.OPENCODE_CHANNEL
-  if (raw === "dev" || raw === "beta" || raw === "prod") return raw
-  if (process.env.OPENCODE_CHANNEL === "latest") return "prod"
-  return "dev"
-})()
-
 /**
  * @type {import("vite").PluginOption}
  */
@@ -24,9 +17,6 @@ export default [
           alias: {
             "@": fileURLToPath(new URL("./src", import.meta.url)),
           },
-        },
-        define: {
-          "import.meta.env.VITE_OPENCODE_CHANNEL": JSON.stringify(channel),
         },
         worker: {
           format: "es",

@@ -1,17 +1,17 @@
 import { describe, expect } from "bun:test"
-import { Effect, Fiber, Layer, Queue } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import { QuestionTool } from "../../src/tool/question"
 import { Question } from "../../src/question"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Agent } from "../../src/agent/agent"
-import { CrossSpawnSpawner } from "@swust-code/core/cross-spawn-spawner"
-import { Truncate } from "@/tool/truncate"
+import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
+import { Truncate } from "../../src/tool"
+import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { EventV2Bridge } from "../../src/event-v2-bridge"
 
 const ctx = {
   sessionID: SessionID.make("ses_test-session"),
-  messageID: MessageID.make("msg_test-message"),
+  messageID: MessageID.make("test-message"),
   callID: "test-call",
   agent: "test-agent",
   abort: AbortSignal.any([]),
@@ -21,78 +21,107 @@ const ctx = {
 }
 
 const it = testEffect(
-  Layer.mergeAll(
-    Question.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer)),
-    CrossSpawnSpawner.defaultLayer,
-    Truncate.defaultLayer,
-    Agent.defaultLayer,
-  ),
+  Layer.mergeAll(Question.defaultLayer, CrossSpawnSpawner.defaultLayer, Truncate.defaultLayer, Agent.defaultLayer),
 )
 
 const pending = Effect.fn("QuestionToolTest.pending")(function* (question: Question.Interface) {
-  const events = yield* EventV2Bridge.Service
-  const asked = yield* Queue.unbounded<void>()
-  const off = yield* events.listen((event) => {
-    if (event.type === Question.Event.Asked.type) Queue.offerUnsafe(asked, undefined)
-    return Effect.void
-  })
-  yield* Effect.addFinalizer(() => off)
-
   for (;;) {
     const items = yield* question.list()
     const item = items[0]
     if (item) return item
-    yield* Queue.take(asked).pipe(Effect.timeout("2 seconds"))
+    yield* Effect.sleep("10 millis")
   }
 })
 
 describe("tool.question", () => {
-  it.instance("should successfully execute with valid question parameters", () =>
-    Effect.gen(function* () {
-      const question = yield* Question.Service
-      const toolInfo = yield* QuestionTool
-      const tool = yield* toolInfo.init()
-      const questions = [
-        {
-          question: "What is your favorite color?",
-          header: "Color",
-          options: [
-            { label: "Red", description: "The color of passion" },
-            { label: "Blue", description: "The color of sky" },
-          ],
-          multiple: false,
-        },
-      ]
+  it.live("should successfully execute with valid question parameters", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const question = yield* Question.Service
+        const toolInfo = yield* QuestionTool
+        const tool = yield* toolInfo.init()
+        const questions = [
+          {
+            question: "What is your favorite color?",
+            header: "Color",
+            options: [
+              { label: "Red", description: "The color of passion" },
+              { label: "Blue", description: "The color of sky" },
+            ],
+            multiple: false,
+          },
+        ]
 
-      const fiber = yield* tool.execute({ questions }, ctx).pipe(Effect.forkScoped)
-      const item = yield* pending(question)
-      yield* question.reply({ requestID: item.id, answers: [["Red"]] })
+        const fiber = yield* tool.execute({ questions }, ctx).pipe(Effect.forkScoped)
+        const item = yield* pending(question)
+        yield* question.reply({ requestID: item.id, answers: [["Red"]] })
 
-      const result = yield* Fiber.join(fiber)
-      expect(result.title).toBe("Asked 1 question")
-    }),
+        const result = yield* Fiber.join(fiber)
+        expect(result.title).toBe("Asked 1 question")
+      }),
+    ),
   )
 
-  it.instance("should now pass with a header longer than 12 but less than 30 chars", () =>
-    Effect.gen(function* () {
-      const question = yield* Question.Service
-      const toolInfo = yield* QuestionTool
-      const tool = yield* toolInfo.init()
-      const questions = [
-        {
-          question: "What is your favorite animal?",
-          header: "This Header is Over 12",
-          options: [{ label: "Dog", description: "Man's best friend" }],
-        },
-      ]
+  it.live("should now pass with a header longer than 12 but less than 30 chars", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const question = yield* Question.Service
+        const toolInfo = yield* QuestionTool
+        const tool = yield* toolInfo.init()
+        const questions = [
+          {
+            question: "What is your favorite animal?",
+            header: "This Header is Over 12",
+            options: [{ label: "Dog", description: "Man's best friend" }],
+          },
+        ]
 
-      const fiber = yield* tool.execute({ questions }, ctx).pipe(Effect.forkScoped)
-      const item = yield* pending(question)
-      yield* question.reply({ requestID: item.id, answers: [["Dog"]] })
+        const fiber = yield* tool.execute({ questions }, ctx).pipe(Effect.forkScoped)
+        const item = yield* pending(question)
+        yield* question.reply({ requestID: item.id, answers: [["Dog"]] })
 
-      const result = yield* Fiber.join(fiber)
-      expect(result.output).toContain(`"What is your favorite animal?"="Dog"`)
-    }),
+        const result = yield* Fiber.join(fiber)
+        expect(result.output).toContain(`"What is your favorite animal?"="Dog"`)
+      }),
+    ),
+  )
+
+  it.live("should auto-resolve to a [Never-Ask] directive when never-ask is on", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const question = yield* Question.Service
+        yield* question.setNeverAsk(true)
+        const toolInfo = yield* QuestionTool
+        const tool = yield* toolInfo.init()
+        const questions = [
+          {
+            question: "Which approach should I take?",
+            header: "Approach",
+            options: [
+              { label: "A", description: "First" },
+              { label: "B", description: "Second" },
+            ],
+          },
+          {
+            question: "And the second one?",
+            header: "Second",
+            options: [{ label: "X", description: "Only" }],
+          },
+        ]
+
+        // No reply is provided: with never-ask on, execute must return without
+        // ever creating a pending question (i.e. it does not block on ask()).
+        const result = yield* tool.execute({ questions }, ctx)
+
+        expect(yield* question.list()).toHaveLength(0)
+        expect(result.title).toBe("Auto-resolved 2 questions")
+        expect(result.output).toContain("[Never-Ask]")
+        expect(result.output).toContain("explicitly state which option you chose")
+        // One auto-answer per question so the UI shows it instead of "(no answer)".
+        expect(result.metadata.answers).toHaveLength(2)
+        expect(result.metadata.answers[0]).toEqual(["[Never-Ask] The model will decide autonomously"])
+      }),
+    ),
   )
 
   // intentionally removed the zod validation due to tool call errors, hoping prompting is gonna be good enough

@@ -1,4 +1,4 @@
-import type { PermissionRequest, QuestionRequest, Session } from "@swust-code/sdk/v2/client"
+﻿import type { PermissionRequest, QuestionRequest, Session } from "@swust-code/sdk/v2/client"
 
 function sessionTreeRequest<T>(
   session: Session[],

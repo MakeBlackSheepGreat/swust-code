@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js"
+﻿import { For, Show } from "solid-js"
 import type { PermissionRequest } from "@swust-code/sdk/v2"
 import { Button } from "@swust-code/ui/button"
 import { DockPrompt } from "@swust-code/ui/dock-prompt"

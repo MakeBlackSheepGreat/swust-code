@@ -1,7 +1,10 @@
-{
+﻿{
   "$schema": "https://json.schemastore.org/package",
   "name": "@swust-code/script",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "semver": "^7.6.3"
   },

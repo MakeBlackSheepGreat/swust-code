@@ -13,5 +13,3 @@ export async function extractZip(zipPath: string, destDir: string) {
 
   await Process.run(["unzip", "-o", "-q", zipPath, "-d", destDir])
 }
-
-export * as Archive from "./archive"

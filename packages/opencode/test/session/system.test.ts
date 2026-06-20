@@ -1,86 +1,72 @@
-import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
-import type { Agent } from "../../src/agent/agent"
-import { NamedError } from "@swust-code/core/util/error"
-import { Skill } from "../../src/skill"
-import { Permission } from "../../src/permission"
+import { describe, expect, test } from "bun:test"
+import path from "path"
+import { Effect } from "effect"
+import { Agent } from "../../src/agent/agent"
+import { Instance } from "../../src/project/instance"
 import { SystemPrompt } from "../../src/session/system"
-import { LocationServiceMap } from "@swust-code/core/location-layer"
-import { testEffect } from "../lib/effect"
+import { provideInstance, tmpdir } from "../fixture/fixture"
 
-const skills: Skill.Info[] = [
-  {
-    name: "zeta-skill",
-    description: "Zeta skill.",
-    location: "/tmp/zeta-skill/SKILL.md",
-    content: "# zeta-skill",
-  },
-  {
-    name: "alpha-skill",
-    description: "Alpha skill.",
-    location: "/tmp/alpha-skill/SKILL.md",
-    content: "# alpha-skill",
-  },
-  {
-    name: "middle-skill",
-    description: "Middle skill.",
-    location: "/tmp/middle-skill/SKILL.md",
-    content: "# middle-skill",
-  },
-  {
-    name: "manual-skill",
-    location: "/tmp/manual-skill/SKILL.md",
-    content: "# manual-skill",
-  },
-]
-
-const build: Agent.Info = {
-  name: "build",
-  mode: "primary",
-  permission: Permission.fromConfig({ "*": "allow" }),
-  options: {},
+function load<A>(dir: string, fn: (svc: Agent.Interface) => Effect.Effect<A>) {
+  return Effect.runPromise(provideInstance(dir)(Agent.Service.use(fn)).pipe(Effect.provide(Agent.defaultLayer)))
 }
 
-const it = testEffect(
-  SystemPrompt.layer.pipe(
-    Layer.provide(LocationServiceMap.layer),
-    Layer.provide(
-      Layer.succeed(
-        Skill.Service,
-        Skill.Service.of({
-          get: (name) => Effect.succeed(skills.find((skill) => skill.name === name)),
-          require: (name) => {
-            const info = skills.find((skill) => skill.name === name)
-            if (info) return Effect.succeed(info)
-            return Effect.fail(new Skill.NotFoundError({ name, available: skills.map((skill) => skill.name) }))
-          },
-          all: () => Effect.succeed(skills),
-          dirs: () => Effect.succeed([]),
-          available: () => Effect.succeed(skills),
-        }),
-      ),
-    ),
-  ),
-)
-
 describe("session.system", () => {
-  it.effect("skills output is sorted by name and stable across calls", () =>
-    Effect.gen(function* () {
-      const prompt = yield* SystemPrompt.Service
-      const first = yield* prompt.skills(build)
-      const second = yield* prompt.skills(build)
-      const output = first ?? (yield* Effect.fail(new NamedError.Unknown({ message: "missing skills output" })))
+  test("skills output is sorted by name and stable across calls", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        for (const [name, description] of [
+          ["zeta-skill", "Zeta skill."],
+          ["alpha-skill", "Alpha skill."],
+          ["middle-skill", "Middle skill."],
+        ]) {
+          const skillDir = path.join(dir, ".swust-code", "skill", name)
+          await Bun.write(
+            path.join(skillDir, "SKILL.md"),
+            `---
+name: ${name}
+description: ${description}
+---
 
-      expect(first).toBe(second)
+# ${name}
+`,
+          )
+        }
+      },
+    })
 
-      const alpha = output.indexOf("<name>alpha-skill</name>")
-      const middle = output.indexOf("<name>middle-skill</name>")
-      const zeta = output.indexOf("<name>zeta-skill</name>")
+    const home = process.env.HOME
+    const userProfile = process.env.USERPROFILE
+    process.env.HOME = tmp.path
+    process.env.USERPROFILE = tmp.path
 
-      expect(alpha).toBeGreaterThan(-1)
-      expect(middle).toBeGreaterThan(alpha)
-      expect(zeta).toBeGreaterThan(middle)
-      expect(output).not.toContain("manual-skill")
-    }),
-  )
+    try {
+      await Instance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          const build = await load(tmp.path, (svc) => svc.get("build"))
+          const runSkills = Effect.gen(function* () {
+            const svc = yield* SystemPrompt.Service
+            return yield* svc.skills(build!)
+          }).pipe(Effect.provide(SystemPrompt.defaultLayer))
+
+          const first = await Effect.runPromise(runSkills)
+          const second = await Effect.runPromise(runSkills)
+
+          expect(first).toBe(second)
+
+          const alpha = first!.indexOf("<name>alpha-skill</name>")
+          const middle = first!.indexOf("<name>middle-skill</name>")
+          const zeta = first!.indexOf("<name>zeta-skill</name>")
+
+          expect(alpha).toBeGreaterThan(-1)
+          expect(middle).toBeGreaterThan(alpha)
+          expect(zeta).toBeGreaterThan(middle)
+        },
+      })
+    } finally {
+      process.env.HOME = home
+      process.env.USERPROFILE = userProfile
+    }
+  })
 })

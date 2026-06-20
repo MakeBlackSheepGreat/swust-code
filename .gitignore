@@ -1,33 +1,47 @@
-# Secrets and credentials
+.DS_Store
+node_modules
+.worktrees
+.sst
 .env
-.env.local
-.env.*.local
-auth.json
-credentials.json
-*.key
-*.pem
+.idea
+.vscode
+.codex
+*~
+playground
+tmp
+dist
+ts-dist
+*.tgz
+.turbo
+**/.serena
+.serena/
+/result
+refs
+Session.vim
+/opencode.json
+a.out
+target
+.scripts
+.direnv/
 
-# Database
-*.db
-*.db-wal
-*.db-shm
-
-# Build artifacts
-node_modules/
-dist/
-ts-dist/
-.build/
-.sst/
-.turbo/
+# Local dev files
+opencode-dev
+UPCOMING_CHANGELOG.md
+logs/
 *.bun-build
 tsconfig.tsbuildinfo
+.dev-home/
 
-# OS
-.DS_Store
+# Local agent harness state
+.claude/
+*.pid
+.mimo-worktrees
+.mimocode/
 
-# Other tools
-.opencode/
-.codex/
-.serena/
-.omo/
-.playwright-browsers/
+# experiment run artifacts (regenerated per run, not source)
+experiment/*.log
+experiment/last-outcome.json
+/experiment
+
+/mimoapi/
+/packages/opencode/src/ext

@@ -1,9 +1,24 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@swust-code/plugin",
-  "version": "1.17.4",
+  "version": "0.5.0",
+  "description": "Plugin SDK for extending SWUST Code",
+  "keywords": ["swust-code", "ai", "plugin", "coding-assistant"],
   "type": "module",
   "license": "MIT",
+  "author": "SWUST Code Contributors",
+  "homepage": "https://swust-code.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MakeBlackSheepGreat/swust-code.git",
+    "directory": "packages/plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/MakeBlackSheepGreat/swust-code/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "build": "tsc"
@@ -22,15 +37,11 @@
     "zod": "catalog:"
   },
   "peerDependencies": {
-    "@opentui/core": ">=0.3.4",
-    "@opentui/keymap": ">=0.3.4",
-    "@opentui/solid": ">=0.3.4"
+    "@opentui/core": ">=0.1.101",
+    "@opentui/solid": ">=0.1.101"
   },
   "peerDependenciesMeta": {
     "@opentui/core": {
-      "optional": true
-    },
-    "@opentui/keymap": {
       "optional": true
     },
     "@opentui/solid": {
@@ -38,9 +49,8 @@
     }
   },
   "devDependencies": {
-    "@opentui/core": "catalog:",
-    "@opentui/keymap": "catalog:",
-    "@opentui/solid": "catalog:",
+    "@opentui/core": "0.1.101",
+    "@opentui/solid": "0.1.101",
     "@tsconfig/node22": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:",

@@ -25,10 +25,12 @@ export function remove(sessionID: SessionID, actorID: string): void {
   store.delete(key(sessionID, actorID))
 }
 
+/** Test-only escape hatch. Resets store between tests. */
 export function _reset(): void {
   store.clear()
 }
 
+/** Test-only escape hatch. Returns total entry count. */
 export function _size(): number {
   return store.size
 }

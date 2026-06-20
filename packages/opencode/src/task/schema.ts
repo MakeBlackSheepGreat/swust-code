@@ -1,27 +1,27 @@
-import { Schema } from "effect"
-import { SessionID } from "@/session/schema"
+import z from "zod"
+import { SessionID } from "../session/schema"
 
-export const TaskID = Schema.String.check(Schema.isPattern(/^T\d+(\.\d+)*$/)).pipe(Schema.brand("TaskID"))
-export type TaskID = Schema.Schema.Type<typeof TaskID>
+export const TaskID = z.string().regex(/^T\d+(\.\d+)*$/, "Task ID must be Tn or Tn.m...")
+export type TaskID = z.infer<typeof TaskID>
 
-export const TaskStatus = Schema.Literals(["open", "in_progress", "blocked", "done", "abandoned"])
-export type TaskStatus = Schema.Schema.Type<typeof TaskStatus>
+export const TaskStatus = z.enum(["open", "in_progress", "blocked", "done", "abandoned"])
+export type TaskStatus = z.infer<typeof TaskStatus>
 
-export const Task = Schema.Struct({
+export const Task = z.object({
   id: TaskID,
-  session_id: SessionID,
-  parent_task_id: Schema.optional(TaskID),
+  session_id: SessionID.zod,
+  parent_task_id: TaskID.optional(),
   status: TaskStatus,
-  summary: Schema.String,
-  owner: Schema.optional(Schema.String),
-  created_at: Schema.Number,
-  last_event_at: Schema.Number,
-  ended_at: Schema.optional(Schema.Number),
-  cleanup_after: Schema.optional(Schema.Number),
+  summary: z.string(),
+  owner: z.string().optional(),
+  created_at: z.number(),
+  last_event_at: z.number(),
+  ended_at: z.number().optional(),
+  cleanup_after: z.number().optional(),
 })
-export type Task = Schema.Schema.Type<typeof Task>
+export type Task = z.infer<typeof Task>
 
-export const TaskEventKind = Schema.Literals([
+export const TaskEventKind = z.enum([
   "created",
   "started",
   "unstarted",
@@ -31,13 +31,13 @@ export const TaskEventKind = Schema.Literals([
   "abandoned",
   "renamed",
 ])
-export type TaskEventKind = Schema.Schema.Type<typeof TaskEventKind>
+export type TaskEventKind = z.infer<typeof TaskEventKind>
 
-export const TaskEvent = Schema.Struct({
-  id: Schema.Number,
+export const TaskEvent = z.object({
+  id: z.number(),
   task_id: TaskID,
-  at: Schema.Number,
+  at: z.number(),
   kind: TaskEventKind,
-  summary: Schema.optional(Schema.String),
+  summary: z.string().optional(),
 })
-export type TaskEvent = Schema.Schema.Type<typeof TaskEvent>
+export type TaskEvent = z.infer<typeof TaskEvent>

@@ -1,4 +1,4 @@
-import { type ChildProcess, spawnSync } from "node:child_process"
+﻿import { type ChildProcess, spawnSync } from "node:child_process"
 
 // Duplicated from `packages/opencode/src/util/process.ts` because the SDK cannot
 // import `opencode` without creating a cycle (`opencode` depends on `@swust-code/sdk`).

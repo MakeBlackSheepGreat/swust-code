@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reproducer for snapshot race condition with instant tool execution.
  *
  * When the mock LLM returns a tool call response instantly, the AI SDK
@@ -13,24 +13,62 @@
  */
 import { expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { LayerNode } from "@swust-code/core/effect/layer-node"
+import { FetchHttpClient } from "effect/unstable/http"
 import fs from "fs/promises"
 import path from "path"
-import { Session } from "@/session/session"
+import { Session } from "../../src/session"
+import { LLM } from "../../src/session/llm"
 import { SessionPrompt } from "../../src/session/prompt"
+import { SessionRevert } from "../../src/session/revert"
 import { SessionSummary } from "../../src/session/summary"
 import { MessageV2 } from "../../src/session/message-v2"
-import { SessionV1 } from "@swust-code/core/v1/session"
-import { Database } from "@swust-code/core/database/database"
-import { SessionProjector } from "@swust-code/core/session/projector"
+import { Log } from "../../src/util"
 import { provideTmpdirServer } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestLLMServer } from "../lib/llm-server"
 
-import { LSP } from "@/lsp/lsp"
+// Same layer setup as prompt-effect.test.ts
+import { NodeFileSystem } from "@effect/platform-node"
+import { Agent as AgentSvc } from "../../src/agent/agent"
+import { Bus } from "../../src/bus"
+import { Command } from "../../src/command"
+import { Config } from "../../src/config"
+import { LSP } from "../../src/lsp"
 import { MCP } from "../../src/mcp"
-import { CrossSpawnSpawner } from "@swust-code/core/cross-spawn-spawner"
-import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Permission } from "../../src/permission"
+import { Plugin } from "../../src/plugin"
+import { Provider as ProviderSvc } from "../../src/provider"
+import { Env } from "../../src/env"
+import { Question } from "../../src/question"
+import { Skill } from "../../src/skill"
+import { SystemPrompt } from "../../src/session/system"
+import { Todo } from "../../src/session/todo"
+import { SessionPrune } from "../../src/session/prune"
+import { Instruction } from "../../src/session/instruction"
+import { SessionProcessor } from "../../src/session/processor"
+import { SessionCompaction } from "../../src/session/compaction"
+import { SessionRunState } from "../../src/session/run-state"
+import { Goal } from "../../src/session/goal"
+import { TaskGateState } from "../../src/task/gate-state"
+import { SessionStatus } from "../../src/session/status"
+import { SessionCheckpoint } from "../../src/session/checkpoint"
+import { ActorRegistry } from "../../src/actor/registry"
+import { ActorWaiter } from "../../src/actor/waiter"
+import { Memory } from "../../src/memory"
+import { History } from "../../src/history"
+import { Team } from "../../src/team"
+import { Snapshot } from "../../src/snapshot"
+import { ToolRegistry } from "../../src/tool"
+import { Truncate } from "../../src/tool"
+import { TaskRegistry } from "../../src/task/registry"
+import { Auth } from "../../src/auth"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
+import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
+import { Ripgrep } from "../../src/file/ripgrep"
+import { Format } from "../../src/format"
+import { Inbox } from "../../src/inbox"
+
+void Log.init({ print: false })
 
 const mcp = Layer.succeed(
   MCP.Service,
@@ -75,26 +113,103 @@ const lsp = Layer.succeed(
   }),
 )
 
-const root = LayerNode.group([
-  SessionPrompt.node,
-  Session.node,
-  SessionProjector.node,
-  SessionSummary.node,
-  Database.node,
-  CrossSpawnSpawner.node,
-  LayerNode.make(TestLLMServer.layer, []),
-])
-const it = testEffect(
-  LayerNode.buildLayer(root, {
-    replacements: [
-      LayerNode.replace(MCP.node, mcp),
-      LayerNode.replace(LSP.node, lsp),
-      LayerNode.replace(RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })),
-    ],
-  }),
-)
+const status = SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer))
+const run = SessionRunState.layer.pipe(Layer.provide(status))
+const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
+
+function makeHttp() {
+  const taskRegistry = ActorRegistry.defaultLayer
+  const deps = Layer.mergeAll(
+    Session.defaultLayer,
+    Snapshot.defaultLayer,
+    LLM.defaultLayer,
+    Env.defaultLayer,
+    AgentSvc.defaultLayer,
+    Command.defaultLayer,
+    Permission.defaultLayer,
+    Plugin.defaultLayer,
+    Config.defaultLayer,
+    ProviderSvc.defaultLayer,
+    lsp,
+    mcp,
+    AppFileSystem.defaultLayer,
+    status,
+    taskRegistry,
+  ).pipe(Layer.provideMerge(infra))
+  const question = Question.layer.pipe(Layer.provideMerge(deps))
+  const todo = Todo.layer.pipe(Layer.provideMerge(deps))
+  const checkpoint = SessionCheckpoint.layer.pipe(
+    Layer.provide(Session.defaultLayer),
+    Layer.provide(Bus.layer),
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(Memory.defaultLayer),
+    Layer.provide(History.defaultLayer),
+    Layer.provide(TaskRegistry.defaultLayer),
+    Layer.provide(taskRegistry),
+  )
+  const taskWaiter = ActorWaiter.layer.pipe(Layer.provide(Bus.layer), Layer.provide(taskRegistry))
+  const team = Team.defaultLayer
+  const registry = ToolRegistry.layer.pipe(
+    Layer.provide(Skill.defaultLayer),
+    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(CrossSpawnSpawner.defaultLayer),
+    Layer.provide(Ripgrep.defaultLayer),
+    Layer.provide(Format.defaultLayer),
+    Layer.provide(taskRegistry),
+    Layer.provide(taskWaiter),
+    Layer.provide(team),
+    Layer.provide(checkpoint),
+    Layer.provide(Memory.defaultLayer),
+    Layer.provide(History.defaultLayer),
+    Layer.provide(TaskRegistry.defaultLayer),
+    Layer.provide(Auth.defaultLayer),
+    Layer.provideMerge(todo),
+    Layer.provideMerge(question),
+    Layer.provideMerge(deps),
+  )
+  const prune = SessionPrune.layer.pipe(
+    Layer.provide(checkpoint),
+    Layer.provide(taskRegistry),
+    Layer.provideMerge(deps),
+  )
+  const proc = SessionProcessor.layer.pipe(Layer.provide(SessionSummary.defaultLayer), Layer.provideMerge(deps))
+  const compaction = SessionCompaction.layer.pipe(
+    Layer.provideMerge(proc),
+    Layer.provide(AgentSvc.defaultLayer),
+    Layer.provide(Plugin.defaultLayer),
+    Layer.provideMerge(deps),
+  )
+  const trunc = Truncate.layer.pipe(Layer.provideMerge(deps))
+  return Layer.mergeAll(
+    TestLLMServer.layer,
+    SessionSummary.defaultLayer,
+    SessionPrompt.layer.pipe(
+    Layer.provide(Goal.defaultLayer),
+      Layer.provide(TaskGateState.defaultLayer),
+      Layer.provide(TaskRegistry.defaultLayer),
+      Layer.provide(SessionRevert.defaultLayer),
+      Layer.provide(SessionSummary.defaultLayer),
+      Layer.provide(checkpoint),
+      Layer.provide(team),
+      Layer.provide(taskRegistry),
+      Layer.provideMerge(run),
+      Layer.provideMerge(prune),
+      Layer.provideMerge(compaction),
+      Layer.provideMerge(proc),
+      Layer.provideMerge(registry),
+      Layer.provideMerge(trunc),
+      Layer.provide(Instruction.defaultLayer),
+      Layer.provide(SystemPrompt.defaultLayer),
+      Layer.provide(Inbox.defaultLayer),
+      Layer.provideMerge(deps),
+    ),
+  )
+}
+
+const it = testEffect(makeHttp())
 
 const providerCfg = (url: string) => ({
+  checkpoint: { thresholds: [] as string[] },
   provider: {
     test: {
       name: "Test",
@@ -167,19 +282,15 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
 
       // Verify the tool call completed (in the first assistant message)
       const allMsgs = yield* MessageV2.filterCompactedEffect(session.id)
-      const user = allMsgs.find(
-        (msg): msg is SessionV1.WithParts & { info: SessionV1.User } => msg.info.role === "user",
-      )
       const tool = allMsgs
         .flatMap((m) => m.parts)
-        .find((p): p is SessionV1.ToolPart => p.type === "tool" && p.tool === "bash")
+        .find((p): p is MessageV2.ToolPart => p.type === "tool" && p.tool === "bash")
       expect(tool?.state.status).toBe("completed")
-      if (!user) throw new Error("Expected user message")
 
-      // Poll for the turn diff — summarize() is fire-and-forget.
-      let diff: Array<{ file?: string }> = []
+      // Poll for diff — summarize() is fire-and-forget
+      let diff: Array<{ file: string }> = []
       for (let i = 0; i < 50; i++) {
-        diff = yield* summary.diff({ sessionID: session.id, messageID: user.info.id })
+        diff = yield* summary.diff({ sessionID: session.id })
         if (diff.length > 0) break
         yield* Effect.sleep("100 millis")
       }

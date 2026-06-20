@@ -1,11 +1,11 @@
 import { rm } from "fs/promises"
-import { Database } from "@swust-code/core/database/database"
-import { disposeAllInstances } from "./fixture"
+import { Instance } from "../../src/project/instance"
+import { Database } from "../../src/storage"
 
 export async function resetDatabase() {
-  await disposeAllInstances().catch(() => undefined)
-  const dbPath = Database.path()
-  await rm(dbPath, { force: true }).catch(() => undefined)
-  await rm(`${dbPath}-wal`, { force: true }).catch(() => undefined)
-  await rm(`${dbPath}-shm`, { force: true }).catch(() => undefined)
+  await Instance.disposeAll().catch(() => undefined)
+  Database.close()
+  await rm(Database.Path, { force: true }).catch(() => undefined)
+  await rm(`${Database.Path}-wal`, { force: true }).catch(() => undefined)
+  await rm(`${Database.Path}-shm`, { force: true }).catch(() => undefined)
 }

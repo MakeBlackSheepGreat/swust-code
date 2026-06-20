@@ -1,12 +1,11 @@
 import { Effect, Layer } from "effect"
-import { Provider } from "@/provider/provider"
-import { ProviderV2 } from "@swust-code/core/provider"
-import { ModelV2 } from "@swust-code/core/model"
+import { Provider } from "../../src/provider"
+import { ModelID, ProviderID } from "../../src/provider/schema"
 
 export namespace ProviderTest {
   export function model(override: Partial<Provider.Model> = {}): Provider.Model {
-    const id = override.id ?? ModelV2.ID.make("gpt-5.2")
-    const providerID = override.providerID ?? ProviderV2.ID.make("openai")
+    const id = override.id ?? ModelID.make("gpt-5.2")
+    const providerID = override.providerID ?? ProviderID.make("openai")
     return {
       id,
       providerID,
@@ -61,6 +60,15 @@ export namespace ProviderTest {
           getModel: Effect.fn("TestProvider.getModel")((providerID, modelID) => {
             if (providerID === row.id && modelID === mdl.id) return Effect.succeed(mdl)
             return Effect.die(new Error(`Unknown test model: ${providerID}/${modelID}`))
+          }),
+          resolveModelRef: Effect.fn("TestProvider.resolveModelRef")((ref) => {
+            if (ref.includes("/")) {
+              const [providerID, ...rest] = ref.split("/")
+              const modelID = rest.join("/")
+              if (providerID === row.id && modelID === mdl.id) return Effect.succeed(mdl)
+              return Effect.die(new Error(`Unknown test model: ${ref}`))
+            }
+            return Effect.succeed(mdl)
           }),
           getLanguage: Effect.fn("TestProvider.getLanguage")(() =>
             Effect.die(new Error("ProviderTest.getLanguage not configured")),

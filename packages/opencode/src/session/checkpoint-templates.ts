@@ -81,6 +81,10 @@ _Cross-task facts that survive across sessions. Promoted from session checkpoint
 (none yet)
 `
 
+/**
+ * Section budgets for checkpoint.md (token estimates per section).
+ * Total ~11K, well under the 40K tail max.
+ */
 export const CHECKPOINT_SECTION_BUDGETS: Record<string, number> = {
   "§1 Active intent": 500,
   "§2 Next concrete action": 1000,
@@ -95,6 +99,9 @@ export const CHECKPOINT_SECTION_BUDGETS: Record<string, number> = {
   "§11 Open notes": 800,
 }
 
+/**
+ * Section budgets for MEMORY.md (project-level). Total ~10K.
+ */
 export const MEMORY_SECTION_BUDGETS: Record<string, number> = {
   "Project context": 1000,
   "Rules": 2000,

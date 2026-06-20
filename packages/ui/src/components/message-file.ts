@@ -1,4 +1,4 @@
-import type { FilePart } from "@swust-code/sdk/v2"
+﻿import type { FilePart } from "@swust-code/sdk/v2"
 
 export function attached(part: FilePart) {
   return part.url.startsWith("data:")

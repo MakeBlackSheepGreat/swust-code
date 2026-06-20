@@ -1,6 +1,4 @@
-import type { Agent, Project, ProviderListResponse } from "@swust-code/sdk/v2/client"
-import { NormalizedProviderListResponse } from "@swust-code/ui/context"
-export { pathKey as directoryKey, type PathKey as DirectoryKey } from "@/utils/path-key"
+﻿import type { Agent, Project, ProviderListResponse } from "@swust-code/sdk/v2/client"
 
 export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -18,23 +16,13 @@ export function normalizeAgentList(input: unknown): Agent[] {
   return Object.values(input).filter(isAgent)
 }
 
-export function normalizeProviderList(input: ProviderListResponse): NormalizedProviderListResponse {
+export function normalizeProviderList(input: ProviderListResponse): ProviderListResponse {
   return {
     ...input,
-    all: new Map(
-      input.all.map(
-        (provider) =>
-          [
-            provider.id,
-            {
-              ...provider,
-              models: Object.fromEntries(
-                Object.entries(provider.models).filter(([, info]) => info.status !== "deprecated"),
-              ),
-            },
-          ] as const,
-      ),
-    ),
+    all: input.all.map((provider) => ({
+      ...provider,
+      models: Object.fromEntries(Object.entries(provider.models).filter(([, info]) => info.status !== "deprecated")),
+    })),
   }
 }
 

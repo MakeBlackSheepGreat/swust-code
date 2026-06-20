@@ -1,4 +1,4 @@
-import { Dialog } from "@swust-code/ui/dialog"
+﻿import { Dialog } from "@swust-code/ui/dialog"
 import { List } from "@swust-code/ui/list"
 import { Switch } from "@swust-code/ui/switch"
 import { Tooltip } from "@swust-code/ui/tooltip"
@@ -39,7 +39,6 @@ export const DialogManageModels: Component = () => {
       }
     >
       <List
-        class="px-3"
         search={{ placeholder: language.t("dialog.model.search.placeholder"), autofocus: true }}
         emptyMessage={language.t("dialog.model.empty")}
         key={(x) => `${x?.provider?.id}:${x?.id}`}

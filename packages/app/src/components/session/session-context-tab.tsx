@@ -1,8 +1,8 @@
-import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
+﻿import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { useSync } from "@/context/sync"
-import { checksum } from "@swust-code/core/util/encode"
-import { findLast } from "@swust-code/core/util/array"
+import { checksum } from "@swust-code/shared/util/encode"
+import { findLast } from "@swust-code/shared/util/array"
 import { same } from "@/utils/same"
 import { Icon } from "@swust-code/ui/icon"
 import { Accordion } from "@swust-code/ui/accordion"
@@ -132,7 +132,7 @@ export function SessionContextTab() {
       }),
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()]))
+  const metrics = createMemo(() => getSessionContextMetrics(messages(), providers.all()))
   const ctx = createMemo(() => metrics().context)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 

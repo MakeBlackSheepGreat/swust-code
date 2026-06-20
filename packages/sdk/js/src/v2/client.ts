@@ -1,10 +1,8 @@
 export * from "./gen/types.gen.js"
-export type { FileSystemEntry as LocationFileSystemEntry } from "./gen/types.gen.js"
 
 import { createClient } from "./gen/client/client.gen.js"
 import { type Config } from "./gen/client/types.gen.js"
 import { OpencodeClient } from "./gen/sdk.gen.js"
-import { wrapClientError } from "../error-interceptor.js"
 export { type Config as OpencodeClientConfig, OpencodeClient }
 
 function pick(value: string | null, fallback?: string, encode?: (value: string) => string) {
@@ -22,8 +20,8 @@ function rewrite(request: Request, values: { directory?: string; workspace?: str
   let changed = false
 
   for (const [name, key] of [
-    ["x-opencode-directory", "directory"],
-    ["x-opencode-workspace", "workspace"],
+    ["x-swust-code-directory", "directory"],
+    ["x-swust-code-workspace", "workspace"],
   ] as const) {
     const value = pick(
       request.headers.get(name),
@@ -31,10 +29,8 @@ function rewrite(request: Request, values: { directory?: string; workspace?: str
       key === "directory" ? encodeURIComponent : undefined,
     )
     if (!value) continue
-    for (const query of url.pathname.startsWith("/api/") ? [key, `location[${key}]`] : [key]) {
-      if (!url.searchParams.has(query)) {
-        url.searchParams.set(query, value)
-      }
+    if (!url.searchParams.has(key)) {
+      url.searchParams.set(key, value)
     }
     changed = true
   }
@@ -42,8 +38,8 @@ function rewrite(request: Request, values: { directory?: string; workspace?: str
   if (!changed) return request
 
   const next = new Request(url, request)
-  next.headers.delete("x-opencode-directory")
-  next.headers.delete("x-opencode-workspace")
+  next.headers.delete("x-swust-code-directory")
+  next.headers.delete("x-swust-code-workspace")
   return next
 }
 
@@ -63,14 +59,14 @@ export function createOpencodeClient(config?: Config & { directory?: string; exp
   if (config?.directory) {
     config.headers = {
       ...config.headers,
-      "x-opencode-directory": encodeURIComponent(config.directory),
+      "x-swust-code-directory": encodeURIComponent(config.directory),
     }
   }
 
   if (config?.experimental_workspaceID) {
     config.headers = {
       ...config.headers,
-      "x-opencode-workspace": config.experimental_workspaceID,
+      "x-swust-code-workspace": config.experimental_workspaceID,
     }
   }
 
@@ -88,6 +84,5 @@ export function createOpencodeClient(config?: Config & { directory?: string; exp
 
     return response
   })
-  client.interceptors.error.use(wrapClientError)
   return new OpencodeClient({ client })
 }

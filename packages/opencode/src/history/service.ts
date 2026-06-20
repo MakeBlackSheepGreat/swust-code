@@ -1,18 +1,15 @@
-export * as History from "./service"
-
 import { Context, Effect, Layer } from "effect"
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
-import { Database } from "@swust-code/core/database/database"
-import { LayerNode } from "@swust-code/core/effect/layer-node"
-import { MessageTable, PartTable } from "@swust-code/core/session/sql"
-import type { SessionV1 } from "@swust-code/core/v1/session"
-import { Config } from "@/config/config"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { InstanceState } from "@/effect/instance-state"
-import { backfillWith, layer as backfillLayer } from "./backfill"
+import { and, asc, desc, eq, sql } from "drizzle-orm"
+import { Database } from "../storage"
+import { MessageTable, PartTable } from "../session/session.sql"
+import type { MessageID } from "../session/schema"
+import { Config } from "../config"
+import { Bus } from "../bus"
+import { Instance } from "../project/instance"
 import { buildFtsQuery } from "./fts-query"
 import type { Kind } from "./extract"
-import { layer as writerLayer } from "./writer"
+import { layer as writerLayer, Service as WriterService } from "./writer"
+import { layer as backfillLayer, Service as BackfillService } from "./backfill"
 
 export type SearchHit = {
   part_id: string
@@ -58,16 +55,13 @@ export interface Interface {
     before?: number
     after?: number
   }) => Effect.Effect<{ session_id: string; messages: MessageContext[] }>
-
-  readonly backfill: (input?: { session_id?: string; limit?: number }) => Effect.Effect<number>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/History") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/History") {}
 
 const HARD_CAP = 50
-const BACKFILL_BATCH = 5000
 
-type SearchRow = {
+type Row = {
   part_id: string
   session_id: string
   message_id: string
@@ -79,200 +73,186 @@ type SearchRow = {
   time_created: number
 }
 
-function stringify(value: unknown) {
-  try {
-    return JSON.stringify(value ?? {})
-  } catch {
-    return String(value ?? "")
-  }
-}
-
-function renderPartText(part: SessionV1.Part): { text: string; toolName: string | null } {
-  switch (part.type) {
-    case "text":
-    case "reasoning":
-      return { text: part.text, toolName: null }
-    case "tool": {
-      const state = part.state
-      const text =
-        state.status === "pending" || state.status === "running"
-          ? `tool: ${part.tool}\ninput: ${stringify(state.input)}`
-          : state.status === "error"
-            ? `tool: ${part.tool}\ninput: ${stringify(state.input)}\nerror: ${state.error}`
-            : `tool: ${part.tool}\ninput: ${stringify(state.input)}\noutput: ${state.output}`
-      return { text, toolName: part.tool }
-    }
-    case "file":
-      return { text: `[file ${part.mime}${part.filename ? ` ${part.filename}` : ""}]`, toolName: null }
-    case "subtask":
-      return { text: `subtask: ${part.description}\n${part.prompt}`, toolName: null }
-    case "compaction":
-      return { text: "[compaction marker]", toolName: null }
-    default:
-      return { text: `[${part.type}]`, toolName: null }
-  }
-}
-
-function asRole(data: unknown): "user" | "assistant" {
-  return typeof data === "object" && data !== null && "role" in data && data.role === "user" ? "user" : "assistant"
-}
+export const defaultLayer: Layer.Layer<Service | WriterService | BackfillService, never, never> = Layer.suspend(() =>
+  Layer.mergeAll(layer, writerLayer, backfillLayer).pipe(
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(Bus.defaultLayer),
+  ),
+)
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const db = (yield* Database.Service).db
-
-    const backfill = Effect.fn("History.backfill")((input?: { session_id?: string; limit?: number }) =>
-      backfillWith(db, input),
-    )
-
     const search = Effect.fn("History.search")(function* (input: Parameters<Interface["search"]>[0]) {
       const ftsQuery = buildFtsQuery(input.query)
       if (!ftsQuery) return []
 
-      yield* backfill({ session_id: input.session_id, limit: BACKFILL_BATCH })
+      const limit = Math.min(input.limit ?? 10, HARD_CAP)
+      const conditions: string[] = []
+      const params: (string | number)[] = []
 
-      const limit = Math.max(1, Math.min(input.limit ?? 10, HARD_CAP))
-      let query = sql`
-        SELECT h.part_id, h.session_id, h.message_id, h.project_id, h.kind, h.tool_name,
-               h.time_created,
-               snippet(history_fts_idx, 0, '<<', '>>', '...', 32) AS snippet,
-               -bm25(history_fts_idx) AS score
-        FROM history_fts_idx
-        JOIN history_fts h ON h.rowid = history_fts_idx.rowid
-        WHERE history_fts_idx MATCH ${ftsQuery}
-      `
-
-      if ((input.scope ?? "project") === "project") {
-        const ctx = yield* InstanceState.context
-        query = sql`${query} AND h.project_id = ${ctx.project.id}`
+      const scope = input.scope ?? "project"
+      if (scope === "project") {
+        conditions.push("history_fts.project_id = ?")
+        params.push(Instance.project.id)
       }
-      if (input.session_id) query = sql`${query} AND h.session_id = ${input.session_id}`
+
+      if (input.session_id) {
+        conditions.push("history_fts.session_id = ?")
+        params.push(input.session_id)
+      }
       if (input.kind) {
         const kinds = Array.isArray(input.kind) ? input.kind : [input.kind]
-        query = sql`${query} AND h.kind IN (${sql.join(kinds.map((kind) => sql`${kind}`), sql`, `)})`
+        conditions.push(`history_fts.kind IN (${kinds.map(() => "?").join(",")})`)
+        for (const k of kinds) params.push(k)
       }
-      if (input.tool_name) query = sql`${query} AND h.tool_name = ${input.tool_name}`
-      if (input.time_after !== undefined) query = sql`${query} AND h.time_created >= ${input.time_after}`
-      if (input.time_before !== undefined) query = sql`${query} AND h.time_created <= ${input.time_before}`
+      if (input.tool_name) {
+        conditions.push("history_fts.tool_name = ?")
+        params.push(input.tool_name)
+      }
+      if (input.time_after !== undefined) {
+        conditions.push("history_fts.time_created >= ?")
+        params.push(input.time_after)
+      }
+      if (input.time_before !== undefined) {
+        conditions.push("history_fts.time_created <= ?")
+        params.push(input.time_before)
+      }
 
-      query = sql`${query} ORDER BY bm25(history_fts_idx) LIMIT ${limit}`
-
-      const rows = yield* db.all<SearchRow>(query).pipe(Effect.catch(() => Effect.succeed([] as SearchRow[])))
-      return rows.map((row) => ({
-        part_id: row.part_id,
-        session_id: row.session_id,
-        message_id: row.message_id,
-        project_id: row.project_id,
-        kind: row.kind as Kind,
-        tool_name: row.tool_name,
-        snippet: row.snippet,
-        score: row.score,
-        time_created: row.time_created,
+      const whereClause = conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : ""
+      const sqlText = `
+        SELECT history_fts.part_id, history_fts.session_id, history_fts.message_id,
+               history_fts.project_id, history_fts.kind, history_fts.tool_name,
+               history_fts.time_created,
+               snippet(history_fts_idx, 0, '<<', '>>', '...', 32) AS snippet,
+               bm25(history_fts_idx) AS score
+        FROM history_fts_idx
+        JOIN history_fts ON history_fts.rowid = history_fts_idx.rowid
+        WHERE history_fts_idx MATCH ?
+        ${whereClause}
+        ORDER BY score
+        LIMIT ?
+      `
+      const rows = Database.Client().$client.query(sqlText).all(ftsQuery, ...params, limit) as Row[]
+      return rows.map((r) => ({
+        part_id: r.part_id,
+        session_id: r.session_id,
+        message_id: r.message_id,
+        project_id: r.project_id,
+        kind: r.kind as Kind,
+        tool_name: r.tool_name,
+        snippet: r.snippet,
+        score: -r.score,
+        time_created: r.time_created,
       }))
     })
 
     const around = Effect.fn("History.around")(function* (input: Parameters<Interface["around"]>[0]) {
-      const before = Math.max(0, Math.min(input.before ?? 5, 50))
-      const after = Math.max(0, Math.min(input.after ?? 5, 50))
-      const anchor = yield* db
-        .select({
-          id: MessageTable.id,
-          sessionID: MessageTable.session_id,
-          timeCreated: MessageTable.time_created,
-        })
-        .from(MessageTable)
-        .where(eq(MessageTable.id, input.message_id as never))
-        .get()
-        .pipe(Effect.orDie)
-
+      const before = input.before ?? 5
+      const after = input.after ?? 5
+      const anchor = Database.use((db) =>
+        db
+          .select({
+            id: MessageTable.id,
+            session_id: MessageTable.session_id,
+            time_created: MessageTable.time_created,
+          })
+          .from(MessageTable)
+          .where(eq(MessageTable.id, input.message_id as MessageID))
+          .get(),
+      )
       if (!anchor) return { session_id: "", messages: [] }
 
-      const beforeRows = yield* db
-        .select()
-        .from(MessageTable)
-        .where(
-          and(
-            eq(MessageTable.session_id, anchor.sessionID),
-            sql`(${MessageTable.time_created} < ${anchor.timeCreated} OR (${MessageTable.time_created} = ${anchor.timeCreated} AND ${MessageTable.id} <= ${anchor.id}))`,
-          ),
-        )
-        .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
-        .limit(before + 1)
-        .all()
-        .pipe(Effect.orDie)
-
-      const afterRows = yield* db
-        .select()
-        .from(MessageTable)
-        .where(
-          and(
-            eq(MessageTable.session_id, anchor.sessionID),
-            sql`(${MessageTable.time_created} > ${anchor.timeCreated} OR (${MessageTable.time_created} = ${anchor.timeCreated} AND ${MessageTable.id} > ${anchor.id}))`,
-          ),
-        )
-        .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
-        .limit(after)
-        .all()
-        .pipe(Effect.orDie)
+      const beforeRows = Database.use((db) =>
+        db
+          .select()
+          .from(MessageTable)
+          .where(
+            and(
+              eq(MessageTable.session_id, anchor.session_id),
+              sql`(${MessageTable.time_created} < ${anchor.time_created} OR (${MessageTable.time_created} = ${anchor.time_created} AND ${MessageTable.id} <= ${anchor.id}))`,
+            ),
+          )
+          .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+          .limit(before + 1)
+          .all(),
+      )
+      const afterRows = Database.use((db) =>
+        db
+          .select()
+          .from(MessageTable)
+          .where(
+            and(
+              eq(MessageTable.session_id, anchor.session_id),
+              sql`(${MessageTable.time_created} > ${anchor.time_created} OR (${MessageTable.time_created} = ${anchor.time_created} AND ${MessageTable.id} > ${anchor.id}))`,
+            ),
+          )
+          .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
+          .limit(after)
+          .all(),
+      )
 
       const messages = [...beforeRows.reverse(), ...afterRows]
-      if (messages.length === 0) return { session_id: anchor.sessionID, messages: [] }
-
-      const parts = yield* db
-        .select()
-        .from(PartTable)
-        .where(inArray(PartTable.message_id, messages.map((message) => message.id)))
-        .orderBy(asc(PartTable.message_id), asc(PartTable.id))
-        .all()
-        .pipe(Effect.orDie)
+      if (messages.length === 0) return { session_id: anchor.session_id, messages: [] }
+      const parts = Database.use((db) =>
+        db
+          .select()
+          .from(PartTable)
+          .where(
+            and(
+              eq(PartTable.session_id, anchor.session_id),
+              sql`${PartTable.message_id} IN (${sql.join(
+                messages.map((m) => sql`${m.id}`),
+                sql`, `,
+              )})`,
+            ),
+          )
+          .orderBy(asc(PartTable.message_id), asc(PartTable.id))
+          .all(),
+      )
 
       const byMessage = new Map<string, typeof parts>()
-      for (const part of parts) {
-        const list = byMessage.get(part.message_id) ?? []
-        list.push(part)
-        byMessage.set(part.message_id, list)
+      for (const p of parts) {
+        const list = byMessage.get(p.message_id) ?? []
+        list.push(p)
+        byMessage.set(p.message_id, list)
       }
 
-      return {
-        session_id: anchor.sessionID,
-        messages: messages.map((message) => {
-          const role = asRole(message.data)
-          return {
-            message_id: message.id,
-            matched: message.id === input.message_id,
-            time_created: message.time_created,
-            parts: (byMessage.get(message.id) ?? []).map((row) => {
-              const part = {
-                ...row.data,
-                id: row.id,
-                sessionID: row.session_id,
-                messageID: row.message_id,
-              } as SessionV1.Part
-              const rendered = renderPartText(part)
-              return {
-                part_id: row.id,
-                type: part.type,
-                role,
-                tool_name: rendered.toolName,
-                text: rendered.text,
-              }
-            }),
+      const out: MessageContext[] = messages.map((m) => {
+        const role: "user" | "assistant" =
+          (m.data as { role?: "user" | "assistant" })?.role === "user" ? "user" : "assistant"
+        const partsHere = (byMessage.get(m.id) ?? []).map((p) => {
+          const d = p.data as {
+            type: string
+            text?: string
+            tool?: string
+            state?: { input?: unknown; output?: unknown; error?: string }
           }
-        }),
-      }
+          const text =
+            d.type === "text" || d.type === "reasoning"
+              ? (d.text ?? "")
+              : d.type === "tool"
+                ? `tool: ${d.tool ?? ""}\ninput: ${JSON.stringify(d.state?.input ?? {})}\n${d.state?.error ? `error: ${d.state.error}` : `output: ${JSON.stringify(d.state?.output ?? "")}`}`
+                : `[${d.type}]`
+          return {
+            part_id: p.id,
+            type: d.type,
+            role,
+            tool_name: d.type === "tool" ? (d.tool ?? null) : null,
+            text,
+          }
+        })
+        return {
+          message_id: m.id,
+          matched: m.id === input.message_id,
+          time_created: m.time_created,
+          parts: partsHere,
+        }
+      })
+
+      return { session_id: anchor.session_id, messages: out }
     })
 
-    return Service.of({ search, around, backfill })
+    return Service.of({ search, around })
   }),
 )
-
-export const defaultLayer = Layer.suspend(() =>
-  Layer.mergeAll(layer, writerLayer, backfillLayer).pipe(
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(EventV2Bridge.defaultLayer),
-    Layer.provide(Database.defaultLayer),
-  ),
-)
-
-export const node = LayerNode.make(defaultLayer, [])

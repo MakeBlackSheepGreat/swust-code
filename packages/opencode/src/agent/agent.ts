@@ -1,91 +1,77 @@
-import { LayerNode } from "@swust-code/core/effect/layer-node"
-import { PermissionV1 } from "@swust-code/core/v1/permission"
-import { Config } from "@/config/config"
-import { serviceUse } from "@swust-code/core/effect/service-use"
-import { Provider } from "@/provider/provider"
-
+import { Config } from "../config"
+import z from "zod"
+import { Provider } from "../provider"
+import { ModelID, ProviderID } from "../provider/schema"
 import { generateObject, streamObject, type ModelMessage } from "ai"
-import { Truncate } from "@/tool/truncate"
+import { Instance } from "../project/instance"
+import { Truncate } from "../tool"
 import { Auth } from "../auth"
-import { ProviderTransform } from "@/provider/transform"
+import { ProviderTransform } from "../provider"
 
 import PROMPT_GENERATE from "./generate.txt"
-import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
-import PROMPT_SUMMARY from "./prompt/summary.txt"
-import PROMPT_TITLE from "./prompt/title.txt"
 import PROMPT_DREAM from "./prompt/dream.txt"
 import PROMPT_DISTILL from "./prompt/distill.txt"
+import PROMPT_SUMMARY from "./prompt/summary.txt"
+import PROMPT_COMPACTION from "./prompt/compaction.txt"
+import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
-import { Global } from "@swust-code/core/global"
+import { Global } from "@/global"
 import path from "path"
 import { Plugin } from "@/plugin"
 import { Skill } from "../skill"
-import { Effect, Context, Layer, Schema } from "effect"
-import { InstanceState } from "@/effect/instance-state"
+import { Effect, Context, Layer } from "effect"
+import { InstanceState } from "@/effect"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
-import { AbsolutePath, type DeepMutable } from "@swust-code/core/schema"
-import { ProviderV2 } from "@swust-code/core/provider"
-import { ModelV2 } from "@swust-code/core/model"
-import { LocationServiceMap } from "@swust-code/core/location-layer"
-import { PluginBoot } from "@swust-code/core/plugin/boot"
-import { Reference } from "@swust-code/core/reference"
-import { Location } from "@swust-code/core/location"
 
-export const Info = Schema.Struct({
-  name: Schema.String,
-  description: Schema.optional(Schema.String),
-  mode: Schema.Literals(["subagent", "primary", "all"]),
-  native: Schema.optional(Schema.Boolean),
-  hidden: Schema.optional(Schema.Boolean),
-  topP: Schema.optional(Schema.Finite),
-  temperature: Schema.optional(Schema.Finite),
-  color: Schema.optional(Schema.String),
-  permission: PermissionV1.Ruleset,
-  model: Schema.optional(
-    Schema.Struct({
-      modelID: ModelV2.ID,
-      providerID: ProviderV2.ID,
-    }),
-  ),
-  variant: Schema.optional(Schema.String),
-  prompt: Schema.optional(Schema.String),
-  options: Schema.Record(Schema.String, Schema.Unknown),
-  steps: Schema.optional(Schema.Finite),
-}).annotate({ identifier: "Agent" })
-export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
-
-const GeneratedAgent = Schema.Struct({
-  identifier: Schema.String,
-  whenToUse: Schema.String,
-  systemPrompt: Schema.String,
-})
+export const Info = z
+  .object({
+    name: z.string(),
+    description: z.string().optional(),
+    mode: z.enum(["subagent", "primary", "all"]),
+    native: z.boolean().optional(),
+    hidden: z.boolean().optional(),
+    topP: z.number().optional(),
+    temperature: z.number().optional(),
+    color: z.string().optional(),
+    permission: Permission.Ruleset.zod,
+    model: z
+      .object({
+        modelID: ModelID.zod,
+        providerID: ProviderID.zod,
+      })
+      .optional(),
+    modelRef: z.string().optional(),
+    variant: z.string().optional(),
+    prompt: z.string().optional(),
+    options: z.record(z.string(), z.any()),
+    steps: z.number().int().positive().optional(),
+    toolAllowlist: z.array(z.string()).optional(),
+  })
+  .meta({
+    ref: "Agent",
+  })
+export type Info = z.infer<typeof Info>
 
 export interface Interface {
   readonly get: (agent: string) => Effect.Effect<Info>
   readonly list: () => Effect.Effect<Info[]>
-  readonly defaultInfo: () => Effect.Effect<Info>
   readonly defaultAgent: () => Effect.Effect<string>
   readonly generate: (input: {
     description: string
-    model?: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
-  }) => Effect.Effect<
-    {
-      identifier: string
-      whenToUse: string
-      systemPrompt: string
-    },
-    Provider.DefaultModelError
-  >
+    model?: { providerID: ProviderID; modelID: ModelID }
+  }) => Effect.Effect<{
+    identifier: string
+    whenToUse: string
+    systemPrompt: string
+  }>
 }
 
 type State = Omit<Interface, "generate">
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/Agent") {}
-
-export const use = serviceUse(Service)
+export class Service extends Context.Service<Service, Interface>()("@opencode/Agent") {}
 
 export const layer = Layer.effect(
   Service,
@@ -95,26 +81,12 @@ export const layer = Layer.effect(
     const plugin = yield* Plugin.Service
     const skill = yield* Skill.Service
     const provider = yield* Provider.Service
-    const locations = yield* LocationServiceMap
 
     const state = yield* InstanceState.make<State>(
-      Effect.fn("Agent.state")(function* (ctx) {
+      Effect.fn("Agent.state")(function* (_ctx) {
         const cfg = yield* config.get()
         const skillDirs = yield* skill.dirs()
-        const referenceDirs = yield* Effect.gen(function* () {
-          yield* (yield* PluginBoot.Service).wait()
-          return (yield* (yield* Reference.Service).list()).map((reference) => reference.path)
-        }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
-        const whitelistedDirs = [
-          Truncate.GLOB,
-          path.join(Global.Path.tmp, "*"),
-          ...skillDirs.map((dir) => path.join(dir, "*")),
-          ...referenceDirs.map((dir) => path.join(dir, "*")),
-        ]
-        const readonlyExternalDirectory = {
-          "*": "ask",
-          ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
-        } satisfies Record<string, "allow" | "ask" | "deny">
+        const whitelistedDirs = [Truncate.GLOB, ...skillDirs.map((dir) => path.join(dir, "*"))]
 
         const defaults = Permission.fromConfig({
           "*": "allow",
@@ -140,7 +112,8 @@ export const layer = Layer.effect(
         const agents: Record<string, Info> = {
           build: {
             name: "build",
-            description: "The default agent. Executes tools based on configured permissions.",
+            color: "#fb8147",
+            description: "Executes tools based on configured permissions.",
             options: {},
             permission: Permission.merge(
               defaults,
@@ -153,26 +126,47 @@ export const layer = Layer.effect(
             mode: "primary",
             native: true,
           },
+          // Max mode is experimental and opt-in: only registered when
+          // `experimental.maxMode` is configured. This keeps the default agent
+          // set as {build, plan, compose} when the feature is off.
+          ...(cfg.experimental?.maxMode
+            ? {
+                max: {
+                  name: "max",
+                  color: "#e85d75",
+                  description:
+                    "Max mode (experimental). Runs N parallel reasoning candidates each step and executes the best one. Same permissions as build.",
+                  options: {},
+                  permission: Permission.merge(
+                    defaults,
+                    Permission.fromConfig({
+                      question: "allow",
+                      plan_enter: "allow",
+                    }),
+                    user,
+                  ),
+                  mode: "primary" as const,
+                  native: true,
+                },
+              }
+            : {}),
           plan: {
             name: "plan",
-            description: "Plan mode. Disallows all edit tools.",
             color: "#c7e2a8",
+            description: "Plan mode. Disallows all edit tools.",
             options: {},
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
                 question: "allow",
                 plan_exit: "allow",
-                task: {
-                  general: "deny",
-                },
                 external_directory: {
                   [path.join(Global.Path.data, "plans", "*")]: "allow",
                 },
                 edit: {
                   "*": "deny",
                   [path.join(".swust-code", "plans", "*.md")]: "allow",
-                  [path.relative(ctx.worktree, path.join(Global.Path.data, path.join("plans", "*.md")))]: "allow",
+                  [path.relative(Instance.worktree, path.join(Global.Path.data, path.join("plans", "*.md")))]: "allow",
                 },
               }),
               user,
@@ -188,7 +182,6 @@ export const layer = Layer.effect(
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
-                actor: "allow",
                 question: "allow",
                 skill: "allow",
               }),
@@ -222,7 +215,7 @@ export const layer = Layer.effect(
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
-                todowrite: "deny",
+                change_directory: "deny",
               }),
               user,
             ),
@@ -243,8 +236,12 @@ export const layer = Layer.effect(
                 bash: "allow",
                 webfetch: "allow",
                 websearch: "allow",
+                codesearch: "allow",
                 read: "allow",
-                external_directory: readonlyExternalDirectory,
+                external_directory: {
+                  "*": "ask",
+                  ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
+                },
               }),
               user,
             ),
@@ -254,24 +251,9 @@ export const layer = Layer.effect(
             mode: "subagent",
             native: true,
           },
-          compaction: {
-            name: "compaction",
-            mode: "primary",
-            native: true,
-            hidden: true,
-            prompt: PROMPT_COMPACTION,
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                "*": "deny",
-              }),
-              user,
-            ),
-            options: {},
-          },
           title: {
             name: "title",
-            mode: "primary",
+            mode: "subagent",
             options: {},
             native: true,
             hidden: true,
@@ -284,10 +266,11 @@ export const layer = Layer.effect(
               user,
             ),
             prompt: PROMPT_TITLE,
+            toolAllowlist: [],
           },
           summary: {
             name: "summary",
-            mode: "primary",
+            mode: "subagent",
             options: {},
             native: true,
             hidden: true,
@@ -299,6 +282,23 @@ export const layer = Layer.effect(
               user,
             ),
             prompt: PROMPT_SUMMARY,
+            toolAllowlist: [],
+          },
+          compaction: {
+            name: "compaction",
+            mode: "subagent",
+            options: {},
+            native: true,
+            hidden: true,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+              }),
+              user,
+            ),
+            prompt: PROMPT_COMPACTION,
+            toolAllowlist: [],
           },
           "checkpoint-writer": {
             name: "checkpoint-writer",
@@ -306,6 +306,28 @@ export const layer = Layer.effect(
             options: {},
             native: true,
             hidden: true,
+            // No `prompt` field — fork agent contract: at spawn time,
+            // tryStartCheckpointWriter captures parent's full LLM request prefix
+            // (system + tools + messages-to-watermark) into a frozen ForkContext,
+            // stored in Actor service's in-memory map. fork's runLoop reads from
+            // that snapshot instead of recomputing from this agent's identity.
+            // See docs/superpowers/specs/2026-05-26-fork-agent-prefix-cache-design.md
+            //
+            // No `toolAllowlist` field — fork agents must mirror parent's tool
+            // schema for prefix-cache alignment. Runtime tool restriction is
+            // enforced via actor.tools whitelist (set in tryStartCheckpointWriter).
+            // Permission inherits `defaults` (+ user) only — NO bespoke block.
+            // At runtime the fork's LLM-visible tool schema is filtered against the
+            // PARENT agent's permission (ForkContext.parentPermission, fed to
+            // handle.process in prompt.ts's fork branch), so it matches the parent
+            // (prompt-cache parity). NOTE: the per-call ctx.ask still evaluates this
+            // agent's own permission, but that is bounded by the actor.tools whitelist
+            // (set in tryStartCheckpointWriter) and memory-path-guard — the real write
+            // authority — so inheriting `defaults` over-grants nothing in practice.
+            // Memory writes skip the edit ask (askEditUnlessMemory), and any
+            // un-answerable ask fails clean (SYSTEM_SPAWNED_AGENT_TYPES →
+            // interactive:false). See
+            // docs/superpowers/specs/2026-06-05-checkpoint-writer-permission-deadlock-design.md
             permission: Permission.merge(defaults, user),
           },
           dream: {
@@ -326,9 +348,14 @@ export const layer = Layer.effect(
                 grep: "allow",
                 memory: "allow",
                 bash: "allow",
+                external_directory: {
+                  [path.join(Global.Path.data, "memory")]: "allow",
+                  [path.join(Global.Path.data, "memory", "*")]: "allow",
+                },
               }),
               user,
             ),
+            toolAllowlist: ["read", "write", "edit", "glob", "grep", "memory", "bash"],
           },
           distill: {
             name: "distill",
@@ -348,9 +375,14 @@ export const layer = Layer.effect(
                 grep: "allow",
                 memory: "allow",
                 bash: "allow",
+                external_directory: {
+                  [path.join(Global.Path.data, "memory")]: "allow",
+                  [path.join(Global.Path.data, "memory", "*")]: "allow",
+                },
               }),
               user,
             ),
+            toolAllowlist: ["read", "write", "edit", "glob", "grep", "memory", "bash"],
           },
         }
 
@@ -368,7 +400,10 @@ export const layer = Layer.effect(
               options: {},
               native: false,
             }
-          if (value.model) item.model = Provider.parseModel(value.model)
+          if (value.model) {
+            if (value.model.includes("/")) item.model = Provider.parseModel(value.model)
+            else item.modelRef = value.model
+          }
           item.variant = value.variant ?? item.variant
           item.prompt = value.prompt ?? item.prompt
           item.description = value.description ?? item.description
@@ -379,6 +414,7 @@ export const layer = Layer.effect(
           item.hidden = value.hidden ?? item.hidden
           item.name = value.name ?? item.name
           item.steps = value.steps ?? item.steps
+          item.toolAllowlist = value.tool_allowlist ?? item.toolAllowlist
           item.options = mergeDeep(item.options, value.options ?? {})
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
         }
@@ -413,34 +449,29 @@ export const layer = Layer.effect(
               [(x) => x.name === "build", "desc"],
               [(x) => x.name === "plan", "desc"],
               [(x) => x.name === "compose", "desc"],
-              [(x) => x.name === "goal", "desc"],
+              [(x) => x.name === "max", "desc"],
               [(x) => x.name, "asc"],
             ),
           )
         })
 
-        const defaultInfo = Effect.fnUntraced(function* () {
+        const defaultAgent = Effect.fnUntraced(function* () {
           const c = yield* config.get()
           if (c.default_agent) {
             const agent = agents[c.default_agent]
             if (!agent) throw new Error(`default agent "${c.default_agent}" not found`)
             if (agent.mode === "subagent") throw new Error(`default agent "${c.default_agent}" is a subagent`)
             if (agent.hidden === true) throw new Error(`default agent "${c.default_agent}" is hidden`)
-            return agent
+            return agent.name
           }
           const visible = Object.values(agents).find((a) => a.mode !== "subagent" && a.hidden !== true)
           if (!visible) throw new Error("no primary visible agent found")
-          return visible
-        })
-
-        const defaultAgent = Effect.fnUntraced(function* () {
-          return (yield* defaultInfo()).name
+          return visible.name
         })
 
         return {
           get,
           list,
-          defaultInfo,
           defaultAgent,
         } satisfies State
       }),
@@ -453,15 +484,12 @@ export const layer = Layer.effect(
       list: Effect.fn("Agent.list")(function* () {
         return yield* InstanceState.useEffect(state, (s) => s.list())
       }),
-      defaultInfo: Effect.fn("Agent.defaultInfo")(function* () {
-        return yield* InstanceState.useEffect(state, (s) => s.defaultInfo())
-      }),
       defaultAgent: Effect.fn("Agent.defaultAgent")(function* () {
         return yield* InstanceState.useEffect(state, (s) => s.defaultAgent())
       }),
       generate: Effect.fn("Agent.generate")(function* (input: {
         description: string
-        model?: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
+        model?: { providerID: ProviderID; modelID: ModelID }
       }) {
         const cfg = yield* config.get()
         const model = input.model ?? (yield* provider.defaultModel())
@@ -503,10 +531,11 @@ export const layer = Layer.effect(
             },
           ],
           model: language,
-          schema: Object.assign(
-            Schema.toStandardSchemaV1(GeneratedAgent),
-            Schema.toStandardJSONSchemaV1(GeneratedAgent),
-          ),
+          schema: z.object({
+            identifier: z.string(),
+            whenToUse: z.string(),
+            systemPrompt: z.string(),
+          }),
         } satisfies Parameters<typeof generateObject>[0]
 
         if (isOpenaiOauth) {
@@ -538,18 +567,6 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Auth.defaultLayer),
   Layer.provide(Config.defaultLayer),
   Layer.provide(Skill.defaultLayer),
-  Layer.provide(LocationServiceMap.layer),
 )
-
-const locationServiceMapNode = LayerNode.make(LocationServiceMap.layer, [])
-
-export const node = LayerNode.make(layer, [
-  Config.node,
-  Auth.node,
-  Plugin.node,
-  Skill.node,
-  Provider.node,
-  locationServiceMapNode,
-])
 
 export * as Agent from "./agent"

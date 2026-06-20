@@ -1,8 +1,8 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { Todo } from "@swust-code/sdk/v2"
-import { useServerSync } from "@/context/global-sync"
+import { useGlobalSync } from "@/context/global-sync"
 import { SessionComposerRegion, createSessionComposerState } from "@/pages/session/composer"
 
 export default {
@@ -129,7 +129,7 @@ const css = `
 
 export const Playground = {
   render: () => {
-    const global = useServerSync()
+    const global = useGlobalSync()
     const [cfg, setCfg] = createStore({
       open: true,
       step: 1,

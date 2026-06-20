@@ -1,4 +1,4 @@
-import * as i18n from "@solid-primitives/i18n"
+﻿import * as i18n from "@solid-primitives/i18n"
 import { createEffect, createMemo, createResource } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@swust-code/ui/context"
@@ -18,7 +18,6 @@ export type Locale =
   | "ja"
   | "pl"
   | "ru"
-  | "uk"
   | "ar"
   | "no"
   | "br"
@@ -46,7 +45,6 @@ const LOCALES: readonly Locale[] = [
   "ja",
   "pl",
   "ru",
-  "uk",
   "bs",
   "ar",
   "no",
@@ -67,7 +65,6 @@ const INTL: Record<Locale, string> = {
   ja: "ja",
   pl: "pl",
   ru: "ru",
-  uk: "uk",
   ar: "ar",
   no: "nb-NO",
   br: "pt-BR",
@@ -88,7 +85,6 @@ const LABEL_KEY: Record<Locale, keyof Dictionary> = {
   ja: "language.ja",
   pl: "language.pl",
   ru: "language.ru",
-  uk: "language.uk",
   ar: "language.ar",
   no: "language.no",
   br: "language.br",
@@ -114,7 +110,6 @@ const loaders: Record<Exclude<Locale, "en">, () => Promise<Dictionary>> = {
   ja: () => merge(import("@/i18n/ja"), import("@swust-code/ui/i18n/ja")),
   pl: () => merge(import("@/i18n/pl"), import("@swust-code/ui/i18n/pl")),
   ru: () => merge(import("@/i18n/ru"), import("@swust-code/ui/i18n/ru")),
-  uk: () => merge(import("@/i18n/uk"), import("@swust-code/ui/i18n/uk")),
   ar: () => merge(import("@/i18n/ar"), import("@swust-code/ui/i18n/ar")),
   no: () => merge(import("@/i18n/no"), import("@swust-code/ui/i18n/no")),
   br: () => merge(import("@/i18n/br"), import("@swust-code/ui/i18n/br")),
@@ -150,7 +145,6 @@ const localeMatchers: Array<{ locale: Locale; match: (language: string) => boole
   { locale: "ja", match: (language) => language.startsWith("ja") },
   { locale: "pl", match: (language) => language.startsWith("pl") },
   { locale: "ru", match: (language) => language.startsWith("ru") },
-  { locale: "uk", match: (language) => language.startsWith("uk") },
   { locale: "ar", match: (language) => language.startsWith("ar") },
   {
     locale: "no",
@@ -198,7 +192,6 @@ if (warm !== "en") void loadDict(warm)
 
 export const { use: useLanguage, provider: LanguageProvider } = createSimpleContext({
   name: "Language",
-  gate: false,
   init: (props: { locale?: Locale }) => {
     const initial = props.locale ?? readStoredLocale() ?? detectLocale()
     const [store, setStore, _, ready] = persisted(

@@ -1,25 +1,27 @@
-import { LayerNode } from "@swust-code/core/effect/layer-node"
 import { Deferred, Effect, Layer, Schema, Context } from "effect"
-import { InstanceState } from "@/effect/instance-state"
+import { Bus } from "@/bus"
+import { BusEvent } from "@/bus/bus-event"
+import { InstanceState } from "@/effect"
 import { SessionID, MessageID } from "@/session/schema"
+import { zod } from "@/util/effect-zod"
+import { Log } from "@/util"
+import { withStatics } from "@/util/schema"
 import { QuestionID } from "./schema"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { EventV2 } from "@swust-code/core/event"
 
-// Schemas — these are pure data; nothing checks class identity (see PR
-// description) so they're plain `Schema.Struct` + type alias. That lets
-// `Question.ask` and other internal sites trust the type contract without a
-// re-decode to coerce nested class instances.
+const log = Log.create({ service: "question" })
 
-export const Option = Schema.Struct({
+// Schemas
+
+export class Option extends Schema.Class<Option>("QuestionOption")({
   label: Schema.String.annotate({
     description: "Display text (1-5 words, concise)",
   }),
   description: Schema.String.annotate({
     description: "Explanation of choice",
   }),
-}).annotate({ identifier: "QuestionOption" })
-export type Option = Schema.Schema.Type<typeof Option>
+}) {
+  static readonly zod = zod(this)
+}
 
 const base = {
   question: Schema.String.annotate({
@@ -36,58 +38,71 @@ const base = {
   }),
 }
 
-export const Info = Schema.Struct({
+export class Info extends Schema.Class<Info>("QuestionInfo")({
   ...base,
   custom: Schema.optional(Schema.Boolean).annotate({
     description: "Allow typing a custom answer (default: true)",
   }),
-}).annotate({ identifier: "QuestionInfo" })
-export type Info = Schema.Schema.Type<typeof Info>
+  key: Schema.optional(Schema.String).annotate({
+    description: "i18n key for client-side translation (e.g. plan_exit). When set, clients may translate question/options text using this key as a namespace.",
+  }),
+  params: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
+    description: "Template parameters for i18n interpolation (e.g. { plan: '.swust-code/plans/...' })",
+  }),
+}) {
+  static readonly zod = zod(this)
+}
 
-export const Prompt = Schema.Struct(base).annotate({ identifier: "QuestionPrompt" })
-export type Prompt = Schema.Schema.Type<typeof Prompt>
+export class Prompt extends Schema.Class<Prompt>("QuestionPrompt")(base) {
+  static readonly zod = zod(this)
+}
 
-export const Tool = Schema.Struct({
+export class Tool extends Schema.Class<Tool>("QuestionTool")({
   messageID: MessageID,
   callID: Schema.String,
-}).annotate({ identifier: "QuestionTool" })
-export type Tool = Schema.Schema.Type<typeof Tool>
+}) {
+  static readonly zod = zod(this)
+}
 
-export const Request = Schema.Struct({
+export class Request extends Schema.Class<Request>("QuestionRequest")({
   id: QuestionID,
   sessionID: SessionID,
   questions: Schema.Array(Info).annotate({
     description: "Questions to ask",
   }),
   tool: Schema.optional(Tool),
-}).annotate({ identifier: "QuestionRequest" })
-export type Request = Schema.Schema.Type<typeof Request>
+}) {
+  static readonly zod = zod(this)
+}
 
-export const Answer = Schema.Array(Schema.String).annotate({ identifier: "QuestionAnswer" })
+export const Answer = Schema.Array(Schema.String)
+  .annotate({ identifier: "QuestionAnswer" })
+  .pipe(withStatics((s) => ({ zod: zod(s) })))
 export type Answer = Schema.Schema.Type<typeof Answer>
 
-export const Reply = Schema.Struct({
+export class Reply extends Schema.Class<Reply>("QuestionReply")({
   answers: Schema.Array(Answer).annotate({
     description: "User answers in order of questions (each answer is an array of selected labels)",
   }),
-}).annotate({ identifier: "QuestionReply" })
-export type Reply = Schema.Schema.Type<typeof Reply>
+}) {
+  static readonly zod = zod(this)
+}
 
-export const Replied = Schema.Struct({
+class Replied extends Schema.Class<Replied>("QuestionReplied")({
   sessionID: SessionID,
   requestID: QuestionID,
   answers: Schema.Array(Answer),
-}).annotate({ identifier: "QuestionReplied" })
+}) {}
 
-export const Rejected = Schema.Struct({
+class Rejected extends Schema.Class<Rejected>("QuestionRejected")({
   sessionID: SessionID,
   requestID: QuestionID,
-}).annotate({ identifier: "QuestionRejected" })
+}) {}
 
 export const Event = {
-  Asked: EventV2.define({ type: "question.asked", schema: Request.fields }),
-  Replied: EventV2.define({ type: "question.replied", schema: Replied.fields }),
-  Rejected: EventV2.define({ type: "question.rejected", schema: Rejected.fields }),
+  Asked: BusEvent.define("question.asked", Request.zod),
+  Replied: BusEvent.define("question.replied", zod(Replied)),
+  Rejected: BusEvent.define("question.rejected", zod(Rejected)),
 }
 
 export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("QuestionRejectedError", {}) {
@@ -96,10 +111,6 @@ export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("Que
   }
 }
 
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Question.NotFoundError", {
-  requestID: QuestionID,
-}) {}
-
 interface PendingEntry {
   info: Request
   deferred: Deferred.Deferred<ReadonlyArray<Answer>, RejectedError>
@@ -107,6 +118,10 @@ interface PendingEntry {
 
 interface State {
   pending: Map<QuestionID, PendingEntry>
+  // When true the question tool stays visible but ask() is never reached:
+  // the tool returns a [Never-Ask] directive so the model re-picks the best
+  // option for headless execution itself. Toggleable at runtime.
+  neverAsk: boolean
 }
 
 // Service
@@ -117,24 +132,24 @@ export interface Interface {
     questions: ReadonlyArray<Info>
     tool?: Tool
   }) => Effect.Effect<ReadonlyArray<Answer>, RejectedError>
-  readonly reply: (input: {
-    requestID: QuestionID
-    answers: ReadonlyArray<Answer>
-  }) => Effect.Effect<void, NotFoundError>
-  readonly reject: (requestID: QuestionID) => Effect.Effect<void, NotFoundError>
+  readonly reply: (input: { requestID: QuestionID; answers: ReadonlyArray<Answer> }) => Effect.Effect<void>
+  readonly reject: (requestID: QuestionID) => Effect.Effect<void>
   readonly list: () => Effect.Effect<ReadonlyArray<Request>>
+  readonly neverAsk: () => Effect.Effect<boolean>
+  readonly setNeverAsk: (enabled: boolean) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/Question") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/Question") {}
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const events = yield* EventV2Bridge.Service
+    const bus = yield* Bus.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Question.state")(function* () {
         const state = {
           pending: new Map<QuestionID, PendingEntry>(),
+          neverAsk: false,
         }
 
         yield* Effect.addFinalizer(() =>
@@ -157,17 +172,17 @@ export const layer = Layer.effect(
     }) {
       const pending = (yield* InstanceState.get(state)).pending
       const id = QuestionID.ascending()
-      yield* Effect.logInfo("asking", { id, questions: input.questions.length })
+      log.info("asking", { id, questions: input.questions.length })
 
       const deferred = yield* Deferred.make<ReadonlyArray<Answer>, RejectedError>()
-      const info: Request = {
+      const info = Schema.decodeUnknownSync(Request)({
         id,
         sessionID: input.sessionID,
         questions: input.questions,
         tool: input.tool,
-      }
+      })
       pending.set(id, { info, deferred })
-      yield* events.publish(Event.Asked, info)
+      yield* bus.publish(Event.Asked, info)
 
       return yield* Effect.ensuring(
         Deferred.await(deferred),
@@ -184,15 +199,15 @@ export const layer = Layer.effect(
       const pending = (yield* InstanceState.get(state)).pending
       const existing = pending.get(input.requestID)
       if (!existing) {
-        yield* Effect.logWarning("reply for unknown request", { requestID: input.requestID })
-        return yield* new NotFoundError({ requestID: input.requestID })
+        log.warn("reply for unknown request", { requestID: input.requestID })
+        return
       }
       pending.delete(input.requestID)
-      yield* Effect.logInfo("replied", { requestID: input.requestID, answers: input.answers })
-      yield* events.publish(Event.Replied, {
+      log.info("replied", { requestID: input.requestID, answers: input.answers })
+      yield* bus.publish(Event.Replied, {
         sessionID: existing.info.sessionID,
         requestID: existing.info.id,
-        answers: input.answers.map((a) => [...a]),
+        answers: input.answers,
       })
       yield* Deferred.succeed(existing.deferred, input.answers)
     })
@@ -201,12 +216,12 @@ export const layer = Layer.effect(
       const pending = (yield* InstanceState.get(state)).pending
       const existing = pending.get(requestID)
       if (!existing) {
-        yield* Effect.logWarning("reject for unknown request", { requestID })
-        return yield* new NotFoundError({ requestID })
+        log.warn("reject for unknown request", { requestID })
+        return
       }
       pending.delete(requestID)
-      yield* Effect.logInfo("rejected", { requestID })
-      yield* events.publish(Event.Rejected, {
+      log.info("rejected", { requestID })
+      yield* bus.publish(Event.Rejected, {
         sessionID: existing.info.sessionID,
         requestID: existing.info.id,
       })
@@ -218,12 +233,20 @@ export const layer = Layer.effect(
       return Array.from(pending.values(), (x) => x.info)
     })
 
-    return Service.of({ ask, reply, reject, list })
+    const neverAsk = Effect.fn("Question.neverAsk")(function* () {
+      return (yield* InstanceState.get(state)).neverAsk
+    })
+
+    const setNeverAsk = Effect.fn("Question.setNeverAsk")(function* (enabled: boolean) {
+      const s = yield* InstanceState.get(state)
+      s.neverAsk = enabled
+      log.info("never-ask", { enabled })
+    })
+
+    return Service.of({ ask, reply, reject, list, neverAsk, setNeverAsk })
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(EventV2Bridge.defaultLayer))
-
-export const node = LayerNode.make(layer, [EventV2Bridge.node])
+export const defaultLayer = layer.pipe(Layer.provide(Bus.layer))
 
 export * as Question from "."

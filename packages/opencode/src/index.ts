@@ -2,6 +2,7 @@ import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
 import { RunCommand } from "./cli/cmd/run"
 import { GenerateCommand } from "./cli/cmd/generate"
+import { Log } from "./util"
 import { ConsoleCommand } from "./cli/cmd/account"
 import { ProvidersCommand } from "./cli/cmd/providers"
 import { AgentCommand } from "./cli/cmd/agent"
@@ -9,28 +10,51 @@ import { UpgradeCommand } from "./cli/cmd/upgrade"
 import { UninstallCommand } from "./cli/cmd/uninstall"
 import { ModelsCommand } from "./cli/cmd/models"
 import { UI } from "./cli/ui"
-import { InstallationVersion } from "@swust-code/core/installation/version"
+import { Installation } from "./installation"
+import { InstallationVersion } from "./installation/version"
+import { NamedError } from "@swust-code/shared/util/error"
 import { FormatError } from "./cli/error"
 import { ServeCommand } from "./cli/cmd/serve"
+import { Filesystem } from "./util"
 import { DebugCommand } from "./cli/cmd/debug"
 import { StatsCommand } from "./cli/cmd/stats"
 import { McpCommand } from "./cli/cmd/mcp"
 import { GithubCommand } from "./cli/cmd/github"
 import { ExportCommand } from "./cli/cmd/export"
 import { ImportCommand } from "./cli/cmd/import"
-import { AttachCommand } from "./cli/cmd/attach"
-import { TuiThreadCommand } from "./cli/cmd/tui"
+import { AttachCommand } from "./cli/cmd/tui/attach"
+import { TuiThreadCommand } from "./cli/cmd/tui/thread"
 import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
-import { WebCommand } from "./cli/cmd/web"
+// Web command temporarily disabled
+// import { WebCommand } from "./cli/cmd/web"
 import { PrCommand } from "./cli/cmd/pr"
 import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
+import path from "path"
+import { Global } from "./global"
+import { JsonMigration } from "./storage"
+import { Database } from "./storage"
+import { ClaudeImport } from "./session/claude-import"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
-import { DreamCommand } from "./cli/cmd/dream"
-import { DistillCommand } from "./cli/cmd/distill"
 import { Heap } from "./cli/heap"
+import { drizzle } from "drizzle-orm/bun-sqlite"
+import { ensureProcessMetadata } from "./util/mimo-process"
+
+const processMetadata = ensureProcessMetadata("main")
+
+process.on("unhandledRejection", (e) => {
+  Log.Default.error("rejection", {
+    e: errorMessage(e),
+  })
+})
+
+process.on("uncaughtException", (e) => {
+  Log.Default.error("exception", {
+    e: errorMessage(e),
+  })
+})
 
 const args = hideBin(process.argv)
 
@@ -38,7 +62,7 @@ function show(out: string) {
   const text = out.trimStart()
   if (!text.startsWith("swust-code ")) {
     process.stderr.write(UI.logo() + EOL + EOL)
-    process.stderr.write(text + EOL)
+    process.stderr.write(text)
     return
   }
   process.stderr.write(out)
@@ -66,17 +90,81 @@ const cli = yargs(args)
     type: "boolean",
   })
   .middleware(async (opts) => {
-    if (opts.printLogs) process.env.SWUST_CODE_PRINT_LOGS = "1"
-    if (opts.logLevel) process.env.SWUST_CODE_LOG_LEVEL = opts.logLevel
     if (opts.pure) {
       process.env.SWUST_CODE_PURE = "1"
     }
+
+    await Log.init({
+      print: process.argv.includes("--print-logs"),
+      dev: Installation.isLocal(),
+      level: (() => {
+        if (opts.logLevel) return opts.logLevel as Log.Level
+        if (Installation.isLocal()) return "DEBUG"
+        return "INFO"
+      })(),
+    })
 
     Heap.start()
 
     process.env.AGENT = "1"
     process.env.SWUST_CODE = "1"
     process.env.SWUST_CODE_PID = String(process.pid)
+
+    Log.Default.info("swust-code", {
+      version: InstallationVersion,
+      args: process.argv.slice(2),
+      process_role: processMetadata.processRole,
+      run_id: processMetadata.runID,
+    })
+
+    const marker = path.join(Global.Path.data, "swust-code.db")
+    if (!(await Filesystem.exists(marker))) {
+      const tty = process.stderr.isTTY
+      process.stderr.write("Performing one time database migration, may take a few minutes..." + EOL)
+      const width = 36
+      const orange = "\x1b[38;5;214m"
+      const muted = "\x1b[0;2m"
+      const reset = "\x1b[0m"
+      let last = -1
+      if (tty) process.stderr.write("\x1b[?25l")
+      try {
+        await JsonMigration.run(drizzle({ client: Database.Client().$client }), {
+          progress: (event) => {
+            const percent = Math.floor((event.current / event.total) * 100)
+            if (percent === last && event.current !== event.total) return
+            last = percent
+            if (tty) {
+              const fill = Math.round((percent / 100) * width)
+              const bar = `${"■".repeat(fill)}${"･".repeat(width - fill)}`
+              process.stderr.write(
+                `\r${orange}${bar} ${percent.toString().padStart(3)}%${reset} ${muted}${event.label.padEnd(12)} ${event.current}/${event.total}${reset}`,
+              )
+              if (event.current === event.total) process.stderr.write("\n")
+            } else {
+              process.stderr.write(`sqlite-migration:${percent}${EOL}`)
+            }
+          },
+        })
+      } finally {
+        if (tty) process.stderr.write("\x1b[?25h")
+        else {
+          process.stderr.write(`sqlite-migration:done${EOL}`)
+        }
+      }
+      process.stderr.write("Database migration complete." + EOL)
+    }
+
+    // Idempotently import Claude Code sessions into SQLite. Runs once per process
+    // tree (the env guard is inherited by spawned children) and is best-effort:
+    // a failure here must never block command startup.
+    if (!process.env.SWUST_CODE_DISABLE_CLAUDE_IMPORT && !process.env.SWUST_CODE_CLAUDE_IMPORTED) {
+      process.env.SWUST_CODE_CLAUDE_IMPORTED = "1"
+      try {
+        await ClaudeImport.run()
+      } catch (e) {
+        Log.Default.warn("claude-import failed", { e: errorMessage(e) })
+      }
+    }
   })
   .usage("")
   .completion("completion", "generate shell completion script")
@@ -93,7 +181,8 @@ const cli = yargs(args)
   .command(UpgradeCommand)
   .command(UninstallCommand)
   .command(ServeCommand)
-  .command(WebCommand)
+  // Web command temporarily disabled
+  // .command(WebCommand)
   .command(ModelsCommand)
   .command(StatsCommand)
   .command(ExportCommand)
@@ -102,8 +191,6 @@ const cli = yargs(args)
   .command(PrCommand)
   .command(SessionCommand)
   .command(PluginCommand)
-  .command(DreamCommand)
-  .command(DistillCommand)
   .command(DbCommand)
   .fail((msg, err) => {
     if (
@@ -130,10 +217,39 @@ try {
     await cli.parse()
   }
 } catch (e) {
+  let data: Record<string, any> = {}
+  if (e instanceof NamedError) {
+    const obj = e.toObject()
+    Object.assign(data, {
+      ...obj.data,
+    })
+  }
+
+  if (e instanceof Error) {
+    Object.assign(data, {
+      name: e.name,
+      message: e.message,
+      cause: e.cause?.toString(),
+      stack: e.stack,
+    })
+  }
+
+  if (e instanceof ResolveMessage) {
+    Object.assign(data, {
+      name: e.name,
+      message: e.message,
+      code: e.code,
+      specifier: e.specifier,
+      referrer: e.referrer,
+      position: e.position,
+      importKind: e.importKind,
+    })
+  }
+  Log.Default.error("fatal", data)
   const formatted = FormatError(e)
   if (formatted) UI.error(formatted)
   if (formatted === undefined) {
-    UI.error("Unexpected error" + EOL)
+    UI.error("Unexpected error, check log file at " + Log.file() + " for more details" + EOL)
     process.stderr.write(errorMessage(e) + EOL)
   }
   process.exitCode = 1

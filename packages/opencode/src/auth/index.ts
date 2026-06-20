@@ -1,11 +1,10 @@
-import { LayerNode } from "@swust-code/core/effect/layer-node"
-import path from "path"
+﻿import path from "path"
 import { Effect, Layer, Record, Result, Schema, Context } from "effect"
-import { NonNegativeInt } from "@swust-code/core/schema"
-import { Global } from "@swust-code/core/global"
-import { FSUtil } from "@swust-code/core/fs-util"
+import { zod } from "@/util/effect-zod"
+import { Global } from "../global"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 
-export const OAUTH_DUMMY_KEY = "opencode-oauth-dummy-key"
+export const OAUTH_DUMMY_KEY = "swust-code-oauth-dummy-key"
 
 const file = path.join(Global.Path.data, "auth.json")
 
@@ -15,7 +14,7 @@ export class Oauth extends Schema.Class<Oauth>("OAuth")({
   type: Schema.Literal("oauth"),
   refresh: Schema.String,
   access: Schema.String,
-  expires: NonNegativeInt,
+  expires: Schema.Number,
   accountId: Schema.optional(Schema.String),
   enterpriseUrl: Schema.optional(Schema.String),
 }) {}
@@ -32,8 +31,9 @@ export class WellKnown extends Schema.Class<WellKnown>("WellKnownAuth")({
   token: Schema.String,
 }) {}
 
-export const Info = Schema.Union([Oauth, Api, WellKnown]).annotate({ discriminator: "type", identifier: "Auth" })
-export type Info = Schema.Schema.Type<typeof Info>
+const _Info = Schema.Union([Oauth, Api, WellKnown]).annotate({ discriminator: "type", identifier: "Auth" })
+export const Info = Object.assign(_Info, { zod: zod(_Info) })
+export type Info = Schema.Schema.Type<typeof _Info>
 
 export class AuthError extends Schema.TaggedErrorClass<AuthError>()("AuthError", {
   message: Schema.String,
@@ -47,12 +47,12 @@ export interface Interface {
   readonly remove: (key: string) => Effect.Effect<void, AuthError>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/Auth") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/Auth") {}
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const fsys = yield* FSUtil.Service
+    const fsys = yield* AppFileSystem.Service
     const decode = Schema.decodeUnknownOption(Info)
 
     const all = Effect.fn("Auth.all")(function* () {
@@ -92,8 +92,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(FSUtil.defaultLayer))
-
-export const node = LayerNode.make(layer, [FSUtil.node])
+export const defaultLayer = layer.pipe(Layer.provide(AppFileSystem.defaultLayer))
 
 export * as Auth from "."

@@ -1,12 +1,10 @@
-import { createSimpleContext } from "@swust-code/ui/context"
-import { checksum } from "@swust-code/core/util/encode"
-import { useParams, useSearchParams } from "@solidjs/router"
+﻿import { createSimpleContext } from "@swust-code/ui/context"
+import { checksum } from "@swust-code/shared/util/encode"
+import { useParams } from "@solidjs/router"
 import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
 import { Persist, persisted } from "@/utils/persist"
-import { useServerSDK } from "./server-sdk"
-import type { ServerScope } from "@/utils/server-scope"
 
 interface PartBase {
   content: string
@@ -153,11 +151,9 @@ const MAX_PROMPT_SESSIONS = 20
 
 type PromptSession = ReturnType<typeof createPromptSession>
 
-type Scope = { draftID: string } | { dir: string; id?: string }
-
-function scopeKey(scope: Scope) {
-  if ("draftID" in scope) return `draft:${scope.draftID}`
-  return `${scope.dir}:${scope.id ?? WORKSPACE_KEY}`
+type Scope = {
+  dir: string
+  id?: string
 }
 
 type PromptCacheEntry = {
@@ -165,15 +161,11 @@ type PromptCacheEntry = {
   dispose: VoidFunction
 }
 
-function promptTarget(serverScope: ServerScope, scope: Scope) {
-  if ("draftID" in scope) return Persist.draft(scope.draftID, "prompt")
-  const legacy = `${scope.dir}/prompt${scope.id ? "/" + scope.id : ""}.v2`
-  return Persist.serverScoped(serverScope, scope.dir, scope.id, "prompt", [legacy])
-}
+function createPromptSession(dir: string, id: string | undefined) {
+  const legacy = `${dir}/prompt${id ? "/" + id : ""}.v2`
 
-function createPromptSession(serverScope: ServerScope, scope: Scope) {
   const [store, setStore, _, ready] = persisted(
-    promptTarget(serverScope, scope),
+    Persist.scoped(dir, id, "prompt", [legacy]),
     createStore<{
       prompt: Prompt
       cursor?: number
@@ -237,8 +229,6 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
   gate: false,
   init: () => {
     const params = useParams()
-    const [search] = useSearchParams<{ draftId?: string }>()
-    const serverSDK = useServerSDK()
     const cache = new Map<string, PromptCacheEntry>()
 
     const disposeAll = () => {
@@ -261,8 +251,8 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
     }
 
     const owner = getOwner()
-    const load = (scope: Scope) => {
-      const key = scopeKey(scope)
+    const load = (dir: string, id: string | undefined) => {
+      const key = `${dir}:${id ?? WORKSPACE_KEY}`
       const existing = cache.get(key)
       if (existing) {
         cache.delete(key)
@@ -272,7 +262,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
 
       const entry = createRoot(
         (dispose) => ({
-          value: createPromptSession(serverSDK.scope, scope),
+          value: createPromptSession(dir, id),
           dispose,
         }),
         owner,
@@ -283,10 +273,8 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
       return entry.value
     }
 
-    const session = createMemo(() =>
-      load(search.draftId ? { draftID: search.draftId } : { dir: params.dir!, id: params.id }),
-    )
-    const pick = (scope?: Scope) => (scope ? load(scope) : session())
+    const session = createMemo(() => load(params.dir!, params.id))
+    const pick = (scope?: Scope) => (scope ? load(scope.dir, scope.id) : session())
 
     return {
       ready: () => session().ready,

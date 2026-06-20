@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, test } from "bun:test"
 import type { SnapshotFileDiff } from "@swust-code/sdk/v2"
 import type { Message } from "@swust-code/sdk/v2/client"
 import { diffs, message } from "./diffs"

@@ -1,14 +1,14 @@
-import { LayerNode } from "@swust-code/core/effect/layer-node"
-import { InstanceState } from "@/effect/instance-state"
-import { EffectBridge } from "@/effect/bridge"
-import type { InstanceContext } from "@/project/instance-context"
+import { BusEvent } from "@/bus/bus-event"
+import { InstanceState } from "@/effect"
+import { EffectBridge } from "@/effect"
+import { Flag } from "@/flag/flag"
+import type { InstanceContext } from "@/project/instance"
 import { SessionID, MessageID } from "@/session/schema"
-import { Effect, Layer, Context, Schema } from "effect"
-import { Config } from "@/config/config"
+import { Effect, Layer, Context } from "effect"
+import z from "zod"
+import { Config } from "../config"
 import { MCP } from "../mcp"
 import { Skill } from "../skill"
-import { EventV2 } from "@swust-code/core/event"
-import { RuntimeFlags } from "@/effect/runtime-flags"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 
@@ -17,30 +17,36 @@ type State = {
 }
 
 export const Event = {
-  Executed: EventV2.define({
-    type: "command.executed",
-    schema: {
-      name: Schema.String,
-      sessionID: SessionID,
-      arguments: Schema.String,
-      messageID: MessageID,
-    },
-  }),
+  Executed: BusEvent.define(
+    "command.executed",
+    z.object({
+      name: z.string(),
+      sessionID: SessionID.zod,
+      arguments: z.string(),
+      messageID: MessageID.zod,
+    }),
+  ),
 }
 
-export const Info = Schema.Struct({
-  name: Schema.String,
-  description: Schema.optional(Schema.String),
-  agent: Schema.optional(Schema.String),
-  model: Schema.optional(Schema.String),
-  source: Schema.optional(Schema.Literals(["command", "mcp", "skill"])),
-  // Some command templates are lazy promises from MCP prompt resolution.
-  template: Schema.Unknown,
-  subtask: Schema.optional(Schema.Boolean),
-  hints: Schema.Array(Schema.String),
-}).annotate({ identifier: "Command" })
+export const Info = z
+  .object({
+    name: z.string(),
+    description: z.string().optional(),
+    agent: z.string().optional(),
+    model: z.string().optional(),
+    source: z.enum(["command", "mcp", "skill"]).optional(),
+    // workaround for zod not supporting async functions natively so we use getters
+    // https://zod.dev/v4/changelog?id=zfunction
+    template: z.promise(z.string()).or(z.string()),
+    subtask: z.boolean().optional(),
+    hints: z.array(z.string()),
+  })
+  .meta({
+    ref: "Command",
+  })
 
-export type Info = Omit<Schema.Schema.Type<typeof Info>, "template"> & { template: Promise<string> | string }
+// for some reason zod is inferring `string` for z.promise(z.string()).or(z.string()) so we have to manually override it
+export type Info = Omit<z.infer<typeof Info>, "template"> & { template: Promise<string> | string }
 
 export function hints(template: string) {
   const result: string[] = []
@@ -84,7 +90,7 @@ export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/Command") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/Command") {}
 
 export const layer = Layer.effect(
   Service,
@@ -92,7 +98,6 @@ export const layer = Layer.effect(
     const config = yield* Config.Service
     const mcp = yield* MCP.Service
     const skill = yield* Skill.Service
-    const flags = yield* RuntimeFlags.Service
 
     const init = Effect.fn("Command.state")(function* (ctx: InstanceContext) {
       const cfg = yield* config.get()
@@ -131,7 +136,7 @@ export const layer = Layer.effect(
             "User focus or constraints:",
             "$ARGUMENTS",
             "",
-            "Use the memory files as the working index and the raw SWUST Code trajectory database as the source of truth.",
+            "Use the memory files as the working index and the raw swust-code trajectory database as the source of truth.",
             "Use bash for read-only SQLite and filesystem inspection. Do not modify the database.",
             "Consolidate only durable, verified information into project memory.",
           ].join("\n")
@@ -152,7 +157,7 @@ export const layer = Layer.effect(
             "$ARGUMENTS",
             "",
             "Look back over recent work and identify repeated manual workflows worth packaging.",
-            "Use the raw SWUST Code trajectory database as the source of truth and memory files to spot cross-session patterns.",
+            "Use the raw swust-code trajectory database as the source of truth and memory files to spot cross-session patterns.",
             "Inventory existing skills, agents, and commands first so you reuse or extend instead of duplicating.",
             "Use bash for read-only SQLite and filesystem inspection. Do not modify the database.",
             "Produce a compact shortlist, then create only the high-confidence missing assets.",
@@ -162,8 +167,7 @@ export const layer = Layer.effect(
       }
       commands[Default.GOAL] = {
         name: Default.GOAL,
-        description: "run the request in goal mode until a judge says it is met. /goal clear to abort",
-        agent: "goal",
+        description: "set a stop-condition goal; runs until a judge says it's met. /goal clear to abort",
         source: "command",
         subtask: false,
         get template() {
@@ -172,7 +176,7 @@ export const layer = Layer.effect(
         hints: ["$ARGUMENTS"],
       }
 
-      if (flags.experimentalWorkflowTool) {
+      if (Flag.SWUST_CODE_EXPERIMENTAL_WORKFLOW_TOOL) {
         commands[Default.DEEP_RESEARCH] = {
           name: Default.DEEP_RESEARCH,
           description: "deep multi-source, fact-checked research report (runs the deep-research workflow)",
@@ -267,9 +271,6 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Config.defaultLayer),
   Layer.provide(MCP.defaultLayer),
   Layer.provide(Skill.defaultLayer),
-  Layer.provide(RuntimeFlags.defaultLayer),
 )
-
-export const node = LayerNode.make(layer, [Config.node, MCP.node, Skill.node, RuntimeFlags.node])
 
 export * as Command from "."

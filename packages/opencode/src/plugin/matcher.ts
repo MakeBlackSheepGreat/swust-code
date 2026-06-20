@@ -1,6 +1,7 @@
-import { BUILT_IN_AGENTS, type ActorMatcher } from "@swust-code/plugin"
+﻿import { BUILT_IN_AGENTS, type ActorMatcher } from "@swust-code/plugin"
 
-const isBuiltIn = (agentType: string): boolean => (BUILT_IN_AGENTS as readonly string[]).includes(agentType)
+const isBuiltIn = (agentType: string): boolean =>
+  (BUILT_IN_AGENTS as readonly string[]).includes(agentType)
 
 export function matchesActor(
   matcher: ActorMatcher | undefined,
@@ -10,22 +11,23 @@ export function matchesActor(
 
   if (matcher.mode && matcher.mode !== input.mode) return false
 
-  const agentType = matcher.agentType
-  if (agentType === undefined) return !isBuiltIn(input.agentType)
+  const at = matcher.agentType
 
-  if (typeof agentType === "string") {
+  if (at === undefined) return !isBuiltIn(input.agentType)
+
+  if (typeof at === "string") {
     if (isBuiltIn(input.agentType)) return false
     try {
-      return new RegExp(agentType).test(input.agentType)
+      return new RegExp(at).test(input.agentType)
     } catch {
       return false
     }
   }
 
-  if (Array.isArray(agentType)) return agentType.includes(input.agentType)
+  if (Array.isArray(at)) return at.includes(input.agentType)
 
-  if ("excludeOnly" in agentType) return !agentType.excludeOnly.includes(input.agentType)
+  if ("excludeOnly" in at) return !at.excludeOnly.includes(input.agentType)
 
-  if (agentType.exclude?.includes(input.agentType)) return false
-  return agentType.include.includes(input.agentType)
+  if (at.exclude?.includes(input.agentType)) return false
+  return at.include.includes(input.agentType)
 }

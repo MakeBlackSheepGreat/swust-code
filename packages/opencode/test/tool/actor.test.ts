@@ -1,201 +1,102 @@
 import { afterEach, describe, expect } from "bun:test"
-import { ConfigV1 } from "@swust-code/core/v1/config/config"
-import { SessionV1 } from "@swust-code/core/v1/session"
-import { Database } from "@swust-code/core/database/database"
-import { Effect, Layer } from "effect"
-import fs from "fs/promises"
-import path from "path"
+import { Deferred, Effect, Layer } from "effect"
+import z from "zod"
+import { schema as transformSchema } from "../../src/provider/transform"
 import { Agent } from "../../src/agent/agent"
-import * as ActorRegistry from "../../src/actor/registry"
-import * as ActorSpawn from "../../src/actor/spawn"
-import { BackgroundJob } from "../../src/background/job"
-import { EventV2Bridge } from "../../src/event-v2-bridge"
-import { Config } from "../../src/config/config"
-import { CrossSpawnSpawner } from "@swust-code/core/cross-spawn-spawner"
-import { Ripgrep } from "@swust-code/core/ripgrep"
-import { Session } from "../../src/session/session"
-import { SessionPrompt } from "../../src/session/prompt"
+import { Bus } from "../../src/bus"
+import { Config } from "../../src/config"
+import { Provider } from "../../src/provider"
+import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
+import { Instance } from "../../src/project/instance"
+import { Session } from "../../src/session"
+import { MessageV2 } from "../../src/session/message-v2"
+import type { SessionPrompt } from "../../src/session/prompt"
 import { SessionCheckpoint } from "../../src/session/checkpoint"
-import { MessageID, type SessionID } from "../../src/session/schema"
-import { SessionRunState } from "../../src/session/run-state"
-import { SessionStatus } from "../../src/session/status"
+import { MessageID, PartID } from "../../src/session/schema"
+import { ModelID, ProviderID } from "../../src/provider/schema"
+import { ActorTool, type ActorPromptOps } from "../../src/tool/actor"
+import { ActorRegistry } from "../../src/actor/registry"
 import { TaskRegistry } from "../../src/task/registry"
-import { ActorTool } from "../../src/tool/actor"
-import { Inbox } from "../../src/inbox"
-import { checkpointPath } from "../../src/session/checkpoint-paths"
-import { Truncate } from "../../src/tool/truncate"
-import { ToolRegistry } from "../../src/tool/registry"
-import { RuntimeFlags } from "../../src/effect/runtime-flags"
-import { Plugin } from "../../src/plugin"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { ActorWaiter } from "../../src/actor/waiter"
+import { spawnRef } from "../../src/actor/spawn-ref"
+import type { SpawnInput, AgentOutcome } from "../../src/actor/spawn"
+import { Team } from "../../src/team"
+import { Truncate } from "../../src/tool"
+import { ToolRegistry } from "../../src/tool"
+import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { TestLLMServer } from "../lib/llm-server"
-import { ProviderV2 } from "@swust-code/core/provider"
-import { ModelV2 } from "@swust-code/core/model"
 
 afterEach(async () => {
-  await disposeAllInstances()
+  spawnRef.current = undefined
+  await Instance.disposeAll()
 })
+
+// Mock Actor.spawn that simulates the spawn lifecycle using ActorRegistry + Bus
+// so tests can exercise the actor tool without the full Actor.layer graph.
+function installMockSpawn(onSpawn?: (input: SpawnInput) => void) {
+  return Effect.gen(function* () {
+    const actorReg = yield* ActorRegistry.Service
+
+    spawnRef.current = {
+      spawn: (input: SpawnInput) =>
+        Effect.gen(function* () {
+          onSpawn?.(input)
+          const actorID = yield* actorReg.allocateActorID(input.sessionID, input.agentType)
+          yield* actorReg.register({
+            sessionID: input.sessionID,
+            actorID,
+            mode: input.mode,
+            parentActorID: input.parentActorID,
+            agent: input.agentType,
+            description: input.description ?? input.agentType,
+            contextMode: input.context,
+            background: input.background,
+            lifecycle: "ephemeral",
+            tools: input.tools,
+          })
+          yield* actorReg.updateStatus(input.sessionID, actorID, { status: "running" }).pipe(Effect.ignore)
+
+          const outcome = yield* Deferred.make<AgentOutcome>()
+
+          // Synchronously complete the actor so waiter.wait resolves immediately.
+          yield* actorReg.updateStatus(input.sessionID, actorID, { status: "idle", lastOutcome: "success" }).pipe(Effect.ignore)
+          yield* Deferred.succeed(outcome, { status: "success", finalText: "done" })
+
+          return { actorID, sessionID: input.sessionID, outcome }
+        }),
+      cancel: () => Effect.void,
+      getForkContext: () => Effect.succeed(undefined),
+    }
+  })
+}
 
 const ref = {
-  providerID: ProviderV2.ID.make("test"),
-  modelID: ModelV2.ID.make("test-model"),
+  providerID: ProviderID.make("test"),
+  modelID: ModelID.make("test-model"),
 }
 
-const cfg = (url: string): Partial<ConfigV1.Info> => ({
-  model: "test/test-model",
-  provider: {
-    test: {
-      name: "Test",
-      id: "test",
-      env: [],
-      npm: "@ai-sdk/openai-compatible",
-      models: {
-        "test-model": {
-          id: "test-model",
-          name: "Test Model",
-          attachment: false,
-          reasoning: false,
-          temperature: false,
-          tool_call: true,
-          release_date: "2025-01-01",
-          limit: { context: 100000, output: 10000 },
-          cost: { input: 0, output: 0 },
-          options: {},
-        },
-      },
-      options: {
-        apiKey: "test-key",
-        baseURL: url,
-      },
-    },
-  },
-})
-
-const noHookDecision = {
-  continue: false,
-  contributingPluginNames: [],
-  contributingHookIDs: [],
-}
-
-const noHookPlugin = Layer.succeed(
-  Plugin.Service,
-  Plugin.Service.of({
-    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
-      Effect.succeed(output)) as Plugin.Interface["trigger"],
-    list: () => Effect.succeed([]),
-    init: () => Effect.void,
-    triggerActorPreStop: () => Effect.succeed(noHookDecision),
-    triggerActorPostStop: () => Effect.succeed(noHookDecision),
-  }),
+const it = testEffect(
+  Layer.mergeAll(
+    Agent.defaultLayer,
+    Bus.defaultLayer,
+    Config.defaultLayer,
+    Provider.defaultLayer,
+    CrossSpawnSpawner.defaultLayer,
+    Session.defaultLayer,
+    Truncate.defaultLayer,
+    ToolRegistry.defaultLayer,
+    ActorRegistry.defaultLayer,
+    ActorWaiter.layer.pipe(Layer.provide(Bus.defaultLayer), Layer.provide(ActorRegistry.defaultLayer), Layer.provide(Session.defaultLayer)),
+    Team.defaultLayer,
+    SessionCheckpoint.defaultLayer,
+    TaskRegistry.defaultLayer,
+  ),
 )
 
-const actorSpawnNoHook = ActorSpawn.layer.pipe(
-  Layer.provide(ActorRegistry.defaultLayer),
-  Layer.provide(Session.defaultLayer),
-  Layer.provide(SessionPrompt.defaultLayer),
-  Layer.provide(Agent.defaultLayer),
-  Layer.provide(TaskRegistry.defaultLayer),
-  Layer.provide(SessionRunState.defaultLayer),
-  Layer.provide(noHookPlugin),
-  Layer.provide(EventV2Bridge.defaultLayer),
-)
-
-const layer = Layer.mergeAll(
-  Agent.defaultLayer,
-  ActorRegistry.defaultLayer,
-  BackgroundJob.defaultLayer,
-  EventV2Bridge.defaultLayer,
-  Config.defaultLayer,
-  CrossSpawnSpawner.defaultLayer,
-  Session.defaultLayer,
-  SessionRunState.defaultLayer,
-  SessionStatus.defaultLayer,
-  TaskRegistry.defaultLayer,
-  SessionCheckpoint.defaultLayer,
-  actorSpawnNoHook,
-  Inbox.defaultLayer,
-  Truncate.defaultLayer,
-  ToolRegistry.defaultLayer,
-  Database.defaultLayer,
-  RuntimeFlags.layer({ disableDefaultPlugins: true }),
-  TestLLMServer.layer,
-).pipe(Layer.provide(Ripgrep.defaultLayer))
-
-const it = testEffect(layer)
-
-const preStopRetryPlugin = Layer.succeed(
-  Plugin.Service,
-  Plugin.Service.of({
-    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
-      Effect.succeed(output)) as Plugin.Interface["trigger"],
-    list: () => Effect.succeed([]),
-    init: () => Effect.void,
-    triggerActorPreStop: (input) =>
-      Effect.succeed(
-        input.iteration === 0
-          ? {
-              continue: true,
-              reason: "Revise the final response before returning it.",
-              contributingPluginNames: ["test-plugin"],
-              contributingHookIDs: ["test-plugin#actor.preStop"],
-            }
-          : noHookDecision,
-      ),
-    triggerActorPostStop: () => Effect.succeed(noHookDecision),
-  }),
-)
-
-const actorSpawnWithPreStopRetry = ActorSpawn.layer.pipe(
-  Layer.provide(ActorRegistry.defaultLayer),
-  Layer.provide(Session.defaultLayer),
-  Layer.provide(SessionPrompt.defaultLayer),
-  Layer.provide(Agent.defaultLayer),
-  Layer.provide(TaskRegistry.defaultLayer),
-  Layer.provide(SessionRunState.defaultLayer),
-  Layer.provide(preStopRetryPlugin),
-  Layer.provide(EventV2Bridge.defaultLayer),
-)
-
-const preStopLayer = Layer.mergeAll(
-  Agent.defaultLayer,
-  ActorRegistry.defaultLayer,
-  BackgroundJob.defaultLayer,
-  EventV2Bridge.defaultLayer,
-  Config.defaultLayer,
-  CrossSpawnSpawner.defaultLayer,
-  Session.defaultLayer,
-  SessionRunState.defaultLayer,
-  SessionStatus.defaultLayer,
-  TaskRegistry.defaultLayer,
-  SessionCheckpoint.defaultLayer,
-  actorSpawnWithPreStopRetry,
-  Inbox.defaultLayer,
-  Truncate.defaultLayer,
-  ToolRegistry.defaultLayer,
-  Database.defaultLayer,
-  RuntimeFlags.layer({ disableDefaultPlugins: true }),
-  TestLLMServer.layer,
-).pipe(Layer.provide(Ripgrep.defaultLayer))
-
-const itPreStop = testEffect(preStopLayer)
-
-const useServerConfig = Effect.fn("ActorToolTest.useServerConfig")(function* () {
-  const { directory } = yield* TestInstance
-  const llm = yield* TestLLMServer
-  yield* Effect.promise(() =>
-    Bun.write(
-      path.join(directory, "swust-code.json"),
-      JSON.stringify({ $schema: "https://opencode.ai/config.json", ...cfg(llm.url) }),
-    ),
-  )
-  return llm
-})
-
-const seed = Effect.fn("ActorToolTest.seed")(function* () {
-  const sessions = yield* Session.Service
-  const chat = yield* sessions.create({ title: "Actor test" })
-  const user = yield* sessions.updateMessage({
+const seed = Effect.fn("ActorToolTest.seed")(function* (title = "Pinned") {
+  const session = yield* Session.Service
+  const chat = yield* session.create({ title })
+  const user = yield* session.updateMessage({
     id: MessageID.ascending(),
     role: "user",
     sessionID: chat.id,
@@ -203,7 +104,7 @@ const seed = Effect.fn("ActorToolTest.seed")(function* () {
     model: ref,
     time: { created: Date.now() },
   })
-  const assistant: SessionV1.Assistant = {
+  const assistant: MessageV2.Assistant = {
     id: MessageID.ascending(),
     role: "assistant",
     parentID: user.id,
@@ -217,329 +118,631 @@ const seed = Effect.fn("ActorToolTest.seed")(function* () {
     providerID: ref.providerID,
     time: { created: Date.now() },
   }
-  yield* sessions.updateMessage(assistant)
+  yield* session.updateMessage(assistant)
   return { chat, assistant }
 })
 
-function ctx(input: { sessionID: SessionID; messageID: MessageID; text?: string }) {
+function stubOps(opts?: { onPrompt?: (input: SessionPrompt.PromptInput) => void; text?: string }): ActorPromptOps {
   return {
-    sessionID: input.sessionID,
-    messageID: input.messageID,
-    agent: "build",
-    abort: new AbortController().signal,
-    extra: {},
-    messages: [],
-    metadata: () => Effect.void,
-    ask: () => Effect.void,
+    cancel() {},
+    resolvePromptParts: (template) => Effect.succeed([{ type: "text" as const, text: template }]),
+    prompt: (input) =>
+      Effect.sync(() => {
+        opts?.onPrompt?.(input)
+        return reply(input, opts?.text ?? "done")
+      }),
   }
 }
 
-describe("tool.actor MiMo-compatible behavior", () => {
-  it.instance('context="state" injects the latest checkpoint into the child prompt', () =>
-    Effect.gen(function* () {
-      const llm = yield* useServerConfig()
-      const { chat, assistant } = yield* seed()
-      const file = checkpointPath(chat.id)
-      yield* Effect.promise(async () => {
-        await fs.mkdir(path.dirname(file), { recursive: true })
-        await Bun.write(file, "Parent milestone: checkpoint-visible\nNext step: keep going\n")
-      })
-      yield* llm.text("done")
-      const tool = yield* ActorTool
-      const def = yield* tool.init()
+function reply(input: SessionPrompt.PromptInput, text: string): MessageV2.WithParts {
+  const id = MessageID.ascending()
+  return {
+    info: {
+      id,
+      role: "assistant",
+      parentID: input.messageID ?? MessageID.ascending(),
+      sessionID: input.sessionID,
+      mode: input.agent ?? "general",
+      agent: input.agent ?? "general",
+      cost: 0,
+      path: { cwd: "/tmp", root: "/tmp" },
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      modelID: input.model?.modelID ?? ref.modelID,
+      providerID: input.model?.providerID ?? ref.providerID,
+      time: { created: Date.now() },
+      finish: "stop",
+    },
+    parts: [
+      {
+        id: PartID.ascending(),
+        messageID: id,
+        sessionID: input.sessionID,
+        type: "text",
+        text,
+      },
+    ],
+  }
+}
 
-      const result = yield* def.execute(
-        {
-          operation: {
-            action: "run",
-            subagent_type: "general",
-            description: "use state",
-            prompt: "child prompt body",
-            context: "state",
-          },
-        },
-        ctx({ sessionID: chat.id, messageID: assistant.id }),
-      )
+describe("tool.actor", () => {
+  it.live("description sorts subagents by name and is stable across calls", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const agent = yield* Agent.Service
+          const build = yield* agent.get("build")
+          const registry = yield* ToolRegistry.Service
+          const get = Effect.fnUntraced(function* () {
+            const tools = yield* registry.tools({ ...ref, agent: build })
+            return tools.find((tool) => tool.id === ActorTool.id)?.description ?? ""
+          })
+          const first = yield* get()
+          const second = yield* get()
 
-      expect(result.output).toContain("<actor_result")
+          expect(first).toBe(second)
 
-      const sessions = yield* Session.Service
-      const actorMessages = yield* sessions.messages({ sessionID: chat.id, agentID: "general-1" })
-      const text = actorMessages
-        .flatMap((message) =>
-          message.parts.filter(
-            (part): part is Extract<(typeof message.parts)[number], { type: "text" }> => part.type === "text",
-          ),
-        )
-        .map((part) => part.text)
-        .join("\n")
-      expect(text).toContain("<session-state>")
-      expect(text).toContain("Parent milestone: checkpoint-visible")
-      expect(text).toContain("child prompt body")
-    }),
-  )
+          const alpha = first.indexOf("- alpha: Alpha agent")
+          const explore = first.indexOf("- explore:")
+          const general = first.indexOf("- general:")
+          const zebra = first.indexOf("- zebra: Zebra agent")
 
-  it.instance("malformed task_id degrades to ad-hoc with a notice", () =>
-    Effect.gen(function* () {
-      const llm = yield* useServerConfig()
-      const { chat, assistant } = yield* seed()
-      yield* llm.text("done")
-      const tool = yield* ActorTool
-      const def = yield* tool.init()
-
-      const result = yield* def.execute(
-        {
-          operation: {
-            action: "run",
-            subagent_type: "general",
-            description: "inspect bug",
-            prompt: "look into it",
-            task_id: "not-a-task",
-          },
-        },
-        ctx({ sessionID: chat.id, messageID: assistant.id }),
-      )
-
-      expect(result.output).toContain('task_id "not-a-task"')
-      expect(result.output.toLowerCase()).toContain("ran ad-hoc")
-      expect(result.output).toContain("<actor_result")
-      expect(result.metadata.sessionId).toBe(chat.id)
-
-      const sessions = yield* Session.Service
-      const actorMessages = yield* sessions.messages({ sessionID: chat.id, agentID: "general-1" })
-      expect(actorMessages.map((message) => message.info.role)).toEqual(["user", "assistant"])
-      expect(
-        actorMessages.some((message) =>
-          message.parts.some((part) => part.type === "text" && part.text.includes("look into it")),
-        ),
-      ).toBe(true)
-    }),
-  )
-
-  it.instance("existing task_id follows the reported return header", () =>
-    Effect.gen(function* () {
-      const llm = yield* useServerConfig()
-      const { chat, assistant } = yield* seed()
-      yield* llm.text("**Status**: blocked\n**Summary**: needs credentials\n\nCannot continue.")
-      const tasks = yield* TaskRegistry.Service
-      const task = yield* tasks.create({ session_id: chat.id, summary: "Investigate cache" })
-      const tool = yield* ActorTool
-      const def = yield* tool.init()
-
-      const result = yield* def.execute(
-        {
-          operation: {
-            action: "run",
-            subagent_type: "general",
-            description: "inspect bug",
-            prompt: "look into it",
-            task_id: task.id,
-          },
-        },
-        ctx({
-          sessionID: chat.id,
-          messageID: assistant.id,
+          expect(alpha).toBeGreaterThan(-1)
+          expect(explore).toBeGreaterThan(alpha)
+          expect(general).toBeGreaterThan(explore)
+          expect(zebra).toBeGreaterThan(general)
         }),
-      )
-
-      expect(result.output).toContain('<actor_result status="blocked" summary="needs credentials">')
-      const updated = yield* tasks.get({ session_id: chat.id, id: task.id })
-      expect(updated?.status).toBe("blocked")
-    }),
-  )
-
-  it.instance("gate-eligible actor downgrades to partial when owned task stays open", () =>
-    Effect.gen(function* () {
-      const llm = yield* useServerConfig()
-      const { chat, assistant } = yield* seed()
-      yield* llm.text("**Status**: success\n**Summary**: initial completion")
-      yield* llm.text("**Status**: success\n**Summary**: still open")
-      yield* llm.text("**Status**: success\n**Summary**: still open")
-      const tasks = yield* TaskRegistry.Service
-      const task = yield* tasks.create({ session_id: chat.id, summary: "Close the loop" })
-      const tool = yield* ActorTool
-      const def = yield* tool.init()
-
-      const result = yield* def.execute(
-        {
-          operation: {
-            action: "run",
-            subagent_type: "general",
-            description: "complete task",
-            prompt: "finish it",
-            task_id: task.id,
+      {
+        config: {
+          agent: {
+            zebra: {
+              description: "Zebra agent",
+              mode: "subagent",
+            },
+            alpha: {
+              description: "Alpha agent",
+              mode: "subagent",
+            },
           },
         },
-        ctx({ sessionID: chat.id, messageID: assistant.id }),
-      )
-
-      expect(result.output).toContain('<actor_result status="partial"')
-      expect(result.output).toContain("**Incomplete tasks**")
-      expect(result.output).toContain(task.id)
-      expect(yield* llm.calls).toBe(3)
-
-      const updated = yield* tasks.get({ session_id: chat.id, id: task.id })
-      expect(updated?.status).toBe("in_progress")
-      expect(updated?.owner).toBe("general-1")
-    }),
+      },
+    ),
   )
 
-  itPreStop.instance("actor.preStop can request a MiMo-style re-entry before delivery", () =>
-    Effect.gen(function* () {
-      const llm = yield* useServerConfig()
-      const { chat, assistant } = yield* seed()
-      yield* llm.text("first draft")
-      yield* llm.text("second draft")
-      const tool = yield* ActorTool
-      const def = yield* tool.init()
+  it.live("description hides denied subagents for the caller", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const agent = yield* Agent.Service
+          const build = yield* agent.get("build")
+          const registry = yield* ToolRegistry.Service
+          const description =
+            (yield* registry.tools({ ...ref, agent: build })).find((tool) => tool.id === ActorTool.id)?.description ?? ""
 
-      const result = yield* def.execute(
-        {
-          operation: {
-            action: "run",
-            subagent_type: "general",
-            description: "revise before return",
-            prompt: "produce a final answer",
+          expect(description).toContain("- alpha: Alpha agent")
+          expect(description).not.toContain("- zebra: Zebra agent")
+        }),
+      {
+        config: {
+          permission: {
+            task: {
+              "*": "allow",
+              zebra: "deny",
+            },
+          },
+          agent: {
+            zebra: {
+              description: "Zebra agent",
+              mode: "subagent",
+            },
+            alpha: {
+              description: "Alpha agent",
+              mode: "subagent",
+            },
           },
         },
-        ctx({ sessionID: chat.id, messageID: assistant.id }),
-      )
-
-      expect(result.output).toContain("second draft")
-      expect(result.output).not.toContain("first draft")
-      expect(yield* llm.calls).toBe(2)
-    }),
+      },
+    ),
   )
 
-  it.instance("cancel on an already-idle actor is idempotent", () =>
-    Effect.gen(function* () {
-      const { chat, assistant } = yield* seed()
-      const registry = yield* ActorRegistry.Service
-      yield* registry.register({
-        sessionID: chat.id,
-        actorID: "general-1",
-        mode: "subagent",
-        status: "idle",
-        lastOutcome: "success",
-        lifecycle: "ephemeral",
-        agent: "general",
-        description: "already done",
-        background: true,
-      })
-      const tool = yield* ActorTool
-      const def = yield* tool.init()
+  it.live("execute resumes an existing task session from actor_id", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        yield* installMockSpawn()
+        const { chat, assistant } = yield* seed()
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
 
-      const result = yield* def.execute(
-        { operation: { action: "cancel", actor_id: "general-1" } },
-        ctx({ sessionID: chat.id, messageID: assistant.id }),
-      )
-      const body = JSON.parse(result.output)
-      expect(body.status).toBe("idle")
-      expect(body.lastOutcome).toBe("success")
-    }),
+        const result = yield* def.execute(
+          {
+            operation: {
+              action: "run",
+              description: "inspect bug",
+              prompt: "look into the cache key path",
+              subagent_type: "general",
+              actor_id: "ses_missing", // v9: actor_id in run action is ignored — always creates new
+            },
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: {},
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        // v9: run always creates a new actor under the parent session
+        expect(result.metadata.sessionId).toBe(chat.id)
+        expect(result.output).toContain("actor_id:")
+      }),
+    ),
   )
 
-  it.instance("wait on a completed registry-only actor returns without polling forever", () =>
-    Effect.gen(function* () {
-      const { chat, assistant } = yield* seed()
-      const registry = yield* ActorRegistry.Service
-      yield* registry.register({
-        sessionID: chat.id,
-        actorID: "general-1",
-        mode: "subagent",
-        status: "idle",
-        lastOutcome: "success",
-        lifecycle: "ephemeral",
-        agent: "general",
-        description: "already done",
-        background: true,
-      })
-      const tool = yield* ActorTool
-      const def = yield* tool.init()
+  it.live("execute asks by default and skips checks when bypassed", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        yield* installMockSpawn()
+        const { chat, assistant } = yield* seed()
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
+        const calls: unknown[] = []
 
-      const result = yield* def.execute(
-        { operation: { action: "wait", actor_id: "general-1", timeout_ms: 1 } },
-        ctx({ sessionID: chat.id, messageID: assistant.id }),
-      )
-      const body = JSON.parse(result.output)
-      expect(body.status).toBe("idle")
-      expect(body.lastOutcome).toBe("success")
-    }),
+        const exec = (extra?: Record<string, unknown>) =>
+          def.execute(
+            {
+              operation: {
+                action: "run",
+                description: "inspect bug",
+                prompt: "look into the cache key path",
+                subagent_type: "general",
+              },
+            },
+            {
+              sessionID: chat.id,
+              messageID: assistant.id,
+              agent: "build",
+              abort: new AbortController().signal,
+              extra: { ...extra },
+              messages: [],
+              metadata: () => Effect.void,
+              ask: (input) =>
+                Effect.sync(() => {
+                  calls.push(input)
+                }),
+            },
+          )
+
+        yield* exec()
+        yield* exec({ bypassAgentCheck: true })
+
+        expect(calls).toHaveLength(1)
+        expect(calls[0]).toEqual({
+          permission: "actor",
+          patterns: ["general"],
+          always: ["*"],
+          metadata: {
+            description: "inspect bug",
+            subagent_type: "general",
+          },
+        })
+      }),
+    ),
   )
 
-  it.instance("send to an existing actor writes to the inbox", () =>
-    Effect.gen(function* () {
-      const { chat, assistant } = yield* seed()
-      const registry = yield* ActorRegistry.Service
-      const inbox = yield* Inbox.Service
-      yield* registry.register({
-        sessionID: chat.id,
-        actorID: "general-1",
-        mode: "subagent",
-        status: "running",
-        lifecycle: "ephemeral",
-        agent: "general",
-        description: "target actor",
-        background: true,
-      })
-      const tool = yield* ActorTool
-      const def = yield* tool.init()
+  it.live("execute creates a child when actor_id does not exist", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        yield* installMockSpawn()
+        const { chat, assistant } = yield* seed()
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
 
-      const result = yield* def.execute(
-        { operation: { action: "send", to_actor_id: "general-1", content: "hello actor" } },
-        ctx({ sessionID: chat.id, messageID: assistant.id }),
-      )
-      const body = JSON.parse(result.output)
-      expect(body.inboxID).toBeString()
-      expect(result.title).toBe("Sent to general-1")
+        const result = yield* def.execute(
+          {
+            operation: {
+              action: "run",
+              description: "inspect bug",
+              prompt: "look into the cache key path",
+              subagent_type: "general",
+              actor_id: "ses_missing",
+            },
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: {},
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
 
-      const rows = yield* inbox.list(chat.id, "general-1")
-      expect(rows).toHaveLength(1)
-      expect(rows[0].id).toBe(body.inboxID)
-      expect(rows[0].content).toBe("hello actor")
-
-      const sessions = yield* Session.Service
-      yield* sessions.updateMessage({
-        id: MessageID.ascending(),
-        role: "user",
-        sessionID: chat.id,
-        agentID: "general-1",
-        agent: "general",
-        model: ref,
-        time: { created: Date.now() },
-      })
-
-      const drained = yield* inbox.drain(chat.id, "general-1")
-      expect(drained).toBe(1)
-      expect(yield* inbox.list(chat.id, "general-1")).toHaveLength(0)
-
-      const actorMessages = yield* sessions.messages({ sessionID: chat.id, agentID: "general-1" })
-      const synthetic = actorMessages.flatMap((message) =>
-        message.parts.filter(
-          (part): part is Extract<(typeof message.parts)[number], { type: "text" }> =>
-            part.type === "text" && part.synthetic === true,
-        ),
-      )
-      expect(synthetic).toHaveLength(1)
-      expect(synthetic[0].text).toContain("<inbox")
-      expect(synthetic[0].text).toContain("hello actor")
-    }),
+        // v9: run creates a new actor under the parent session (subagent mode)
+        expect(result.metadata.sessionId).toBe(chat.id)
+        expect(result.metadata.actorId).toBeDefined()
+        expect(result.output).toContain(`actor_id: ${result.metadata.actorId}`)
+      }),
+    ),
   )
 
-  it.instance("send to a missing actor returns a structured receiver-not-found error", () =>
-    Effect.gen(function* () {
-      const { chat, assistant } = yield* seed()
-      const tool = yield* ActorTool
-      const def = yield* tool.init()
+  it.live("execute shapes child permissions for task, todowrite, and primary tools", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          yield* installMockSpawn()
+          const { chat, assistant } = yield* seed()
+          const tool = yield* ActorTool
+          const def = yield* tool.init()
 
-      const result = yield* def.execute(
-        { operation: { action: "send", to_actor_id: "missing-1", content: "hello" } },
-        ctx({ sessionID: chat.id, messageID: assistant.id }),
-      )
-      const body = JSON.parse(result.output)
-      expect(body.inboxID).toBeNull()
-      expect(body.error).toBe("receiver not found")
-      expect(result.title).toContain("receiver not found")
-    }),
+          const result = yield* def.execute(
+            {
+              operation: {
+                action: "run",
+                description: "inspect bug",
+                prompt: "look into the cache key path",
+                subagent_type: "reviewer",
+              },
+            },
+            {
+              sessionID: chat.id,
+              messageID: assistant.id,
+              agent: "build",
+              abort: new AbortController().signal,
+              extra: {},
+              messages: [],
+              metadata: () => Effect.void,
+              ask: () => Effect.void,
+            },
+          )
+
+          // v9: run registers actor in registry with tools whitelist
+          const actorReg = yield* ActorRegistry.Service
+          const actor = yield* actorReg.get(chat.id, result.metadata.actorId)
+          expect(actor).toBeDefined()
+          expect(actor!.agent).toBe("reviewer")
+          expect(result.metadata.sessionId).toBe(chat.id)
+        }),
+      {
+        config: {
+          agent: {
+            reviewer: {
+              mode: "subagent",
+              permission: {
+                actor: "allow",
+              },
+            },
+          },
+          experimental: {
+            primary_tools: ["bash", "read"],
+          },
+        },
+      },
+    ),
+  )
+})
+
+describe("Actor tool subagent_type enum (F36)", () => {
+  // The actor tool's `subagent_type` schema is built dynamically from the
+  // agent registry, filtered to mode==="subagent" && !hidden. Spawnable
+  // agents (general, explore, user-config-defined) appear in the enum;
+  // hidden internals (title, summary, checkpoint-writer per F24) do not.
+  // We probe via the resolved tool's parameters schema since that's the
+  // contract surface the LLM hits — Actor.Service.spawn bypasses zod.
+  it.live("subagent_type enum includes spawnable agents and rejects hidden ones", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
+
+        // Probe the subagent_type field directly. Validate the rest of the
+        // payload has known-good shape so the only failing field is the enum.
+        const accept = (subagentType: string) =>
+          def.parameters.safeParse({
+            operation: {
+              action: "spawn",
+              description: "test",
+              prompt: "test",
+              subagent_type: subagentType,
+            },
+          })
+
+        // general and explore are mode="subagent" + !hidden → in the enum.
+        expect(accept("general").success).toBe(true)
+        expect(accept("explore").success).toBe(true)
+
+        // title, summary, checkpoint-writer are hidden=true → not in the enum.
+        expect(accept("title").success).toBe(false)
+        expect(accept("summary").success).toBe(false)
+        expect(accept("checkpoint-writer").success).toBe(false)
+
+        // Made-up name → not in the enum.
+        expect(accept("does-not-exist").success).toBe(false)
+      }),
+    ),
+  )
+
+  it.live("user-config-defined subagents appear in the enum", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const tool = yield* ActorTool
+          const def = yield* tool.init()
+
+          const accept = (subagentType: string) =>
+            def.parameters.safeParse({
+              operation: {
+                action: "spawn",
+                description: "test",
+                prompt: "test",
+                subagent_type: subagentType,
+              },
+            })
+
+          // User-config-defined "alpha" is mode="subagent" → in the enum.
+          expect(accept("alpha").success).toBe(true)
+        }),
+      {
+        config: {
+          agent: {
+            alpha: {
+              description: "Alpha agent",
+              mode: "subagent",
+            },
+          },
+        },
+      },
+    ),
+  )
+
+  // Mirror of the task tool's schema regression test (commit 334cf6708).
+  // The pre-discriminated-union schema let the model fill every "optional" string
+  // with "" — including actor_id — which slipped past the runtime guards in some
+  // paths and produced confusing tool errors elsewhere.
+  it.live("schema rejects empty strings, unknown fields, and per-action missing required fields", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
+        const params = def.parameters
+        const wrap = (op: Record<string, unknown>) => params.safeParse(op)
+
+        // run (sync) and spawn (async): operation envelope required; action/description/prompt/subagent_type required.
+        expect(wrap({ operation: { action: "run", description: "x", prompt: "y", subagent_type: "general" } }).success).toBe(true)
+        expect(wrap({ operation: { action: "spawn", description: "x", prompt: "y", subagent_type: "general" } }).success).toBe(true)
+
+        expect(wrap({ operation: { action: "run", description: "", prompt: "y", subagent_type: "general" } }).success).toBe(false)
+        expect(wrap({ operation: { action: "run", description: "x", prompt: "", subagent_type: "general" } }).success).toBe(false)
+        expect(wrap({ operation: { action: "run", description: "x", prompt: "y", subagent_type: "general", actor_id: "" } }).success).toBe(false)
+        expect(wrap({ operation: { action: "run", description: "x", prompt: "y", subagent_type: "general", junk: "z" } }).success).toBe(false)
+        expect(wrap({ operation: { action: "run", description: "x", prompt: "y" } }).success).toBe(false) // missing subagent_type
+        expect(wrap({ operation: { action: "run", prompt: "y", subagent_type: "general" } }).success).toBe(false) // missing description
+        expect(wrap({ description: "x", prompt: "y", subagent_type: "general" }).success).toBe(false) // missing operation envelope
+
+        // status / wait / cancel: actor_id required and non-empty.
+        expect(wrap({ operation: { action: "status", actor_id: "abc" } }).success).toBe(true)
+        expect(wrap({ operation: { action: "status" } }).success).toBe(false)
+        expect(wrap({ operation: { action: "status", actor_id: "" } }).success).toBe(false)
+        expect(wrap({ operation: { action: "wait" } }).success).toBe(false)
+        expect(wrap({ operation: { action: "cancel" } }).success).toBe(false)
+        // kill is no longer a valid action
+        expect(wrap({ operation: { action: "kill", actor_id: "abc" } }).success).toBe(false)
+
+        // Flat shape (old format) is rejected — the discriminator must live inside the envelope.
+        expect(
+          params.safeParse({ operation: "run", description: "x", prompt: "y", subagent_type: "general" }).success,
+        ).toBe(false)
+      }),
+    ),
+  )
+
+  it.live("flattened schema keeps operation as the sole root key (mimo can't drop the discriminator)", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
+        const fakeModel = {
+          providerID: "mimo",
+          api: { id: "mimo-v2.5-pro", npm: "@ai-sdk/openai-compatible" },
+          id: "mimo-v2.5-pro",
+          capabilities: { input: {} },
+        } as any
+        const flat = transformSchema(fakeModel, z.toJSONSchema(def.parameters)) as any
+        // Root must expose ONLY `operation`. A flat bag (the bug) lets mimo omit
+        // the discriminator entirely; a nested envelope makes it unmissable.
+        expect(Object.keys(flat.properties)).toEqual(["operation"])
+        expect(flat.required).toEqual(["operation"])
+        // The operation node must carry type:"object" (the .meta fix) so models
+        // don't stringify the envelope, and must retain its inner 6-way union.
+        expect(flat.properties.operation.type).toBe("object")
+        expect((flat.properties.operation.oneOf ?? flat.properties.operation.anyOf).length).toBe(6)
+      }),
+    ),
+  )
+
+  it.live("schema accepts an arbitrary task_id string (validation moved to execute)", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
+        const probe = (task_id: string) =>
+          def.parameters.safeParse({
+            operation: {
+              action: "run",
+              description: "test",
+              prompt: "test",
+              subagent_type: "general",
+              task_id,
+            },
+          })
+
+        // Well-formed TID: accepted (as before).
+        expect(probe("T4").success).toBe(true)
+        // Malformed TID: previously rejected by the regex and hard-failed the
+        // whole call; now accepted at the schema layer so execute can degrade it.
+        expect(probe("not-a-task").success).toBe(true)
+        expect(probe("banana").success).toBe(true)
+      }),
+    ),
+  )
+})
+
+describe("Actor tool task_id degradation", () => {
+  it.live("malformed task_id degrades to ad-hoc with a notice", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        yield* installMockSpawn()
+        const { chat, assistant } = yield* seed()
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
+
+        const result = yield* def.execute(
+          {
+            operation: {
+              action: "run",
+              description: "inspect bug",
+              prompt: "look into it",
+              subagent_type: "general",
+              task_id: "not-a-task",
+            },
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: {},
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(result.output).toContain("task_id")
+        expect(result.output).toContain("not-a-task")
+        expect(result.output.toLowerCase()).toContain("ad-hoc")
+      }),
+    ),
+  )
+
+  it.live("well-formed but nonexistent task_id degrades to ad-hoc with a notice", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        yield* installMockSpawn()
+        const { chat, assistant } = yield* seed()
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
+
+        const result = yield* def.execute(
+          {
+            operation: {
+              action: "run",
+              description: "inspect bug",
+              prompt: "look into it",
+              subagent_type: "general",
+              task_id: "T999",
+            },
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: {},
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(result.output).toContain("T999")
+        expect(result.output.toLowerCase()).toContain("ad-hoc")
+      }),
+    ),
+  )
+
+  it.live("existing task_id is preserved with no degradation notice", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        let capturedTaskId: string | undefined = "UNSET"
+        yield* installMockSpawn((input) => {
+          capturedTaskId = input.task_id
+        })
+        const { chat, assistant } = yield* seed()
+        const tasks = yield* TaskRegistry.Service
+        const task = yield* tasks.create({ session_id: chat.id, summary: "real task" })
+
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
+
+        const result = yield* def.execute(
+          {
+            operation: {
+              action: "run",
+              description: "inspect bug",
+              prompt: "look into it",
+              subagent_type: "general",
+              task_id: task.id,
+            },
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: {},
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        // No degradation notice when the task genuinely exists.
+        expect(result.output.toLowerCase()).not.toContain("ran ad-hoc")
+        // And the valid id is actually threaded through to spawn.
+        expect(capturedTaskId).toBe(task.id)
+      }),
+    ),
+  )
+
+  it.live("background spawn with malformed task_id includes the notice in its output", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        yield* installMockSpawn()
+        const { chat, assistant } = yield* seed()
+        const tool = yield* ActorTool
+        const def = yield* tool.init()
+
+        const result = yield* def.execute(
+          {
+            operation: {
+              action: "spawn",
+              description: "bg task",
+              prompt: "do it in the background",
+              subagent_type: "general",
+              task_id: "not-a-task",
+            },
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: {},
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(result.output).toContain("not-a-task")
+        expect(result.output.toLowerCase()).toContain("ad-hoc")
+        expect(result.output).toContain("Background actor started")
+      }),
+    ),
   )
 })

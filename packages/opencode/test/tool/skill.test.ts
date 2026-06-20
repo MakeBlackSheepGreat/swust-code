@@ -1,21 +1,20 @@
-import { PermissionV1 } from "@swust-code/core/v1/permission"
-import { CrossSpawnSpawner } from "@swust-code/core/cross-spawn-spawner"
-import { Ripgrep } from "@swust-code/core/ripgrep"
-import { Cause, Effect, Exit, Layer } from "effect"
+import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
+import { Effect, Layer } from "effect"
 import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import { pathToFileURL } from "url"
 import type { Permission } from "../../src/permission"
-import type { Tool } from "@/tool/tool"
+import type { Tool } from "../../src/tool"
+import { Instance } from "../../src/project/instance"
 import { SkillTool } from "../../src/tool/skill"
-import { ToolRegistry } from "@/tool/registry"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { ToolRegistry } from "../../src/tool"
+import { provideTmpdirInstance } from "../fixture/fixture"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
 
 const baseCtx: Omit<Tool.Context, "ask"> = {
   sessionID: SessionID.make("ses_test"),
-  messageID: MessageID.make("msg_test"),
+  messageID: MessageID.make(""),
   callID: "",
   agent: "build",
   abort: AbortSignal.any([]),
@@ -24,22 +23,23 @@ const baseCtx: Omit<Tool.Context, "ask"> = {
 }
 
 afterEach(async () => {
-  await disposeAllInstances()
+  await Instance.disposeAll()
 })
 
 const node = CrossSpawnSpawner.defaultLayer
 
-const it = testEffect(Layer.mergeAll(ToolRegistry.defaultLayer, node).pipe(Layer.provide(Ripgrep.defaultLayer)))
+const it = testEffect(Layer.mergeAll(ToolRegistry.defaultLayer, node))
 
 describe("tool.skill", () => {
-  it.instance("execute returns skill content block with files", () =>
-    Effect.gen(function* () {
-      const dir = (yield* TestInstance).directory
-      const skill = path.join(dir, ".swust-code", "skill", "tool-skill")
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(skill, "SKILL.md"),
-          `---
+  it.live("execute returns skill content block with files", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const skill = path.join(dir, ".swust-code", "skill", "tool-skill")
+          yield* Effect.promise(() =>
+            Bun.write(
+              path.join(skill, "SKILL.md"),
+              `---
 name: tool-skill
 description: Skill for tool tests.
 ---
@@ -48,89 +48,52 @@ description: Skill for tool tests.
 
 Use this skill.
 `,
-        ),
-      )
-      yield* Effect.promise(() => Bun.write(path.join(skill, "scripts", "demo.txt"), "demo"))
+            ),
+          )
+          yield* Effect.promise(() => Bun.write(path.join(skill, "scripts", "demo.txt"), "demo"))
 
-      const home = process.env.SWUST_CODE_TEST_HOME
-      process.env.SWUST_CODE_TEST_HOME = dir
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          process.env.SWUST_CODE_TEST_HOME = home
-        }),
-      )
+          const home = process.env.HOME
+          const userProfile = process.env.USERPROFILE
+          process.env.HOME = dir
+          process.env.USERPROFILE = dir
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              process.env.HOME = home
+              process.env.USERPROFILE = userProfile
+            }),
+          )
 
-      const registry = yield* ToolRegistry.Service
-      const agent = { name: "build", mode: "primary" as const, permission: [], options: {} }
-      const tool = (yield* registry.tools({
-        providerID: "opencode" as any,
-        modelID: "gpt-5" as any,
-        agent,
-      })).find((tool) => tool.id === SkillTool.id)
-      if (!tool) throw new Error("Skill tool not found")
+          const registry = yield* ToolRegistry.Service
+          const agent = { name: "build", mode: "primary" as const, permission: [], options: {} }
+          const tool = (yield* registry.tools({
+            providerID: "opencode" as any,
+            modelID: "gpt-5" as any,
+            agent,
+          })).find((tool) => tool.id === SkillTool.id)
+          if (!tool) throw new Error("Skill tool not found")
 
-      expect(tool.description).not.toContain("tool-skill")
-      expect(tool.description).not.toContain("Skill for tool tests.")
-
-      const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
-      const ctx: Tool.Context = {
-        ...baseCtx,
-        ask: (req) =>
-          Effect.sync(() => {
-            requests.push(req)
-          }),
-      }
-
-      const result = yield* tool.execute({ name: "tool-skill" }, ctx)
-      const file = path.resolve(skill, "scripts", "demo.txt")
-
-      expect(requests.length).toBe(1)
-      expect(requests[0].permission).toBe("skill")
-      expect(requests[0].patterns).toContain("tool-skill")
-      expect(requests[0].always).toContain("tool-skill")
-      expect(result.metadata.dir).toBe(skill)
-      expect(result.output).toContain(`<skill_content name="tool-skill">`)
-      expect(result.output).toContain(`Base directory for this skill: ${pathToFileURL(skill).href}`)
-      expect(result.output).toContain(`<file>${file}</file>`)
-    }),
-  )
-
-  it.instance("execute preserves not found message", () =>
-    Effect.gen(function* () {
-      const dir = (yield* TestInstance).directory
-      const home = process.env.SWUST_CODE_TEST_HOME
-      process.env.SWUST_CODE_TEST_HOME = dir
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          process.env.SWUST_CODE_TEST_HOME = home
-        }),
-      )
-
-      const registry = yield* ToolRegistry.Service
-      const agent = { name: "build", mode: "primary" as const, permission: [], options: {} }
-      const tool = (yield* registry.tools({
-        providerID: "opencode" as any,
-        modelID: "gpt-5" as any,
-        agent,
-      })).find((tool) => tool.id === SkillTool.id)
-      if (!tool) throw new Error("Skill tool not found")
-
-      const exit = yield* tool
-        .execute(
-          { name: "missing-skill" },
-          {
+          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          const ctx: Tool.Context = {
             ...baseCtx,
-            ask: () => Effect.void,
-          },
-        )
-        .pipe(Effect.exit)
+            ask: (req) =>
+              Effect.sync(() => {
+                requests.push(req)
+              }),
+          }
 
-      expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit)) {
-        const error = Cause.squash(exit.cause)
-        expect(error).toBeInstanceOf(Error)
-        if (error instanceof Error) expect(error.message).toContain('Skill "missing-skill" not found.')
-      }
-    }),
+          const result = yield* tool.execute({ name: "tool-skill" }, ctx)
+          const file = path.resolve(skill, "scripts", "demo.txt")
+
+          expect(requests.length).toBe(1)
+          expect(requests[0].permission).toBe("skill")
+          expect(requests[0].patterns).toContain("tool-skill")
+          expect(requests[0].always).toContain("tool-skill")
+          expect(result.metadata.dir).toBe(skill)
+          expect(result.output).toContain(`<skill_content name="tool-skill">`)
+          expect(result.output).toContain(`Base directory for this skill: ${pathToFileURL(skill).href}`)
+          expect(result.output).toContain(`<file>${file}</file>`)
+        }),
+      { git: true },
+    ),
   )
 })

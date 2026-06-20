@@ -1,4 +1,4 @@
-import path from "path"
+﻿import path from "path"
 import {
   type ParseError as JsoncParseError,
   applyEdits,
@@ -8,9 +8,9 @@ import {
 } from "jsonc-parser"
 
 import * as ConfigPaths from "@/config/paths"
-import { Global } from "@swust-code/core/global"
-import { Filesystem } from "@/util/filesystem"
-import { Flock } from "@swust-code/core/util/flock"
+import { Global } from "@/global"
+import { Filesystem } from "@/util"
+import { Flock } from "@swust-code/shared/util/flock"
 import { isRecord } from "@/util/record"
 
 import { parsePluginSpecifier, readPackageThemes, readPluginPackage, resolvePluginTarget } from "./shared"
@@ -31,7 +31,7 @@ export type PatchDeps = {
   readText: (file: string) => Promise<string>
   write: (file: string, text: string) => Promise<void>
   exists: (file: string) => Promise<boolean>
-  files: (dir: string, name: "opencode" | "tui") => string[]
+  files: (dir: string, name: "swust-code" | "tui") => string[]
 }
 
 export type PatchInput = {
@@ -337,8 +337,8 @@ function patchDir(input: PatchInput) {
   return path.join(root, ".swust-code")
 }
 
-function patchName(kind: Kind): "opencode" | "tui" {
-  if (kind === "server") return "opencode"
+function patchName(kind: Kind): "swust-code" | "tui" {
+  if (kind === "server") return "swust-code"
   return "tui"
 }
 

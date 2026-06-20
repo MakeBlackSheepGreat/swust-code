@@ -462,6 +462,7 @@ export type SessionStatus =
     }
   | {
       type: "busy"
+      message?: string
     }
 
 export type EventSessionStatus = {
@@ -474,13 +475,6 @@ export type EventSessionStatus = {
 
 export type EventSessionIdle = {
   type: "session.idle"
-  properties: {
-    sessionID: string
-  }
-}
-
-export type EventSessionCompacted = {
-  type: "session.compacted"
   properties: {
     sessionID: string
   }
@@ -715,7 +709,6 @@ export type Event =
   | EventPermissionReplied
   | EventSessionStatus
   | EventSessionIdle
-  | EventSessionCompacted
   | EventFileEdited
   | EventTodoUpdated
   | EventCommandExecuted
@@ -752,11 +745,11 @@ export type Project = {
 }
 
 export type BadRequestError = {
-  name: "BadRequest"
-  data: {
-    message: string
-    kind?: "Params" | "Headers" | "Query" | "Body" | "Payload"
-  }
+  data: unknown
+  errors: Array<{
+    [key: string]: unknown
+  }>
+  success: false
 }
 
 export type NotFoundError = {
@@ -1065,7 +1058,7 @@ export type ProviderConfig = {
         output: Array<"text" | "audio" | "image" | "video" | "pdf">
       }
       experimental?: boolean
-      status?: "alpha" | "beta" | "deprecated" | "active"
+      status?: "alpha" | "beta" | "deprecated"
       options?: {
         [key: string]: unknown
       }
@@ -1666,9 +1659,6 @@ export type OAuth = {
 export type ApiAuth = {
   type: "api"
   key: string
-  metadata?: {
-    [key: string]: string
-  }
 }
 
 export type WellKnownAuth = {
@@ -3015,7 +3005,7 @@ export type ProviderListResponses = {
             output: Array<"text" | "audio" | "image" | "video" | "pdf">
           }
           experimental?: boolean
-          status?: "alpha" | "beta" | "deprecated" | "active"
+          status?: "alpha" | "beta" | "deprecated"
           options: {
             [key: string]: unknown
           }

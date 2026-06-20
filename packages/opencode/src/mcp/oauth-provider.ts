@@ -7,6 +7,9 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js"
 import { Effect } from "effect"
 import { McpAuth } from "./auth"
+import { Log } from "../util"
+
+const log = Log.create({ service: "mcp.oauth" })
 
 const OAUTH_CALLBACK_PORT = 19876
 const OAUTH_CALLBACK_PATH = "/mcp/oauth/callback"
@@ -15,7 +18,6 @@ export interface McpOAuthConfig {
   clientId?: string
   clientSecret?: string
   scope?: string
-  callbackPort?: number
   redirectUri?: string
 }
 
@@ -36,19 +38,17 @@ export class McpOAuthProvider implements OAuthClientProvider {
     if (this.config.redirectUri) {
       return this.config.redirectUri
     }
-    const port = this.config.callbackPort ?? OAUTH_CALLBACK_PORT
-    return `http://127.0.0.1:${port}${OAUTH_CALLBACK_PATH}`
+    return `http://127.0.0.1:${OAUTH_CALLBACK_PORT}${OAUTH_CALLBACK_PATH}`
   }
 
   get clientMetadata(): OAuthClientMetadata {
     return {
       redirect_uris: [this.redirectUrl],
-      client_name: "SWUST Code",
-      client_uri: "https://swust-code-docs.pages.dev",
+      client_name: "OpenCode",
+      client_uri: "https://opencode.ai",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: this.config.clientSecret ? "client_secret_post" : "none",
-      ...(this.config.scope ? { scope: this.config.scope } : {}),
     }
   }
 
@@ -67,6 +67,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
     if (entry?.clientInfo) {
       // Check if client secret has expired
       if (entry.clientInfo.clientSecretExpiresAt && entry.clientInfo.clientSecretExpiresAt < Date.now() / 1000) {
+        log.info("client secret expired, need to re-register", { mcpName: this.mcpName })
         return undefined
       }
       return {
@@ -92,6 +93,10 @@ export class McpOAuthProvider implements OAuthClientProvider {
         this.serverUrl,
       ),
     )
+    log.info("saved dynamically registered client", {
+      mcpName: this.mcpName,
+      clientId: info.client_id,
+    })
   }
 
   async tokens(): Promise<OAuthTokens | undefined> {
@@ -123,9 +128,11 @@ export class McpOAuthProvider implements OAuthClientProvider {
         this.serverUrl,
       ),
     )
+    log.info("saved oauth tokens", { mcpName: this.mcpName })
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
+    log.info("redirecting to authorization", { mcpName: this.mcpName, url: authorizationUrl.toString() })
     await this.callbacks.onRedirect(authorizationUrl)
   }
 
@@ -163,6 +170,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 
   async invalidateCredentials(type: "all" | "client" | "tokens"): Promise<void> {
+    log.info("invalidating credentials", { mcpName: this.mcpName, type })
     const entry = await Effect.runPromise(this.auth.get(this.mcpName))
     if (!entry) {
       return

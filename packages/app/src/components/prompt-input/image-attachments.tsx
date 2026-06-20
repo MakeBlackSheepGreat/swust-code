@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js"
+﻿import { Component, For, Show } from "solid-js"
 import { Icon } from "@swust-code/ui/icon"
 import { Tooltip } from "@swust-code/ui/tooltip"
 import type { ImageAttachmentPart } from "@/context/prompt"

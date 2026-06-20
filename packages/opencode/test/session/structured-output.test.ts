@@ -1,72 +1,66 @@
 import { describe, expect, test } from "bun:test"
-import { SessionV1 } from "@swust-code/core/v1/session"
-import { Exit, Schema } from "effect"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionID, MessageID } from "../../src/session/schema"
 
-const decodeFormat = Schema.decodeUnknownExit(SessionV1.Format)
-const decodeUser = Schema.decodeUnknownExit(SessionV1.User)
-const decodeAssistant = Schema.decodeUnknownExit(SessionV1.Assistant)
-
 describe("structured-output.OutputFormat", () => {
   test("parses text format", () => {
-    const result = decodeFormat({ type: "text" })
-    expect(Exit.isSuccess(result)).toBe(true)
-    if (Exit.isSuccess(result)) {
-      expect(result.value.type).toBe("text")
+    const result = MessageV2.Format.safeParse({ type: "text" })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.type).toBe("text")
     }
   })
 
   test("parses json_schema format with defaults", () => {
-    const result = decodeFormat({
+    const result = MessageV2.Format.safeParse({
       type: "json_schema",
       schema: { type: "object", properties: { name: { type: "string" } } },
     })
-    expect(Exit.isSuccess(result)).toBe(true)
-    if (Exit.isSuccess(result)) {
-      expect(result.value.type).toBe("json_schema")
-      if (result.value.type === "json_schema") {
-        expect(result.value.retryCount).toBe(2) // default value
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.type).toBe("json_schema")
+      if (result.data.type === "json_schema") {
+        expect(result.data.retryCount).toBe(2) // default value
       }
     }
   })
 
   test("parses json_schema format with custom retryCount", () => {
-    const result = decodeFormat({
+    const result = MessageV2.Format.safeParse({
       type: "json_schema",
       schema: { type: "object" },
       retryCount: 5,
     })
-    expect(Exit.isSuccess(result)).toBe(true)
-    if (Exit.isSuccess(result) && result.value.type === "json_schema") {
-      expect(result.value.retryCount).toBe(5)
+    expect(result.success).toBe(true)
+    if (result.success && result.data.type === "json_schema") {
+      expect(result.data.retryCount).toBe(5)
     }
   })
 
   test("rejects invalid type", () => {
-    const result = decodeFormat({ type: "invalid" })
-    expect(Exit.isFailure(result)).toBe(true)
+    const result = MessageV2.Format.safeParse({ type: "invalid" })
+    expect(result.success).toBe(false)
   })
 
   test("rejects json_schema without schema", () => {
-    const result = decodeFormat({ type: "json_schema" })
-    expect(Exit.isFailure(result)).toBe(true)
+    const result = MessageV2.Format.safeParse({ type: "json_schema" })
+    expect(result.success).toBe(false)
   })
 
   test("rejects negative retryCount", () => {
-    const result = decodeFormat({
+    const result = MessageV2.Format.safeParse({
       type: "json_schema",
       schema: { type: "object" },
       retryCount: -1,
     })
-    expect(Exit.isFailure(result)).toBe(true)
+    expect(result.success).toBe(false)
   })
 })
 
 describe("structured-output.StructuredOutputError", () => {
   test("creates error with message and retries", () => {
-    const error = new SessionV1.StructuredOutputError({
+    const error = new MessageV2.StructuredOutputError({
       message: "Failed to validate",
       retries: 3,
     })
@@ -77,7 +71,7 @@ describe("structured-output.StructuredOutputError", () => {
   })
 
   test("converts to object correctly", () => {
-    const error = new SessionV1.StructuredOutputError({
+    const error = new MessageV2.StructuredOutputError({
       message: "Test error",
       retries: 2,
     })
@@ -89,19 +83,35 @@ describe("structured-output.StructuredOutputError", () => {
   })
 
   test("isInstance correctly identifies error", () => {
-    const error = new SessionV1.StructuredOutputError({
+    const error = new MessageV2.StructuredOutputError({
       message: "Test",
       retries: 1,
     })
 
-    expect(SessionV1.StructuredOutputError.isInstance(error)).toBe(true)
-    expect(SessionV1.StructuredOutputError.isInstance({ name: "other" })).toBe(false)
+    expect(MessageV2.StructuredOutputError.isInstance(error)).toBe(true)
+    expect(MessageV2.StructuredOutputError.isInstance({ name: "other" })).toBe(false)
+  })
+})
+
+describe("MessageV2.ContentFilterError", () => {
+  test("creates, serializes, and round-trips isInstance", () => {
+    const error = new MessageV2.ContentFilterError({ message: "withheld by safety filter" })
+
+    expect(error.name).toBe("ContentFilterError")
+    expect(error.data.message).toBe("withheld by safety filter")
+
+    const obj = error.toObject()
+    expect(obj.name).toBe("ContentFilterError")
+    expect(obj.data.message).toBe("withheld by safety filter")
+
+    expect(MessageV2.ContentFilterError.isInstance(error)).toBe(true)
+    expect(MessageV2.ContentFilterError.isInstance({ name: "other" })).toBe(false)
   })
 })
 
 describe("structured-output.UserMessage", () => {
   test("user message accepts outputFormat", () => {
-    const result = decodeUser({
+    const result = MessageV2.User.safeParse({
       id: MessageID.ascending(),
       sessionID: SessionID.descending(),
       role: "user",
@@ -113,11 +123,11 @@ describe("structured-output.UserMessage", () => {
         schema: { type: "object" },
       },
     })
-    expect(Exit.isSuccess(result)).toBe(true)
+    expect(result.success).toBe(true)
   })
 
   test("user message works without outputFormat (optional)", () => {
-    const result = decodeUser({
+    const result = MessageV2.User.safeParse({
       id: MessageID.ascending(),
       sessionID: SessionID.descending(),
       role: "user",
@@ -125,7 +135,7 @@ describe("structured-output.UserMessage", () => {
       agent: "default",
       model: { providerID: "anthropic", modelID: "claude-3" },
     })
-    expect(Exit.isSuccess(result)).toBe(true)
+    expect(result.success).toBe(true)
   })
 })
 
@@ -146,19 +156,19 @@ describe("structured-output.AssistantMessage", () => {
   }
 
   test("assistant message accepts structured", () => {
-    const result = decodeAssistant({
+    const result = MessageV2.Assistant.safeParse({
       ...baseAssistantMessage,
       structured: { company: "Anthropic", founded: 2021 },
     })
-    expect(Exit.isSuccess(result)).toBe(true)
-    if (Exit.isSuccess(result)) {
-      expect(result.value.structured).toEqual({ company: "Anthropic", founded: 2021 })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.structured).toEqual({ company: "Anthropic", founded: 2021 })
     }
   })
 
   test("assistant message works without structured_output (optional)", () => {
-    const result = decodeAssistant(baseAssistantMessage)
-    expect(Exit.isSuccess(result)).toBe(true)
+    const result = MessageV2.Assistant.safeParse(baseAssistantMessage)
+    expect(result.success).toBe(true)
   })
 })
 

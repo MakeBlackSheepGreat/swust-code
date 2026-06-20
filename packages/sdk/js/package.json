@@ -1,9 +1,24 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@swust-code/sdk",
-  "version": "1.17.4",
+  "version": "0.5.0",
+  "description": "TypeScript SDK for the SWUST Code API",
+  "keywords": ["swust-code", "ai", "sdk", "coding-assistant"],
   "type": "module",
   "license": "MIT",
+  "author": "SWUST Code Contributors",
+  "homepage": "https://swust-code.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MakeBlackSheepGreat/swust-code.git",
+    "directory": "packages/sdk/js"
+  },
+  "bugs": {
+    "url": "https://github.com/MakeBlackSheepGreat/swust-code/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "build": "bun ./script/build.ts"

@@ -1,6 +1,9 @@
 import { createConnection } from "net"
 import { createServer } from "http"
+import { Log } from "../util"
 import { OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH, parseRedirectUri } from "./oauth-provider"
+
+const log = Log.create({ service: "mcp.oauth-callback" })
 
 // Current callback server configuration (may differ from defaults if custom redirectUri is used)
 let currentPort = OAUTH_CALLBACK_PORT
@@ -9,7 +12,7 @@ let currentPath = OAUTH_CALLBACK_PATH
 const HTML_SUCCESS = `<!DOCTYPE html>
 <html>
 <head>
-  <title>SWUST Code - Authorization Successful</title>
+  <title>OpenCode - Authorization Successful</title>
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: #eee; }
     .container { text-align: center; padding: 2rem; }
@@ -20,7 +23,7 @@ const HTML_SUCCESS = `<!DOCTYPE html>
 <body>
   <div class="container">
     <h1>Authorization Successful</h1>
-    <p>You can close this window and return to SWUST Code.</p>
+    <p>You can close this window and return to OpenCode.</p>
   </div>
   <script>setTimeout(() => window.close(), 2000);</script>
 </body>
@@ -29,7 +32,7 @@ const HTML_SUCCESS = `<!DOCTYPE html>
 const HTML_ERROR = (error: string) => `<!DOCTYPE html>
 <html>
 <head>
-  <title>SWUST Code - Authorization Failed</title>
+  <title>OpenCode - Authorization Failed</title>
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: #eee; }
     .container { text-align: center; padding: 2rem; }
@@ -84,9 +87,12 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
   const error = url.searchParams.get("error")
   const errorDescription = url.searchParams.get("error_description")
 
+  log.info("received oauth callback", { hasCode: !!code, state, error })
+
   // Enforce state parameter presence
   if (!state) {
     const errorMsg = "Missing required state parameter - potential CSRF attack"
+    log.error("oauth callback missing state parameter", { url: url.toString() })
     res.writeHead(400, { "Content-Type": "text/html" })
     res.end(HTML_ERROR(errorMsg))
     return
@@ -115,6 +121,7 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
   // Validate state parameter
   if (!pendingAuths.has(state)) {
     const errorMsg = "Invalid or expired state parameter - potential CSRF attack"
+    log.error("oauth callback with invalid state", { state, pendingStates: Array.from(pendingAuths.keys()) })
     res.writeHead(400, { "Content-Type": "text/html" })
     res.end(HTML_ERROR(errorMsg))
     return
@@ -137,6 +144,7 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
 
   // If server is running on a different port/path, stop it first
   if (server && (currentPort !== port || currentPath !== path)) {
+    log.info("stopping oauth callback server to reconfigure", { oldPort: currentPort, newPort: port })
     await stop()
   }
 
@@ -144,6 +152,7 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
 
   const running = await isPortInUse(port)
   if (running) {
+    log.info("oauth callback server already running on another instance", { port })
     return
   }
 
@@ -153,6 +162,7 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
   server = createServer(handleRequest)
   await new Promise<void>((resolve, reject) => {
     server!.listen(currentPort, () => {
+      log.info("oauth callback server started", { port: currentPort, path: currentPath })
       resolve()
     })
     server!.on("error", reject)
@@ -204,6 +214,7 @@ export async function stop(): Promise<void> {
   if (server) {
     await new Promise<void>((resolve) => server!.close(() => resolve()))
     server = undefined
+    log.info("oauth callback server stopped")
   }
 
   for (const [_name, pending] of pendingAuths) {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, test } from "bun:test"
 import type { Message, Part, PermissionRequest, Project, QuestionRequest, Session } from "@swust-code/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
@@ -81,7 +81,6 @@ const baseState = (input: Partial<State> = {}) =>
     limit: 10,
     message: {},
     part: {},
-    part_text_accum_delta: {},
     ...input,
   }) as State
 
@@ -134,27 +133,6 @@ describe("applyGlobalEvent", () => {
 })
 
 describe("applyDirectoryEvent", () => {
-  test("preserves a Home-specific retained session limit", () => {
-    const [store, setStore] = createStore(
-      baseState({
-        limit: 1,
-        session: [rootSession({ id: "a" }), rootSession({ id: "b" }), rootSession({ id: "c" })],
-      }),
-    )
-
-    applyDirectoryEvent({
-      event: { type: "session.created", properties: { info: rootSession({ id: "d" }) } },
-      store,
-      setStore,
-      push() {},
-      directory: "/tmp",
-      loadLsp() {},
-      retainedLimit: 3,
-    })
-
-    expect(store.session).toHaveLength(3)
-  })
-
   test("inserts root sessions in sorted order and updates sessionTotal", () => {
     const [store, setStore] = createStore(
       baseState({

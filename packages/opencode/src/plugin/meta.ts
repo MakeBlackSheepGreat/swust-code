@@ -1,10 +1,10 @@
-import path from "path"
+﻿import path from "path"
 import { fileURLToPath } from "url"
 
-import { Flag } from "@swust-code/core/flag/flag"
-import { Global } from "@swust-code/core/global"
-import { Filesystem } from "@/util/filesystem"
-import { Flock } from "@swust-code/core/util/flock"
+import { Flag } from "@/flag/flag"
+import { Global } from "@/global"
+import { Filesystem } from "@/util"
+import { Flock } from "@swust-code/shared/util/flock"
 
 import { parsePluginSpecifier, pluginSource } from "./shared"
 

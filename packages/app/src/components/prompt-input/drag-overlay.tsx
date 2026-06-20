@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js"
+﻿import { Component, Show } from "solid-js"
 import { Icon } from "@swust-code/ui/icon"
 
 type PromptDragOverlayProps = {

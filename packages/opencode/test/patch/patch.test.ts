@@ -1,13 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { Effect } from "effect"
+import { Patch } from "../../src/patch"
 import * as fs from "fs/promises"
 import * as path from "path"
 import { tmpdir } from "os"
-import { Patch } from "../../src/patch"
-import { FSUtil } from "@swust-code/core/fs-util"
-import { testEffect } from "../lib/effect"
-
-const it = testEffect(FSUtil.defaultLayer)
 
 describe("Patch namespace", () => {
   let tempDir: string
@@ -139,53 +134,46 @@ PATCH`
   })
 
   describe("applyPatch", () => {
-    it.live("should add a new file", () =>
-      Effect.gen(function* () {
-        const patchText = `*** Begin Patch
+    test("should add a new file", async () => {
+      const patchText = `*** Begin Patch
 *** Add File: ${tempDir}/new-file.txt
 +Hello World
 +This is a new file
 *** End Patch`
 
-        const result = yield* Patch.applyPatch(patchText)
-        expect(result.added).toHaveLength(1)
-        expect(result.modified).toHaveLength(0)
-        expect(result.deleted).toHaveLength(0)
+      const result = await Patch.applyPatch(patchText)
+      expect(result.added).toHaveLength(1)
+      expect(result.modified).toHaveLength(0)
+      expect(result.deleted).toHaveLength(0)
 
-        const content = yield* Effect.promise(() => fs.readFile(result.added[0], "utf-8"))
-        expect(content).toBe("Hello World\nThis is a new file")
-      }),
-    )
+      const content = await fs.readFile(result.added[0], "utf-8")
+      expect(content).toBe("Hello World\nThis is a new file")
+    })
 
-    it.live("should delete an existing file", () =>
-      Effect.gen(function* () {
-        const filePath = path.join(tempDir, "to-delete.txt")
-        yield* Effect.promise(() => fs.writeFile(filePath, "This file will be deleted"))
+    test("should delete an existing file", async () => {
+      const filePath = path.join(tempDir, "to-delete.txt")
+      await fs.writeFile(filePath, "This file will be deleted")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Delete File: ${filePath}
 *** End Patch`
 
-        const result = yield* Patch.applyPatch(patchText)
-        expect(result.deleted).toHaveLength(1)
-        expect(result.deleted[0]).toBe(filePath)
+      const result = await Patch.applyPatch(patchText)
+      expect(result.deleted).toHaveLength(1)
+      expect(result.deleted[0]).toBe(filePath)
 
-        const exists = yield* Effect.promise(() =>
-          fs
-            .access(filePath)
-            .then(() => true)
-            .catch(() => false),
-        )
-        expect(exists).toBe(false)
-      }),
-    )
+      const exists = await fs
+        .access(filePath)
+        .then(() => true)
+        .catch(() => false)
+      expect(exists).toBe(false)
+    })
 
-    it.live("should update an existing file", () =>
-      Effect.gen(function* () {
-        const filePath = path.join(tempDir, "to-update.txt")
-        yield* Effect.promise(() => fs.writeFile(filePath, "line 1\nline 2\nline 3\n"))
+    test("should update an existing file", async () => {
+      const filePath = path.join(tempDir, "to-update.txt")
+      await fs.writeFile(filePath, "line 1\nline 2\nline 3\n")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Update File: ${filePath}
 @@
  line 1
@@ -194,22 +182,20 @@ PATCH`
  line 3
 *** End Patch`
 
-        const result = yield* Patch.applyPatch(patchText)
-        expect(result.modified).toHaveLength(1)
-        expect(result.modified[0]).toBe(filePath)
+      const result = await Patch.applyPatch(patchText)
+      expect(result.modified).toHaveLength(1)
+      expect(result.modified[0]).toBe(filePath)
 
-        const content = yield* Effect.promise(() => fs.readFile(filePath, "utf-8"))
-        expect(content).toBe("line 1\nline 2 updated\nline 3\n")
-      }),
-    )
+      const content = await fs.readFile(filePath, "utf-8")
+      expect(content).toBe("line 1\nline 2 updated\nline 3\n")
+    })
 
-    it.live("should move and update a file", () =>
-      Effect.gen(function* () {
-        const oldPath = path.join(tempDir, "old-name.txt")
-        const newPath = path.join(tempDir, "new-name.txt")
-        yield* Effect.promise(() => fs.writeFile(oldPath, "old content\n"))
+    test("should move and update a file", async () => {
+      const oldPath = path.join(tempDir, "old-name.txt")
+      const newPath = path.join(tempDir, "new-name.txt")
+      await fs.writeFile(oldPath, "old content\n")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Update File: ${oldPath}
 *** Move to: ${newPath}
 @@
@@ -217,33 +203,29 @@ PATCH`
 +new content
 *** End Patch`
 
-        const result = yield* Patch.applyPatch(patchText)
-        expect(result.modified).toHaveLength(1)
-        expect(result.modified[0]).toBe(newPath)
+      const result = await Patch.applyPatch(patchText)
+      expect(result.modified).toHaveLength(1)
+      expect(result.modified[0]).toBe(newPath)
 
-        const oldExists = yield* Effect.promise(() =>
-          fs
-            .access(oldPath)
-            .then(() => true)
-            .catch(() => false),
-        )
-        expect(oldExists).toBe(false)
+      const oldExists = await fs
+        .access(oldPath)
+        .then(() => true)
+        .catch(() => false)
+      expect(oldExists).toBe(false)
 
-        const newContent = yield* Effect.promise(() => fs.readFile(newPath, "utf-8"))
-        expect(newContent).toBe("new content\n")
-      }),
-    )
+      const newContent = await fs.readFile(newPath, "utf-8")
+      expect(newContent).toBe("new content\n")
+    })
 
-    it.live("should handle multiple operations in one patch", () =>
-      Effect.gen(function* () {
-        const file1 = path.join(tempDir, "file1.txt")
-        const file2 = path.join(tempDir, "file2.txt")
-        const file3 = path.join(tempDir, "file3.txt")
+    test("should handle multiple operations in one patch", async () => {
+      const file1 = path.join(tempDir, "file1.txt")
+      const file2 = path.join(tempDir, "file2.txt")
+      const file3 = path.join(tempDir, "file3.txt")
 
-        yield* Effect.promise(() => fs.writeFile(file1, "content 1"))
-        yield* Effect.promise(() => fs.writeFile(file2, "content 2"))
+      await fs.writeFile(file1, "content 1")
+      await fs.writeFile(file2, "content 2")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Add File: ${file3}
 +new file content
 *** Update File: ${file1}
@@ -253,114 +235,98 @@ PATCH`
 *** Delete File: ${file2}
 *** End Patch`
 
-        const result = yield* Patch.applyPatch(patchText)
-        expect(result.added).toHaveLength(1)
-        expect(result.modified).toHaveLength(1)
-        expect(result.deleted).toHaveLength(1)
-      }),
-    )
+      const result = await Patch.applyPatch(patchText)
+      expect(result.added).toHaveLength(1)
+      expect(result.modified).toHaveLength(1)
+      expect(result.deleted).toHaveLength(1)
+    })
 
-    it.live("should create parent directories when adding files", () =>
-      Effect.gen(function* () {
-        const nestedPath = path.join(tempDir, "deep", "nested", "file.txt")
+    test("should create parent directories when adding files", async () => {
+      const nestedPath = path.join(tempDir, "deep", "nested", "file.txt")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Add File: ${nestedPath}
 +Deep nested content
 *** End Patch`
 
-        const result = yield* Patch.applyPatch(patchText)
-        expect(result.added).toHaveLength(1)
-        expect(result.added[0]).toBe(nestedPath)
+      const result = await Patch.applyPatch(patchText)
+      expect(result.added).toHaveLength(1)
+      expect(result.added[0]).toBe(nestedPath)
 
-        const exists = yield* Effect.promise(() =>
-          fs
-            .access(nestedPath)
-            .then(() => true)
-            .catch(() => false),
-        )
-        expect(exists).toBe(true)
-      }),
-    )
+      const exists = await fs
+        .access(nestedPath)
+        .then(() => true)
+        .catch(() => false)
+      expect(exists).toBe(true)
+    })
   })
 
   describe("error handling", () => {
-    it.live("should fail when updating non-existent file", () =>
-      Effect.gen(function* () {
-        const nonExistent = path.join(tempDir, "does-not-exist.txt")
+    test("should throw error when updating non-existent file", async () => {
+      const nonExistent = path.join(tempDir, "does-not-exist.txt")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Update File: ${nonExistent}
 @@
 -old line
 +new line
 *** End Patch`
 
-        const exit = yield* Effect.exit(Patch.applyPatch(patchText))
-        expect(exit._tag).toBe("Failure")
-      }),
-    )
+      await expect(Patch.applyPatch(patchText)).rejects.toThrow()
+    })
 
-    it.live("should fail when deleting non-existent file", () =>
-      Effect.gen(function* () {
-        const nonExistent = path.join(tempDir, "does-not-exist.txt")
+    test("should throw error when deleting non-existent file", async () => {
+      const nonExistent = path.join(tempDir, "does-not-exist.txt")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Delete File: ${nonExistent}
 *** End Patch`
 
-        const exit = yield* Effect.exit(Patch.applyPatch(patchText))
-        expect(exit._tag).toBe("Failure")
-      }),
-    )
+      await expect(Patch.applyPatch(patchText)).rejects.toThrow()
+    })
   })
 
   describe("edge cases", () => {
-    it.live("should handle empty files", () =>
-      Effect.gen(function* () {
-        const emptyFile = path.join(tempDir, "empty.txt")
-        yield* Effect.promise(() => fs.writeFile(emptyFile, ""))
+    test("should handle empty files", async () => {
+      const emptyFile = path.join(tempDir, "empty.txt")
+      await fs.writeFile(emptyFile, "")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Update File: ${emptyFile}
 @@
 +First line
 *** End Patch`
 
-        const result = yield* Patch.applyPatch(patchText)
-        expect(result.modified).toHaveLength(1)
+      const result = await Patch.applyPatch(patchText)
+      expect(result.modified).toHaveLength(1)
 
-        const content = yield* Effect.promise(() => fs.readFile(emptyFile, "utf-8"))
-        expect(content).toBe("First line\n")
-      }),
-    )
+      const content = await fs.readFile(emptyFile, "utf-8")
+      expect(content).toBe("First line\n")
+    })
 
-    it.live("should handle files with no trailing newline", () =>
-      Effect.gen(function* () {
-        const filePath = path.join(tempDir, "no-newline.txt")
-        yield* Effect.promise(() => fs.writeFile(filePath, "no newline"))
+    test("should handle files with no trailing newline", async () => {
+      const filePath = path.join(tempDir, "no-newline.txt")
+      await fs.writeFile(filePath, "no newline")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Update File: ${filePath}
 @@
 -no newline
 +has newline now
 *** End Patch`
 
-        const result = yield* Patch.applyPatch(patchText)
-        expect(result.modified).toHaveLength(1)
+      const result = await Patch.applyPatch(patchText)
+      expect(result.modified).toHaveLength(1)
 
-        const content = yield* Effect.promise(() => fs.readFile(filePath, "utf-8"))
-        expect(content).toBe("has newline now\n")
-      }),
-    )
+      const content = await fs.readFile(filePath, "utf-8")
+      expect(content).toBe("has newline now\n")
+    })
 
-    it.live("should handle multiple update chunks in single file", () =>
-      Effect.gen(function* () {
-        const filePath = path.join(tempDir, "multi-chunk.txt")
-        yield* Effect.promise(() => fs.writeFile(filePath, "line 1\nline 2\nline 3\nline 4\n"))
+    test("should handle multiple update chunks in single file", async () => {
+      const filePath = path.join(tempDir, "multi-chunk.txt")
+      await fs.writeFile(filePath, "line 1\nline 2\nline 3\nline 4\n")
 
-        const patchText = `*** Begin Patch
+      const patchText = `*** Begin Patch
 *** Update File: ${filePath}
 @@
  line 1
@@ -372,12 +338,11 @@ PATCH`
 +LINE 4
 *** End Patch`
 
-        const result = yield* Patch.applyPatch(patchText)
-        expect(result.modified).toHaveLength(1)
+      const result = await Patch.applyPatch(patchText)
+      expect(result.modified).toHaveLength(1)
 
-        const content = yield* Effect.promise(() => fs.readFile(filePath, "utf-8"))
-        expect(content).toBe("line 1\nLINE 2\nline 3\nLINE 4\n")
-      }),
-    )
+      const content = await fs.readFile(filePath, "utf-8")
+      expect(content).toBe("line 1\nLINE 2\nline 3\nLINE 4\n")
+    })
   })
 })

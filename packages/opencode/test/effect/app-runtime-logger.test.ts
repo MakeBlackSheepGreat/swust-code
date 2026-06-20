@@ -1,99 +1,92 @@
-import { expect } from "bun:test"
-import { Context, Deferred, Effect, Fiber, Layer, Logger } from "effect"
-import { CrossSpawnSpawner } from "@swust-code/core/cross-spawn-spawner"
-import { AppLayer } from "../../src/effect/app-runtime"
-import { EffectBridge } from "@/effect/bridge"
+import { expect, test } from "bun:test"
+import { Context, Effect, Layer, Logger } from "effect"
+import { AppRuntime } from "../../src/effect/app-runtime"
+import { EffectBridge } from "../../src/effect"
 import { InstanceRef } from "../../src/effect/instance-ref"
-import * as Observability from "@swust-code/core/observability"
-import { attach } from "../../src/effect/run-service"
-import { TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
-
-const it = testEffect(CrossSpawnSpawner.defaultLayer)
+import { EffectLogger } from "../../src/effect"
+import { makeRuntime } from "../../src/effect/run-service"
+import { Instance } from "../../src/project/instance"
+import { tmpdir } from "../fixture/fixture"
 
 function check(loggers: ReadonlySet<Logger.Logger<unknown, any>>) {
   return {
+    defaultLogger: loggers.has(Logger.defaultLogger),
     tracerLogger: loggers.has(Logger.tracerLogger),
+    effectLogger: loggers.has(EffectLogger.logger),
     size: loggers.size,
   }
 }
 
-it.live("makeRuntime installs the observability logger", () =>
-  Effect.gen(function* () {
-    class Dummy extends Context.Service<Dummy, { readonly current: () => Effect.Effect<ReturnType<typeof check>> }>()(
-      "@test/Dummy",
-    ) {}
+test("makeRuntime installs EffectLogger through Observability.layer", async () => {
+  class Dummy extends Context.Service<Dummy, { readonly current: () => Effect.Effect<ReturnType<typeof check>> }>()(
+    "@test/Dummy",
+  ) {}
 
-    const layer = Layer.effect(
-      Dummy,
-      Effect.gen(function* () {
-        return Dummy.of({
-          current: () => Effect.map(Effect.service(Logger.CurrentLoggers), check),
-        })
-      }),
-    )
-
-    const current = yield* Dummy.use((svc) => svc.current()).pipe(
-      Effect.provide(Layer.provideMerge(layer, Observability.layer)),
-    )
-
-    expect(current.size).toBeGreaterThan(0)
-  }),
-)
-
-it.live("AppLayer also installs the observability logger", () =>
-  Effect.gen(function* () {
-    const current = yield* Effect.map(Effect.service(Logger.CurrentLoggers), check).pipe(Effect.provide(AppLayer))
-
-    expect(current.size).toBeGreaterThan(0)
-  }),
-)
-
-it.instance(
-  "attach preserves InstanceRef from the current fiber context",
-  () =>
+  const layer = Layer.effect(
+    Dummy,
     Effect.gen(function* () {
-      const test = yield* TestInstance
-      const current = yield* attach(
+      return Dummy.of({
+        current: () => Effect.map(Effect.service(Logger.CurrentLoggers), check),
+      })
+    }),
+  )
+
+  const rt = makeRuntime(Dummy, layer)
+  const current = await rt.runPromise((svc) => svc.current())
+
+  expect(current.effectLogger).toBe(true)
+  expect(current.defaultLogger).toBe(false)
+})
+
+test("AppRuntime also installs EffectLogger through Observability.layer", async () => {
+  const current = await AppRuntime.runPromise(Effect.map(Effect.service(Logger.CurrentLoggers), check))
+
+  expect(current.effectLogger).toBe(true)
+  expect(current.defaultLogger).toBe(false)
+})
+
+test("AppRuntime attaches InstanceRef from ALS", async () => {
+  await using tmp = await tmpdir({ git: true })
+
+  const dir = await Instance.provide({
+    directory: tmp.path,
+    fn: () =>
+      AppRuntime.runPromise(
         Effect.gen(function* () {
           return (yield* InstanceRef)?.directory
         }),
-      )
+      ),
+  })
 
-      expect(current).toBe(test.directory)
-    }),
-  { git: true },
-)
+  expect(dir).toBe(tmp.path)
+})
 
-it.instance(
-  "EffectBridge preserves logger and instance context across async boundaries",
-  () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const bridge = yield* EffectBridge.make()
-      const started = yield* Deferred.make<void>()
+test("EffectBridge preserves logger and instance context across async boundaries", async () => {
+  await using tmp = await tmpdir({ git: true })
 
-      const fiber = yield* Effect.gen(function* () {
-        yield* Deferred.succeed(started, undefined)
-        return yield* Effect.promise(() =>
-          Promise.resolve().then(() =>
-            bridge.promise(
-              Effect.gen(function* () {
-                return {
-                  directory: (yield* InstanceRef)?.directory,
-                  ...check(yield* Effect.service(Logger.CurrentLoggers)),
-                }
-              }),
+  const result = await Instance.provide({
+    directory: tmp.path,
+    fn: () =>
+      AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const bridge = yield* EffectBridge.make()
+          return yield* Effect.promise(() =>
+            Promise.resolve().then(() =>
+              bridge.promise(
+                Effect.gen(function* () {
+                  return {
+                    directory: (yield* InstanceRef)?.directory,
+                    ...check(yield* Effect.service(Logger.CurrentLoggers)),
+                  }
+                }),
+              ),
             ),
-          ),
-        )
-      }).pipe(Effect.forkScoped)
+          )
+        }),
+      ),
+  })
 
-      yield* Deferred.await(started)
-      const result = yield* Fiber.join(fiber)
-
-      expect(result.directory).toBe(test.directory)
-      expect(result.size).toBeGreaterThan(0)
-    }).pipe(Effect.provide(Observability.layer)),
-  { git: true },
-)
+  expect(result.directory).toBe(tmp.path)
+  expect(result.effectLogger).toBe(true)
+  expect(result.defaultLogger).toBe(false)
+})

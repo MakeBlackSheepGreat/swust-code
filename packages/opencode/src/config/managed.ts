@@ -3,11 +3,14 @@ export * as ConfigManaged from "./managed"
 import { existsSync } from "fs"
 import os from "os"
 import path from "path"
-import { Process } from "@/util/process"
+import { Log, Process } from "../util"
+import { warn } from "console"
 
-const MANAGED_PLIST_DOMAIN = "ai.swust-code.managed"
+const log = Log.create({ service: "config" })
 
-// Keys injected by macOS/MDM into the managed plist that are not SWUST Code config
+const MANAGED_PLIST_DOMAIN = "ai.opencode.managed"
+
+// Keys injected by macOS/MDM into the managed plist that are not OpenCode config
 const PLIST_META = new Set([
   "PayloadDisplayName",
   "PayloadIdentifier",
@@ -20,11 +23,11 @@ const PLIST_META = new Set([
 function systemManagedConfigDir(): string {
   switch (process.platform) {
     case "darwin":
-      return "/Library/Application Support/swust-code"
+      return "/Library/Application Support/opencode"
     case "win32":
-      return path.join(process.env.ProgramData || "C:\\ProgramData", "swust-code")
+      return path.join(process.env.ProgramData || "C:\\ProgramData", "opencode")
     default:
-      return "/etc/swust-code"
+      return "/etc/opencode"
   }
 }
 
@@ -43,13 +46,7 @@ export function parseManagedPlist(json: string): string {
 export async function readManagedPreferences() {
   if (process.platform !== "darwin") return
 
-  const user = (() => {
-    try {
-      return os.userInfo().username || "user"
-    } catch {
-      return "user"
-    }
-  })()
+  const user = os.userInfo().username
   const paths = [
     path.join("/Library/Managed Preferences", user, `${MANAGED_PLIST_DOMAIN}.plist`),
     path.join("/Library/Managed Preferences", `${MANAGED_PLIST_DOMAIN}.plist`),
@@ -57,8 +54,12 @@ export async function readManagedPreferences() {
 
   for (const plist of paths) {
     if (!existsSync(plist)) continue
+    log.info("reading macOS managed preferences", { path: plist })
     const result = await Process.run(["plutil", "-convert", "json", "-o", "-", plist], { nothrow: true })
-    if (result.code !== 0) continue
+    if (result.code !== 0) {
+      log.warn("failed to convert managed preferences plist", { path: plist })
+      continue
+    }
     return {
       source: `mobileconfig:${plist}`,
       text: parseManagedPlist(result.stdout.toString()),

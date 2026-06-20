@@ -1,4 +1,4 @@
-import type { FileNode } from "@swust-code/sdk/v2"
+﻿import type { FileNode } from "@swust-code/sdk/v2"
 
 type WatcherEvent = {
   type: string

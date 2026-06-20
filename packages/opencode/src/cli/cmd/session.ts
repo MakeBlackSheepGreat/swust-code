@@ -1,18 +1,18 @@
 import type { Argv } from "yargs"
-import { Effect } from "effect"
 import { cmd } from "./cmd"
-import { effectCmd, fail } from "../effect-cmd"
-import { Session } from "@/session/session"
+import { Session } from "../../session"
+import { ClaudeImport } from "../../session/claude-import"
 import { SessionID } from "../../session/schema"
+import { bootstrap } from "../bootstrap"
 import { UI } from "../ui"
-import { Locale } from "@/util/locale"
-import { Flag } from "@swust-code/core/flag/flag"
-import { Filesystem } from "@/util/filesystem"
-import { Process } from "@/util/process"
-import { NotFoundError } from "@/storage/storage"
+import { Locale } from "../../util"
+import { Flag } from "../../flag/flag"
+import { Filesystem } from "../../util"
+import { Process } from "../../util"
 import { EOL } from "os"
 import path from "path"
-import { which } from "@swust-code/core/util/which"
+import { which } from "../../util/which"
+import { AppRuntime } from "@/effect/app-runtime"
 
 function pagerCmd(): string[] {
   const lessOptions = ["-R", "-S"]
@@ -44,34 +44,60 @@ function pagerCmd(): string[] {
 export const SessionCommand = cmd({
   command: "session",
   describe: "manage sessions",
-  builder: (yargs: Argv) => yargs.command(SessionListCommand).command(SessionDeleteCommand).demandCommand(),
+  builder: (yargs: Argv) =>
+    yargs.command(SessionListCommand).command(SessionDeleteCommand).command(SessionImportClaudeCommand).demandCommand(),
   async handler() {},
 })
 
-export const SessionDeleteCommand = effectCmd({
+export const SessionImportClaudeCommand = cmd({
+  command: "import-claude",
+  describe: "import Claude Code sessions (~/.claude/projects) into swust-code",
+  builder: (yargs: Argv) =>
+    yargs.option("force", {
+      describe: "re-sync every session, ignoring the mtime cache",
+      type: "boolean",
+      default: false,
+    }),
+  handler: async (args) => {
+    const stats = await ClaudeImport.run({ force: args.force })
+    UI.println(
+      `Claude import: scanned ${stats.scanned}, imported ${stats.imported}, resynced ${stats.resynced}, skipped ${stats.skipped}` +
+        (stats.errors.length ? `, errors ${stats.errors.length}` : ""),
+    )
+    for (const err of stats.errors) UI.error(err)
+  },
+})
+
+export const SessionDeleteCommand = cmd({
   command: "delete <sessionID>",
   describe: "delete a session",
-  builder: (yargs) =>
-    yargs.positional("sessionID", {
+  builder: (yargs: Argv) => {
+    return yargs.positional("sessionID", {
       describe: "session ID to delete",
       type: "string",
       demandOption: true,
-    }),
-  handler: Effect.fn("Cli.session.delete")(function* (args) {
-    const svc = yield* Session.Service
-    const sessionID = SessionID.make(args.sessionID)
-    yield* svc
-      .remove(sessionID)
-      .pipe(Effect.catchIf(NotFoundError.isInstance, () => fail(`Session not found: ${args.sessionID}`)))
-    UI.println(UI.Style.TEXT_SUCCESS_BOLD + `Session ${args.sessionID} deleted` + UI.Style.TEXT_NORMAL)
-  }),
+    })
+  },
+  handler: async (args) => {
+    await bootstrap(process.cwd(), async () => {
+      const sessionID = SessionID.make(args.sessionID)
+      try {
+        await AppRuntime.runPromise(Session.Service.use((svc) => svc.get(sessionID)))
+      } catch {
+        UI.error(`Session not found: ${args.sessionID}`)
+        process.exit(1)
+      }
+      await AppRuntime.runPromise(Session.Service.use((svc) => svc.remove(sessionID)))
+      UI.println(UI.Style.TEXT_SUCCESS_BOLD + `Session ${args.sessionID} deleted` + UI.Style.TEXT_NORMAL)
+    })
+  },
 })
 
-export const SessionListCommand = effectCmd({
+export const SessionListCommand = cmd({
   command: "list",
   describe: "list sessions",
-  builder: (yargs) =>
-    yargs
+  builder: (yargs: Argv) => {
+    return yargs
       .option("max-count", {
         alias: "n",
         describe: "limit to N most recent sessions",
@@ -82,18 +108,26 @@ export const SessionListCommand = effectCmd({
         type: "string",
         choices: ["table", "json"],
         default: "table",
-      }),
-  handler: Effect.fn("Cli.session.list")(function* (args) {
-    const sessions = yield* Session.Service.use((svc) => svc.list({ roots: true, limit: args.maxCount }))
+      })
+  },
+  handler: async (args) => {
+    await bootstrap(process.cwd(), async () => {
+      const sessions = [...Session.list({ roots: true, limit: args.maxCount })]
 
-    if (sessions.length === 0) return
+      if (sessions.length === 0) {
+        return
+      }
 
-    const output = args.format === "json" ? formatSessionJSON(sessions) : formatSessionTable(sessions)
+      let output: string
+      if (args.format === "json") {
+        output = formatSessionJSON(sessions)
+      } else {
+        output = formatSessionTable(sessions)
+      }
 
-    const shouldPaginate = process.stdout.isTTY && !args.maxCount && args.format === "table"
+      const shouldPaginate = process.stdout.isTTY && !args.maxCount && args.format === "table"
 
-    if (shouldPaginate) {
-      yield* Effect.promise(async () => {
+      if (shouldPaginate) {
         const proc = Process.spawn(pagerCmd(), {
           stdin: "pipe",
           stdout: "inherit",
@@ -108,11 +142,11 @@ export const SessionListCommand = effectCmd({
         proc.stdin.write(output)
         proc.stdin.end()
         await proc.exited
-      })
-    } else {
-      console.log(output)
-    }
-  }),
+      } else {
+        console.log(output)
+      }
+    })
+  },
 })
 
 function formatSessionTable(sessions: Session.Info[]): string {

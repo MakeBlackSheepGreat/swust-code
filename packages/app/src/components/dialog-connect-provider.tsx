@@ -1,4 +1,4 @@
-import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@swust-code/sdk/v2/client"
+﻿import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@swust-code/sdk/v2/client"
 import { Button } from "@swust-code/ui/button"
 import { useDialog } from "@swust-code/ui/context/dialog"
 import { Dialog } from "@swust-code/ui/dialog"
@@ -8,19 +8,19 @@ import { List, type ListRef } from "@swust-code/ui/list"
 import { ProviderIcon } from "@swust-code/ui/provider-icon"
 import { Spinner } from "@swust-code/ui/spinner"
 import { TextField } from "@swust-code/ui/text-field"
-import { showToast } from "@/utils/toast"
+import { showToast } from "@swust-code/ui/toast"
 import { createEffect, createMemo, createResource, Match, onCleanup, onMount, Switch } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Link } from "@/components/link"
-import { useServerSDK } from "@/context/server-sdk"
-import { useServerSync } from "@/context/server-sync"
+import { useGlobalSDK } from "@/context/global-sdk"
+import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 
 export function DialogConnectProvider(props: { provider: string }) {
   const dialog = useDialog()
-  const serverSync = useServerSync()
-  const serverSDK = useServerSDK()
+  const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const providers = useProviders()
 
@@ -41,7 +41,9 @@ export function DialogConnectProvider(props: { provider: string }) {
   })
 
   const provider = createMemo(
-    () => providers.all().get(props.provider) ?? serverSync.data.provider.all.get(props.provider)!,
+    () =>
+      providers.all().find((x) => x.id === props.provider) ??
+      globalSync.data.provider.all.find((x) => x.id === props.provider)!,
   )
   const fallback = createMemo<ProviderAuthMethod[]>(() => [
     {
@@ -52,16 +54,16 @@ export function DialogConnectProvider(props: { provider: string }) {
   const [auth] = createResource(
     () => props.provider,
     async () => {
-      const cached = serverSync.data.provider_auth[props.provider]
+      const cached = globalSync.data.provider_auth[props.provider]
       if (cached) return cached
-      const res = await serverSDK.client.provider.auth()
+      const res = await globalSDK.client.provider.auth()
       if (!alive.value) return fallback()
-      serverSync.set("provider_auth", res.data ?? {})
+      globalSync.set("provider_auth", res.data ?? {})
       return res.data?.[props.provider] ?? fallback()
     },
   )
-  const loading = createMemo(() => auth.loading && !serverSync.data.provider_auth[props.provider])
-  const methods = createMemo(() => auth.latest ?? serverSync.data.provider_auth[props.provider] ?? fallback())
+  const loading = createMemo(() => auth.loading && !globalSync.data.provider_auth[props.provider])
+  const methods = createMemo(() => auth.latest ?? globalSync.data.provider_auth[props.provider] ?? fallback())
   const [store, setStore] = createStore({
     methodIndex: undefined as undefined | number,
     authorization: undefined as undefined | ProviderAuthAuthorization,
@@ -158,7 +160,7 @@ export function DialogConnectProvider(props: { provider: string }) {
       }
       dispatch({ type: "auth.pending" })
       const start = Date.now()
-      await serverSDK.client.provider.oauth
+      await globalSDK.client.provider.oauth
         .authorize(
           {
             providerID: props.provider,
@@ -277,7 +279,6 @@ export function DialogConnectProvider(props: { provider: string }) {
               <div class="text-14-regular text-text-base">{select()?.message}</div>
               <div>
                 <List
-                  class="px-3"
                   items={select()?.options ?? []}
                   key={(x) => x.value}
                   current={select()?.options.find((x) => x.value === formStore.value[select()!.key])}
@@ -331,7 +332,7 @@ export function DialogConnectProvider(props: { provider: string }) {
   })
 
   async function complete() {
-    await serverSDK.client.global.dispose()
+    await globalSDK.client.global.dispose()
     dialog.close()
     showToast({
       variant: "success",
@@ -365,7 +366,6 @@ export function DialogConnectProvider(props: { provider: string }) {
         </div>
         <div>
           <List
-            class="px-3"
             ref={(ref) => {
               listRef = ref
             }}
@@ -409,7 +409,7 @@ export function DialogConnectProvider(props: { provider: string }) {
       }
 
       setFormStore("error", undefined)
-      await serverSDK.client.auth.set({
+      await globalSDK.client.auth.set({
         providerID: props.provider,
         auth: {
           type: "api",
@@ -424,14 +424,14 @@ export function DialogConnectProvider(props: { provider: string }) {
         <Switch>
           <Match when={provider().id === "opencode"}>
             <div class="flex flex-col gap-4">
-              <div class="text-14-regular text-text-base">{language.t("provider.connect.swust-codeZen.line1")}</div>
-              <div class="text-14-regular text-text-base">{language.t("provider.connect.swust-codeZen.line2")}</div>
+              <div class="text-14-regular text-text-base">{language.t("provider.connect.opencodeZen.line1")}</div>
+              <div class="text-14-regular text-text-base">{language.t("provider.connect.opencodeZen.line2")}</div>
               <div class="text-14-regular text-text-base">
-                {language.t("provider.connect.swust-codeZen.visit.prefix")}
+                {language.t("provider.connect.opencodeZen.visit.prefix")}
                 <Link href="https://opencode.ai/zen" tabIndex={-1}>
-                  {language.t("provider.connect.swust-codeZen.visit.link")}
+                  {language.t("provider.connect.opencodeZen.visit.link")}
                 </Link>
-                {language.t("provider.connect.swust-codeZen.visit.suffix")}
+                {language.t("provider.connect.opencodeZen.visit.suffix")}
               </div>
             </div>
           </Match>
@@ -480,7 +480,7 @@ export function DialogConnectProvider(props: { provider: string }) {
       }
 
       setFormStore("error", undefined)
-      const result = await serverSDK.client.provider.oauth
+      const result = await globalSDK.client.provider.oauth
         .callback({
           providerID: props.provider,
           method: store.methodIndex,
@@ -526,14 +526,14 @@ export function DialogConnectProvider(props: { provider: string }) {
     const code = createMemo(() => {
       const instructions = store.authorization?.instructions
       if (instructions?.includes(":")) {
-        return instructions.split(":").pop()?.trim()
+        return instructions.split(":")[1]?.trim()
       }
       return instructions
     })
 
     onMount(() => {
       void (async () => {
-        const result = await serverSDK.client.provider.oauth
+        const result = await globalSDK.client.provider.oauth
           .callback({
             providerID: props.provider,
             method: store.methodIndex,

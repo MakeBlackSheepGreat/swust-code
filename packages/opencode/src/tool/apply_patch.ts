@@ -1,36 +1,35 @@
+﻿import z from "zod"
 import * as path from "path"
-import { Effect, Schema } from "effect"
+import { Effect } from "effect"
 import * as Tool from "./tool"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { Watcher } from "@swust-code/core/filesystem/watcher"
-import { InstanceState } from "@/effect/instance-state"
+import { Bus } from "../bus"
+import { FileWatcher } from "../file/watcher"
+import { Instance } from "../project/instance"
+import { SessionCwd } from "./session-cwd"
 import { Patch } from "../patch"
 import { createTwoFilesPatch, diffLines } from "diff"
-import { assertExternalDirectoryEffect } from "./external-directory"
+import { assertWriteAllowed } from "./external-directory"
 import { trimDiff } from "./edit"
-import { LSP } from "@/lsp/lsp"
-import { FSUtil } from "@swust-code/core/fs-util"
+import { LSP } from "../lsp"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
 import DESCRIPTION from "./apply_patch.txt"
-import { FileSystem } from "@swust-code/core/filesystem"
+import { File } from "../file"
 import { Format } from "../format"
-import * as Bom from "@/util/bom"
+import { Global } from "../global"
 
-export const Parameters = Schema.Struct({
-  patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
+const PatchParams = z.object({
+  patchText: z.string().describe("The full patch text that describes all changes to be made"),
 })
 
 export const ApplyPatchTool = Tool.define(
   "apply_patch",
   Effect.gen(function* () {
     const lsp = yield* LSP.Service
-    const afs = yield* FSUtil.Service
+    const afs = yield* AppFileSystem.Service
     const format = yield* Format.Service
-    const events = yield* EventV2Bridge.Service
+    const bus = yield* Bus.Service
 
-    const run = Effect.fn("ApplyPatchTool.execute")(function* (
-      params: Schema.Schema.Type<typeof Parameters>,
-      ctx: Tool.Context,
-    ) {
+    const run = Effect.fn("ApplyPatchTool.execute")(function* (params: z.infer<typeof PatchParams>, ctx: Tool.Context) {
       if (!params.patchText) {
         return yield* Effect.fail(new Error("patchText is required"))
       }
@@ -52,8 +51,6 @@ export const ApplyPatchTool = Tool.define(
         return yield* Effect.fail(new Error("apply_patch verification failed: no hunks found"))
       }
 
-      const instance = yield* InstanceState.context
-
       // Validate file paths and check permissions
       const fileChanges: Array<{
         filePath: string
@@ -64,26 +61,24 @@ export const ApplyPatchTool = Tool.define(
         diff: string
         additions: number
         deletions: number
-        bom: boolean
       }> = []
 
       let totalDiff = ""
 
       for (const hunk of hunks) {
-        const filePath = path.resolve(instance.directory, hunk.path)
-        yield* assertExternalDirectoryEffect(ctx, filePath)
+        const filePath = path.resolve(SessionCwd.get(ctx.sessionID), hunk.path)
+        yield* assertWriteAllowed(ctx, filePath)
 
         switch (hunk.type) {
           case "add": {
             const oldContent = ""
             const newContent =
               hunk.contents.length === 0 || hunk.contents.endsWith("\n") ? hunk.contents : `${hunk.contents}\n`
-            const next = Bom.split(newContent)
-            const diff = trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, next.text))
+            const diff = trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, newContent))
 
             let additions = 0
             let deletions = 0
-            for (const change of diffLines(oldContent, next.text)) {
+            for (const change of diffLines(oldContent, newContent)) {
               if (change.added) additions += change.count || 0
               if (change.removed) deletions += change.count || 0
             }
@@ -91,12 +86,11 @@ export const ApplyPatchTool = Tool.define(
             fileChanges.push({
               filePath,
               oldContent,
-              newContent: next.text,
+              newContent,
               type: "add",
               diff,
               additions,
               deletions,
-              bom: next.bom,
             })
 
             totalDiff += diff + "\n"
@@ -112,20 +106,13 @@ export const ApplyPatchTool = Tool.define(
               )
             }
 
-            const source = yield* Bom.readFile(afs, filePath)
-            const oldContent = source.text
+            const oldContent = yield* afs.readFileString(filePath)
             let newContent = oldContent
-            let bom = source.bom
 
             // Apply the update chunks to get new content
             try {
-              const fileUpdate = Patch.deriveNewContentsFromChunks(
-                filePath,
-                hunk.chunks,
-                Bom.join(source.text, source.bom),
-              )
+              const fileUpdate = Patch.deriveNewContentsFromChunks(filePath, hunk.chunks)
               newContent = fileUpdate.content
-              bom = fileUpdate.bom
             } catch (error) {
               return yield* Effect.fail(new Error(`apply_patch verification failed: ${error}`))
             }
@@ -139,8 +126,8 @@ export const ApplyPatchTool = Tool.define(
               if (change.removed) deletions += change.count || 0
             }
 
-            const movePath = hunk.move_path ? path.resolve(instance.directory, hunk.move_path) : undefined
-            yield* assertExternalDirectoryEffect(ctx, movePath)
+            const movePath = hunk.move_path ? path.resolve(SessionCwd.get(ctx.sessionID), hunk.move_path) : undefined
+            yield* assertWriteAllowed(ctx, movePath)
 
             fileChanges.push({
               filePath,
@@ -151,7 +138,6 @@ export const ApplyPatchTool = Tool.define(
               diff,
               additions,
               deletions,
-              bom,
             })
 
             totalDiff += diff + "\n"
@@ -159,16 +145,17 @@ export const ApplyPatchTool = Tool.define(
           }
 
           case "delete": {
-            const source = yield* Bom.readFile(afs, filePath).pipe(
-              Effect.catch((error) =>
-                Effect.fail(
-                  new Error(
-                    `apply_patch verification failed: ${error instanceof Error ? error.message : String(error)}`,
+            const contentToDelete = yield* afs
+              .readFileString(filePath)
+              .pipe(
+                Effect.catch((error) =>
+                  Effect.fail(
+                    new Error(
+                      `apply_patch verification failed: ${error instanceof Error ? error.message : String(error)}`,
+                    ),
                   ),
                 ),
-              ),
-            )
-            const contentToDelete = source.text
+              )
             const deleteDiff = trimDiff(createTwoFilesPatch(filePath, filePath, contentToDelete, ""))
 
             const deletions = contentToDelete.split("\n").length
@@ -181,7 +168,6 @@ export const ApplyPatchTool = Tool.define(
               diff: deleteDiff,
               additions: 0,
               deletions,
-              bom: source.bom,
             })
 
             totalDiff += deleteDiff + "\n"
@@ -193,26 +179,38 @@ export const ApplyPatchTool = Tool.define(
       // Build per-file metadata for UI rendering (used for both permission and result)
       const files = fileChanges.map((change) => ({
         filePath: change.filePath,
-        relativePath: path.relative(instance.worktree, change.movePath ?? change.filePath).replaceAll("\\", "/"),
+        relativePath: path.relative(Instance.worktree, change.movePath ?? change.filePath).replaceAll("\\", "/"),
         type: change.type,
         patch: change.diff,
         additions: change.additions,
         deletions: change.deletions,
         movePath: change.movePath,
       }))
+      const title = files.length === 1 ? files[0]!.relativePath : `${files.length} files`
 
       // Check permissions if needed
-      const relativePaths = fileChanges.map((c) => path.relative(instance.worktree, c.filePath).replaceAll("\\", "/"))
-      yield* ctx.ask({
-        permission: "edit",
-        patterns: relativePaths,
-        always: ["*"],
-        metadata: {
-          filepath: relativePaths.join(", "),
-          diff: totalDiff,
-          files,
-        },
-      })
+      const permissionChanges = fileChanges.filter(
+        (change) => !AppFileSystem.contains(path.join(Global.Path.data, "memory"), change.movePath ?? change.filePath),
+      )
+      // NOTE: permissionChanges already excludes memory-tree paths (filtered at
+      // the `permissionChanges` definition above), so this ask never fires for
+      // memory writes — the askEditUnlessMemory deferral used by write.ts/edit.ts
+      // is structurally already satisfied here. Left as a direct ctx.ask.
+      if (permissionChanges.length > 0) {
+        const relativePaths = permissionChanges.map((c) => path.relative(Instance.worktree, c.filePath).replaceAll("\\", "/"))
+        yield* ctx.ask({
+          permission: "edit",
+          patterns: relativePaths,
+          always: ["*"],
+          metadata: {
+            filepath: relativePaths.join(", "),
+            diff: permissionChanges.map((change) => change.diff).join("\n") + "\n",
+            files: files.filter(
+              (file) => !AppFileSystem.contains(path.join(Global.Path.data, "memory"), file.movePath ?? file.filePath),
+            ),
+          },
+        })
+      }
 
       // Apply the changes
       const updates: Array<{ file: string; event: "add" | "change" | "unlink" }> = []
@@ -223,12 +221,12 @@ export const ApplyPatchTool = Tool.define(
           case "add":
             // Create parent directories (recursive: true is safe on existing/root dirs)
 
-            yield* afs.writeWithDirs(change.filePath, Bom.join(change.newContent, change.bom))
+            yield* afs.writeWithDirs(change.filePath, change.newContent)
             updates.push({ file: change.filePath, event: "add" })
             break
 
           case "update":
-            yield* afs.writeWithDirs(change.filePath, Bom.join(change.newContent, change.bom))
+            yield* afs.writeWithDirs(change.filePath, change.newContent)
             updates.push({ file: change.filePath, event: "change" })
             break
 
@@ -236,7 +234,7 @@ export const ApplyPatchTool = Tool.define(
             if (change.movePath) {
               // Create parent directories (recursive: true is safe on existing/root dirs)
 
-              yield* afs.writeWithDirs(change.movePath!, Bom.join(change.newContent, change.bom))
+              yield* afs.writeWithDirs(change.movePath!, change.newContent)
               yield* afs.remove(change.filePath)
               updates.push({ file: change.filePath, event: "unlink" })
               updates.push({ file: change.movePath, event: "add" })
@@ -250,50 +248,48 @@ export const ApplyPatchTool = Tool.define(
         }
 
         if (edited) {
-          if (yield* format.file(edited)) {
-            yield* Bom.syncFile(afs, edited, change.bom)
-          }
-          yield* events.publish(FileSystem.Event.Edited, { file: edited })
+          yield* format.file(edited)
+          yield* bus.publish(File.Event.Edited, { file: edited })
         }
       }
 
       // Publish file change events
       for (const update of updates) {
-        yield* events.publish(Watcher.Event.Updated, update)
+        yield* bus.publish(FileWatcher.Event.Updated, update)
       }
 
       // Notify LSP of file changes and collect diagnostics
       for (const change of fileChanges) {
         if (change.type === "delete") continue
         const target = change.movePath ?? change.filePath
-        yield* lsp.touchFile(target, "document")
+        yield* lsp.touchFile(target, true)
       }
       const diagnostics = yield* lsp.diagnostics()
 
       // Generate output summary
       const summaryLines = fileChanges.map((change) => {
         if (change.type === "add") {
-          return `A ${path.relative(instance.worktree, change.filePath).replaceAll("\\", "/")}`
+          return `A ${path.relative(Instance.worktree, change.filePath).replaceAll("\\", "/")}`
         }
         if (change.type === "delete") {
-          return `D ${path.relative(instance.worktree, change.filePath).replaceAll("\\", "/")}`
+          return `D ${path.relative(Instance.worktree, change.filePath).replaceAll("\\", "/")}`
         }
         const target = change.movePath ?? change.filePath
-        return `M ${path.relative(instance.worktree, target).replaceAll("\\", "/")}`
+        return `M ${path.relative(Instance.worktree, target).replaceAll("\\", "/")}`
       })
       let output = `Success. Updated the following files:\n${summaryLines.join("\n")}`
 
       for (const change of fileChanges) {
         if (change.type === "delete") continue
         const target = change.movePath ?? change.filePath
-        const block = LSP.Diagnostic.report(target, diagnostics[FSUtil.normalizePath(target)] ?? [])
+        const block = LSP.Diagnostic.report(target, diagnostics[AppFileSystem.normalizePath(target)] ?? [])
         if (!block) continue
-        const rel = path.relative(instance.worktree, target).replaceAll("\\", "/")
+        const rel = path.relative(Instance.worktree, target).replaceAll("\\", "/")
         output += `\n\nLSP errors detected in ${rel}, please fix:\n${block}`
       }
 
       return {
-        title: output,
+        title,
         metadata: {
           diff: totalDiff,
           files,
@@ -305,9 +301,8 @@ export const ApplyPatchTool = Tool.define(
 
     return {
       description: DESCRIPTION,
-      parameters: Parameters,
-      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
-        run(params, ctx).pipe(Effect.orDie),
+      parameters: PatchParams,
+      execute: (params: z.infer<typeof PatchParams>, ctx: Tool.Context) => run(params, ctx).pipe(Effect.orDie),
     }
   }),
 )

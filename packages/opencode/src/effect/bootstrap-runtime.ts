@@ -1,14 +1,19 @@
 import { Layer, ManagedRuntime } from "effect"
 
 import { Plugin } from "@/plugin"
-import { LSP } from "@/lsp/lsp"
+import { LSP } from "@/lsp"
+import { FileWatcher } from "@/file/watcher"
 import { Format } from "@/format"
-import { ShareNext } from "@/share/share-next"
-import { Vcs } from "@/project/vcs"
+import { ShareNext } from "@/share"
+import { File } from "@/file"
+import { Vcs } from "@/project"
 import { Snapshot } from "@/snapshot"
-import { Config } from "@/config/config"
-import * as Observability from "@swust-code/core/observability"
-import { memoMap } from "@swust-code/core/effect/memo-map"
+import { Bus } from "@/bus"
+import { Config } from "@/config"
+import { Memory } from "@/memory"
+import { History } from "@/history"
+import * as Observability from "./observability"
+import { memoMap } from "./memo-map"
 
 export const BootstrapLayer = Layer.mergeAll(
   Config.defaultLayer,
@@ -16,8 +21,13 @@ export const BootstrapLayer = Layer.mergeAll(
   ShareNext.defaultLayer,
   Format.defaultLayer,
   LSP.defaultLayer,
+  File.defaultLayer,
+  FileWatcher.defaultLayer,
   Vcs.defaultLayer,
   Snapshot.defaultLayer,
+  Bus.defaultLayer,
+  Memory.defaultLayer,
+  History.defaultLayer,
 ).pipe(Layer.provide(Observability.layer))
 
 export const BootstrapRuntime = ManagedRuntime.make(BootstrapLayer, { memoMap })

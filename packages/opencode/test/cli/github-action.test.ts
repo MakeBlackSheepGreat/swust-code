@@ -1,37 +1,36 @@
 import { test, expect, describe } from "bun:test"
-import { SessionV1 } from "@swust-code/core/v1/session"
 import { extractResponseText, formatPromptTooLargeError } from "../../src/cli/cmd/github"
 import type { MessageV2 } from "../../src/session/message-v2"
 import { SessionID, MessageID, PartID } from "../../src/session/schema"
 
 // Helper to create minimal valid parts
-function createTextPart(text: string): SessionV1.Part {
+function createTextPart(text: string): MessageV2.Part {
   return {
     id: PartID.ascending(),
-    sessionID: SessionID.make("ses_test"),
-    messageID: MessageID.make("msg_test"),
+    sessionID: SessionID.make("s"),
+    messageID: MessageID.make("m"),
     type: "text" as const,
     text,
   }
 }
 
-function createReasoningPart(text: string): SessionV1.Part {
+function createReasoningPart(text: string): MessageV2.Part {
   return {
     id: PartID.ascending(),
-    sessionID: SessionID.make("ses_test"),
-    messageID: MessageID.make("msg_test"),
+    sessionID: SessionID.make("s"),
+    messageID: MessageID.make("m"),
     type: "reasoning" as const,
     text,
     time: { start: 0 },
   }
 }
 
-function createToolPart(tool: string, title: string, status: "completed" | "running" = "completed"): SessionV1.Part {
+function createToolPart(tool: string, title: string, status: "completed" | "running" = "completed"): MessageV2.Part {
   if (status === "completed") {
     return {
       id: PartID.ascending(),
-      sessionID: SessionID.make("ses_test"),
-      messageID: MessageID.make("msg_test"),
+      sessionID: SessionID.make("s"),
+      messageID: MessageID.make("m"),
       type: "tool" as const,
       callID: "c1",
       tool,
@@ -47,8 +46,8 @@ function createToolPart(tool: string, title: string, status: "completed" | "runn
   }
   return {
     id: PartID.ascending(),
-    sessionID: SessionID.make("ses_test"),
-    messageID: MessageID.make("msg_test"),
+    sessionID: SessionID.make("s"),
+    messageID: MessageID.make("m"),
     type: "tool" as const,
     callID: "c1",
     tool,
@@ -60,20 +59,20 @@ function createToolPart(tool: string, title: string, status: "completed" | "runn
   }
 }
 
-function createStepStartPart(): SessionV1.Part {
+function createStepStartPart(): MessageV2.Part {
   return {
     id: PartID.ascending(),
-    sessionID: SessionID.make("ses_test"),
-    messageID: MessageID.make("msg_test"),
+    sessionID: SessionID.make("s"),
+    messageID: MessageID.make("m"),
     type: "step-start" as const,
   }
 }
 
-function createStepFinishPart(): SessionV1.Part {
+function createStepFinishPart(): MessageV2.Part {
   return {
     id: PartID.ascending(),
-    sessionID: SessionID.make("ses_test"),
-    messageID: MessageID.make("msg_test"),
+    sessionID: SessionID.make("s"),
+    messageID: MessageID.make("m"),
     type: "step-finish" as const,
     reason: "done",
     cost: 0,

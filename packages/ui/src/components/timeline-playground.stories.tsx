@@ -1,4 +1,4 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createSignal, createMemo, createEffect, on, For, Show, batch } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import type {
@@ -318,7 +318,7 @@ const TOOL_SAMPLES = {
     tool: "bash",
     input: { command: "bun test --filter session", description: "Run session tests" },
     output:
-      "bun test v1.3.14\n\n✓ session-turn.test.tsx (3 tests) 45ms\n✓ message-part.test.tsx (7 tests) 120ms\n\nTest Suites: 2 passed, 2 total\nTests:       10 passed, 10 total\nTime:        0.89s",
+      "bun test v1.3.11\n\n✓ session-turn.test.tsx (3 tests) 45ms\n✓ message-part.test.tsx (7 tests) 120ms\n\nTest Suites: 2 passed, 2 total\nTests:       10 passed, 10 total\nTime:        0.89s",
     title: "Run session tests",
     metadata: { command: "bun test --filter session" },
   },
@@ -354,7 +354,14 @@ const TOOL_SAMPLES = {
   },
   task: {
     tool: "task",
-    input: { description: "Explore components", subagent_type: "explore", prompt: "Find all session components" },
+    input: {
+      operation: {
+        action: "run",
+        description: "Explore components",
+        subagent_type: "explore",
+        prompt: "Find all session components",
+      },
+    },
     output: "Found 12 session-related components across 3 directories.",
     title: "Agent (Explore)",
     metadata: { sessionId: "sub-session-1" },
@@ -403,18 +410,18 @@ const TOOL_SAMPLES = {
     tool: "todowrite",
     input: {
       todos: [
-        { content: "Create data generators", status: "completed", priority: "high" },
-        { content: "Build UI controls", status: "in_progress", priority: "high" },
-        { content: "Add CSS export", status: "pending", priority: "medium" },
+        { content: "Create data generators", status: "completed" },
+        { content: "Build UI controls", status: "in_progress" },
+        { content: "Add CSS export", status: "pending" },
       ],
     },
     output: "",
     title: "Todos",
     metadata: {
       todos: [
-        { content: "Create data generators", status: "completed", priority: "high" },
-        { content: "Build UI controls", status: "in_progress", priority: "high" },
-        { content: "Add CSS export", status: "pending", priority: "medium" },
+        { content: "Create data generators", status: "completed" },
+        { content: "Build UI controls", status: "in_progress" },
+        { content: "Add CSS export", status: "pending" },
       ],
     },
   },

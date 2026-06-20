@@ -1,82 +1,88 @@
-import { LayerNode } from "@swust-code/core/effect/layer-node"
-import type {
-  ActorMatcher,
-  ActorPostStopInput,
-  ActorPreStopInput,
-  ActorStopOutput,
+﻿import type {
   Hooks,
   PluginInput,
   Plugin as PluginInstance,
   PluginModule,
-  WorkspaceAdapter as PluginWorkspaceAdapter,
+  WorkspaceAdaptor as PluginWorkspaceAdaptor,
+  ActorPreStopInput,
+  ActorPostStopInput,
+  ActorStopOutput,
+  ActorMatcher,
 } from "@swust-code/plugin"
-import { Config } from "@/config/config"
+import { z } from "zod"
+import { matchesActor } from "./matcher"
+import { Config } from "../config"
+import { Bus } from "../bus"
+import { BusEvent } from "../bus/bus-event"
+import { Log } from "../util"
 import { createOpencodeClient } from "@swust-code/sdk"
-import { ServerAuth } from "@/server/auth"
-import { CodexAuthPlugin } from "./openai/codex"
-import { Session } from "@/session/session"
-import { NamedError } from "@swust-code/core/util/error"
+import { Flag } from "../flag/flag"
+import { CodexAuthPlugin } from "./codex"
+import { MimoAuthPlugin, AnthropicProxyPlugin } from "./mimo"
+import { Session } from "../session"
+import type { SessionID } from "../session/schema"
+import { NamedError } from "@swust-code/shared/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
+import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
+import { PoeAuthPlugin } from "opencode-poe-auth"
 import { CloudflareAIGatewayAuthPlugin, CloudflareWorkersAuthPlugin } from "./cloudflare"
-import { AzureAuthPlugin } from "./azure"
-import { DigitalOceanAuthPlugin } from "./digitalocean"
-import { XaiAuthPlugin } from "./xai"
 import { CheckpointSplitoverPlugin } from "./checkpoint-splitover"
 import { SubagentProgressCheckerPlugin } from "./subagent-progress-checker"
-import { Context, Effect, Layer, Schema } from "effect"
-import { EventV2 } from "@swust-code/core/event"
-import { EffectBridge } from "@/effect/bridge"
-import { InstanceState } from "@/effect/instance-state"
+import { Effect, Layer, Context, Stream } from "effect"
+import { EffectBridge } from "@/effect"
+import { InstanceState } from "@/effect"
 import { errorMessage } from "@/util/error"
 import { PluginLoader } from "./loader"
 import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } from "./shared"
-import { registerAdapter } from "@/control-plane/adapters"
-import type { WorkspaceAdapter } from "@/control-plane/types"
-import { RuntimeFlags } from "@/effect/runtime-flags"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { InstallationChannel } from "@swust-code/core/installation/version"
-import { matchesActor } from "./matcher"
-import { SessionID } from "@/session/schema"
+import { registerAdaptor } from "@/control-plane/adaptors"
+import type { WorkspaceAdaptor } from "@/control-plane/types"
+import { Glob } from "@swust-code/shared/util/glob"
+import fs from "fs"
+import path from "path"
+import { pathToFileURL, fileURLToPath } from "url"
+
+const log = Log.create({ service: "plugin" })
 
 export const HookEvent = {
-  Executed: EventV2.define({
-    type: "hook.executed",
-    schema: {
-      event: Schema.Literals(["actor.preStop", "actor.postStop"]),
-      hookID: Schema.String,
-      pluginName: Schema.String,
-      actorID: Schema.String,
-      agentType: Schema.String,
-      durationMs: Schema.Number,
-      outcome: Schema.Literals(["success", "error", "skipped"]),
-      continueRequested: Schema.Boolean,
-      reasonLength: Schema.Number,
-    },
-  }),
-  ReActReentered: EventV2.define({
-    type: "hook.react.reentered",
-    schema: {
-      phase: Schema.Literals(["pre", "post"]),
-      actorID: Schema.String,
-      agentType: Schema.String,
-      iteration: Schema.Number,
-      triggeredByPlugins: Schema.Array(Schema.String),
-      reasonPreview: Schema.String,
-    },
-  }),
-  ReActMaxReached: EventV2.define({
-    type: "hook.react.max_reached",
-    schema: {
-      phase: Schema.Literals(["pre", "post"]),
-      actorID: Schema.String,
-      agentType: Schema.String,
-    },
-  }),
+  Executed: BusEvent.define(
+    "hook.executed",
+    z.object({
+      event: z.enum(["actor.preStop", "actor.postStop"]),
+      hookID: z.string(),
+      pluginName: z.string(),
+      actorID: z.string(),
+      agentType: z.string(),
+      durationMs: z.number(),
+      outcome: z.enum(["success", "error", "skipped"]),
+      continueRequested: z.boolean(),
+      reasonLength: z.number(),
+    }),
+  ),
+  ReActReentered: BusEvent.define(
+    "hook.react.reentered",
+    z.object({
+      phase: z.enum(["pre", "post"]),
+      actorID: z.string(),
+      agentType: z.string(),
+      iteration: z.number(),
+      triggeredByPlugins: z.array(z.string()),
+      reasonPreview: z.string(),
+    }),
+  ),
+  ReActMaxReached: BusEvent.define(
+    "hook.react.max_reached",
+    z.object({
+      phase: z.enum(["pre", "post"]),
+      actorID: z.string(),
+      agentType: z.string(),
+    }),
+  ),
 } as const
 
 type HookEntry = {
   hook: Hooks
   pluginName: string
+  /** Stable per-event hook ID: `${pluginName}#${eventName}` */
   hookIDFor: (eventName: string) => string
 }
 
@@ -107,6 +113,7 @@ export interface Interface {
   ) => Effect.Effect<Output>
   readonly list: () => Effect.Effect<Hooks[]>
   readonly init: () => Effect.Effect<void>
+  readonly reloadFileHooks: () => Effect.Effect<void>
   readonly triggerActorPreStop: (
     input: ActorPreStopInput,
   ) => Effect.Effect<ActorStopAggregatedDecision>
@@ -115,30 +122,24 @@ export interface Interface {
   ) => Effect.Effect<ActorStopAggregatedDecision>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/Plugin") {}
-
-export function experimentalWebSocketsEnabled(input: { enabled: boolean; channel?: string }) {
-  return input.enabled || ["local", "dev", "beta"].includes(input.channel ?? InstallationChannel)
-}
+export class Service extends Context.Service<Service, Interface>()("@opencode/Plugin") {}
 
 // Built-in plugins that are directly imported (not installed from npm)
-function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
-  return [
-    // Temporary rollout: pre-release builds use WebSockets by default; releases require explicit opt-in.
-    (input) =>
-      CodexAuthPlugin(input, {
-        experimentalWebSockets: experimentalWebSocketsEnabled({ enabled: flags.experimentalWebSockets }),
-      }),
-    CopilotAuthPlugin,
-    CloudflareWorkersAuthPlugin,
-    CloudflareAIGatewayAuthPlugin,
-    AzureAuthPlugin,
-    DigitalOceanAuthPlugin,
-    XaiAuthPlugin,
-    CheckpointSplitoverPlugin,
-    SubagentProgressCheckerPlugin,
-  ]
-}
+const INTERNAL_PLUGINS: PluginInstance[] = [
+  MimoAuthPlugin,
+  AnthropicProxyPlugin,
+  CodexAuthPlugin,
+  CopilotAuthPlugin,
+  // gitlab/poe auth are external npm packages typed against the published
+  // upstream plugin package, which carries a duplicate (nominal) copy of the
+  // SDK client; cast through unknown to the workspace Plugin type.
+  GitlabAuthPlugin as unknown as PluginInstance,
+  PoeAuthPlugin as unknown as PluginInstance,
+  CloudflareWorkersAuthPlugin,
+  CloudflareAIGatewayAuthPlugin,
+  CheckpointSplitoverPlugin,
+  SubagentProgressCheckerPlugin,
+]
 
 function isServerPlugin(value: unknown): value is PluginInstance {
   return typeof value === "function"
@@ -188,7 +189,9 @@ async function applyPlugin(
 
   for (const server of getLegacyPlugins(load.mod)) {
     const fnName = (server as { name?: string }).name
-    const pluginName = fnName && fnName !== "default" && fnName !== "" ? fnName : (load.pkg?.pkg ?? load.spec)
+    const pluginName = fnName && fnName !== "default" && fnName !== ""
+      ? fnName
+      : (load.pkg?.pkg ?? load.spec)
     const hookObj = await server(input, load.options)
     hooks.push(hookObj)
     hooksWithMeta.push({
@@ -202,9 +205,8 @@ async function applyPlugin(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const events = yield* EventV2Bridge.Service
+    const bus = yield* Bus.Service
     const config = yield* Config.Service
-    const flags = yield* RuntimeFlags.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Plugin.state")(function* (ctx) {
@@ -213,7 +215,7 @@ export const layer = Layer.effect(
         const bridge = yield* EffectBridge.make()
 
         function publishPluginError(message: string) {
-          bridge.fork(events.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
+          bridge.fork(bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
         }
 
         const { Server } = yield* Effect.promise(() => import("../server/server"))
@@ -221,8 +223,12 @@ export const layer = Layer.effect(
         const client = createOpencodeClient({
           baseUrl: "http://localhost:4096",
           directory: ctx.directory,
-          headers: ServerAuth.headers(),
-          fetch: async (...args) => Server.Default().app.fetch(...args),
+          headers: Flag.SWUST_CODE_SERVER_PASSWORD
+            ? {
+                Authorization: `Basic ${Buffer.from(`${Flag.SWUST_CODE_SERVER_USERNAME ?? "swust-code"}:${Flag.SWUST_CODE_SERVER_PASSWORD}`).toString("base64")}`,
+              }
+            : undefined,
+          fetch: async (...args) => (await Server.Default()).app.fetch(...args),
         })
         const cfg = yield* config.get()
         const input: PluginInput = {
@@ -231,8 +237,8 @@ export const layer = Layer.effect(
           worktree: ctx.worktree,
           directory: ctx.directory,
           experimental_workspace: {
-            register(type: string, adapter: PluginWorkspaceAdapter) {
-              registerAdapter(ctx.project.id, type, adapter as WorkspaceAdapter)
+            register(type: string, adaptor: PluginWorkspaceAdaptor) {
+              registerAdaptor(ctx.project.id, type, adaptor as WorkspaceAdaptor)
             },
           },
           get serverUrl(): URL {
@@ -242,14 +248,14 @@ export const layer = Layer.effect(
           $: typeof Bun === "undefined" ? undefined : Bun.$,
         }
 
-        for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
+        for (const plugin of INTERNAL_PLUGINS) {
+          log.info("loading internal plugin", { name: plugin.name })
           const init = yield* Effect.tryPromise({
             try: () => plugin(input),
-            catch: errorMessage,
-          }).pipe(
-            Effect.tapError((error) => Effect.logError("failed to load internal plugin", { name: plugin.name, error })),
-            Effect.option,
-          )
+            catch: (err) => {
+              log.error("failed to load internal plugin", { name: plugin.name, error: err })
+            },
+          }).pipe(Effect.option)
           if (init._tag === "Some") {
             hooks.push(init.value)
             hooksWithMeta.push({
@@ -260,8 +266,46 @@ export const layer = Layer.effect(
           }
         }
 
-        const plugins = flags.pure ? [] : (cfg.plugin_origins ?? [])
-        if (flags.pure && cfg.plugin_origins?.length) {
+        // Optional local extensions live in src/ext/. The directory may be
+        // absent; when present, every *Plugin-named export is auto-loaded at
+        // runtime. Never referenced statically, so builds work with or without it.
+        const extDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "ext")
+        const extFiles = fs.existsSync(extDir)
+          ? fs.readdirSync(extDir).filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"))
+          : []
+        for (const entry of extFiles) {
+          const file = path.join(extDir, entry)
+          const name = entry.replace(/\.ts$/, "")
+          const mod = yield* Effect.tryPromise({
+            try: () => import(/* @vite-ignore */ pathToFileURL(file).href),
+            catch: (err) => log.error("failed to import extension", { name, error: err }),
+          }).pipe(Effect.option)
+          if (mod._tag !== "Some") continue
+          // Only treat *Plugin-named function exports as plugins. Other modules
+          // (e.g. a CLI helper export) are not plugins and must not be invoked
+          // as plugin factories.
+          const overlay = Object.entries(mod.value as Record<string, unknown>).find(
+            ([exportName, v]) => typeof v === "function" && exportName.endsWith("Plugin"),
+          )?.[1] as PluginInstance | undefined
+          if (!overlay) continue
+          log.info("loading extension", { name })
+          const init = yield* Effect.tryPromise({
+            try: () => overlay(input),
+            catch: (err) => log.error("failed to load extension", { name, error: err }),
+          }).pipe(Effect.option)
+          if (init._tag === "Some") {
+            hooks.push(init.value)
+            hooksWithMeta.push({
+              hook: init.value,
+              pluginName: name,
+              hookIDFor: (event: string) => `${name}#${event}`,
+            })
+          }
+        }
+
+        const plugins = Flag.SWUST_CODE_PURE ? [] : (cfg.plugin_origins ?? [])
+        if (Flag.SWUST_CODE_PURE && cfg.plugin_origins?.length) {
+          log.info("skipping external plugins in pure mode", { count: cfg.plugin_origins.length })
         }
         if (plugins.length) yield* config.waitForDependencies()
 
@@ -270,8 +314,12 @@ export const layer = Layer.effect(
             items: plugins,
             kind: "server",
             report: {
-              start(candidate) {},
-              missing(candidate, _retry, message) {},
+              start(candidate) {
+                log.info("loading plugin", { path: candidate.plan.spec })
+              },
+              missing(candidate, _retry, message) {
+                log.warn("plugin has no server entrypoint", { path: candidate.plan.spec, message })
+              },
               error(candidate, _retry, stage, error, resolved) {
                 const spec = candidate.plan.spec
                 const cause = error instanceof Error ? (error.cause ?? error) : error
@@ -279,20 +327,24 @@ export const layer = Layer.effect(
 
                 if (stage === "install") {
                   const parsed = parsePluginSpecifier(spec)
+                  log.error("failed to install plugin", { pkg: parsed.pkg, version: parsed.version, error: message })
                   publishPluginError(`Failed to install plugin ${parsed.pkg}@${parsed.version}: ${message}`)
                   return
                 }
 
                 if (stage === "compatibility") {
+                  log.warn("plugin incompatible", { path: spec, error: message })
                   publishPluginError(`Plugin ${spec} skipped: ${message}`)
                   return
                 }
 
                 if (stage === "entry") {
+                  log.error("failed to resolve plugin server entry", { path: spec, error: message })
                   publishPluginError(`Failed to load plugin ${spec}: ${message}`)
                   return
                 }
 
+                log.error("failed to load plugin", { path: spec, target: resolved?.entry, error: message })
                 publishPluginError(`Failed to load plugin ${spec}: ${message}`)
               },
             },
@@ -307,13 +359,13 @@ export const layer = Layer.effect(
             try: () => applyPlugin(load, input, hooks, hooksWithMeta),
             catch: (err) => {
               const message = errorMessage(err)
+              log.error("failed to load plugin", { path: load.spec, error: message })
               return message
             },
           }).pipe(
-            Effect.tapError((error) => Effect.logError("failed to load plugin", { path: load.spec, error })),
             Effect.catch(() => {
               // TODO: make proper events for this
-              // events.publish(Session.Event.Error, {
+              // bus.publish(Session.Event.Error, {
               //   error: new NamedError.Unknown({
               //     message: `Failed to load plugin ${load.spec}: ${message}`,
               //   }).toObject(),
@@ -327,39 +379,57 @@ export const layer = Layer.effect(
         for (const hook of hooks) {
           yield* Effect.tryPromise({
             try: () => Promise.resolve((hook as any).config?.(cfg)),
-            catch: errorMessage,
-          }).pipe(
-            Effect.tapError((error) => Effect.logError("plugin config hook failed", { error })),
-            Effect.ignore,
-          )
+            catch: (err) => {
+              log.error("plugin config hook failed", { error: err })
+            },
+          }).pipe(Effect.ignore)
         }
 
-        const unsubscribe = yield* events.listen((event) => {
-          if (event.location?.directory !== ctx.directory) return Effect.void
-          return Effect.sync(() => {
-            for (const hook of hooks) {
-              void hook["event"]?.({ event: { id: event.id, type: event.type, properties: event.data } as any })
-            }
-          })
-        })
-        yield* Effect.addFinalizer(() => unsubscribe)
-
-        yield* Effect.addFinalizer(() =>
-          Effect.forEach(
-            hooks,
-            (hook) =>
-              Effect.tryPromise({
-                try: () => Promise.resolve(hook.dispose?.()),
-                catch: errorMessage,
-              }).pipe(
-                Effect.tapError((error) => Effect.logError("plugin dispose hook failed", { error })),
-                Effect.ignore,
-              ),
-            { discard: true },
+        // Subscribe to bus events, fiber interrupted when scope closes
+        yield* bus.subscribeAll().pipe(
+          Stream.runForEach((input) =>
+            Effect.sync(() => {
+              for (const hook of hooks) {
+                void hook["event"]?.({ event: input as any })
+              }
+            }),
           ),
+          Effect.forkScoped,
         )
 
         return { hooks, hooksWithMeta }
+      }),
+    )
+
+    const fileHookState = yield* InstanceState.make<{ hooks: Hooks[]; meta: HookEntry[] }>(
+      Effect.fn("Plugin.fileHooks")(function* () {
+        const hooks: Hooks[] = []
+        const meta: HookEntry[] = []
+        const cfg = yield* config.get()
+        const dirs = yield* config.directories()
+
+        for (const dir of dirs) {
+          const matches = Glob.scanSync("{hook,hooks}/*.{js,ts}", { cwd: dir, absolute: true, dot: true, symlink: true })
+          for (const match of matches) {
+            const mod = yield* Effect.tryPromise({
+              try: () => import(`${pathToFileURL(match).href}?v=${Date.now()}`),
+              catch: (err) => err,
+            }).pipe(Effect.catch((err) => {
+              log.error("failed to load file hook", { path: match, error: errorMessage(err) })
+              return Effect.succeed(undefined)
+            }))
+            if (!mod) continue
+            const hookObj: Hooks = mod.default ?? mod
+            if (hookObj && typeof hookObj === "object") {
+              const name = path.basename(match, path.extname(match))
+              hooks.push(hookObj)
+              meta.push({ hook: hookObj, pluginName: `file:${name}`, hookIDFor: (event: string) => `file:${name}#${event}` })
+              log.info("loaded file hook", { path: match, name })
+            }
+          }
+        }
+
+        return { hooks, meta }
       }),
     )
 
@@ -369,19 +439,22 @@ export const layer = Layer.effect(
     ) =>
       Effect.gen(function* () {
         const s = yield* InstanceState.get(state)
+        const fh = yield* InstanceState.get(fileHookState)
         const reasons: string[] = []
         const pluginNames: string[] = []
         const hookIDs: string[] = []
         let anyContinue = false
 
-        for (const entry of s.hooksWithMeta) {
+        for (const entry of [...s.hooksWithMeta, ...fh.meta]) {
           const reg = entry.hook[eventName]
           if (!reg) continue
 
           const fn = typeof reg === "function" ? reg : reg.run
-          const matcher: ActorMatcher | undefined = typeof reg === "function" ? undefined : reg.matcher
+          const matcher: ActorMatcher | undefined =
+            typeof reg === "function" ? undefined : reg.matcher
+
           if (!matchesActor(matcher, input)) {
-            yield* events.publish(HookEvent.Executed, {
+            yield* bus.publish(HookEvent.Executed, {
               event: eventName,
               hookID: entry.hookIDFor(eventName),
               pluginName: entry.pluginName,
@@ -396,22 +469,24 @@ export const layer = Layer.effect(
           }
 
           const startedAt = Date.now()
-          const output: ActorStopOutput = { continue: false }
+          const o: ActorStopOutput = { continue: false }
           let hookOutcome: "success" | "error" = "success"
+          // TODO: pass an AbortSignal to fn so plugin authors can wire cooperative
+          // cancellation into their fetch / DB calls. Effect interrupt only stops
+          // the awaiting fiber — the underlying Promise keeps running and may
+          // bus.publish events after the actor has been cleaned up. See spec
+          // Future work for full discussion. Strict in-process cancellation
+          // (子进程隔离) is out of scope; AbortSignal is the in-process ceiling.
           yield* Effect.tryPromise({
-            try: () => fn(input as never, output),
+            try: () => fn(input as never, o),
             catch: (err) => err,
           }).pipe(
             Effect.tapError((err) =>
               Effect.gen(function* () {
                 hookOutcome = "error"
-                yield* Effect.logError(`${eventName} hook failed`, {
-                  pluginName: entry.pluginName,
-                  hookID: entry.hookIDFor(eventName),
-                  error: err,
-                })
-                yield* events.publish(Session.Event.Error, {
-                  sessionID: SessionID.make(input.sessionID),
+                log.error(`${eventName} hook failed`, { pluginName: entry.pluginName, hookID: entry.hookIDFor(eventName), error: err })
+                yield* bus.publish(Session.Event.Error, {
+                  sessionID: input.sessionID as SessionID,
                   error: new NamedError.Unknown({
                     message: `${eventName} hook (${entry.pluginName}) failed: ${errorMessage(err)}`,
                   }).toObject(),
@@ -421,45 +496,49 @@ export const layer = Layer.effect(
             Effect.ignore,
           )
 
-          yield* events.publish(HookEvent.Executed, {
+          const durationMs = Date.now() - startedAt
+          yield* bus.publish(HookEvent.Executed, {
             event: eventName,
             hookID: entry.hookIDFor(eventName),
             pluginName: entry.pluginName,
             actorID: input.actorID,
             agentType: input.agentType,
-            durationMs: Date.now() - startedAt,
+            durationMs,
             outcome: hookOutcome,
-            continueRequested: output.continue === true,
-            reasonLength: output.reason?.length ?? 0,
+            continueRequested: o.continue === true,
+            reasonLength: o.reason?.length ?? 0,
           })
 
-          if (output.continue === true && output.reason && output.reason.length > 0) {
+          if (o.continue === true && o.reason && o.reason.length > 0) {
             anyContinue = true
-            reasons.push(output.reason)
+            reasons.push(o.reason)
             pluginNames.push(entry.pluginName)
             hookIDs.push(entry.hookIDFor(eventName))
-            continue
-          }
-          if (output.continue === true) {
-            yield* Effect.logWarning(`${eventName} hook returned continue=true without reason; ignored`, {
+          } else if (o.continue === true) {
+            log.warn(`${eventName} hook returned continue=true without reason; ignored`, {
               pluginName: entry.pluginName,
             })
           }
         }
 
-        return {
+        const aggregated: ActorStopAggregatedDecision = {
           continue: anyContinue,
           reason: reasons.length > 0 ? reasons.join("\n\n") : undefined,
           contributingPluginNames: pluginNames,
           contributingHookIDs: hookIDs,
-        } satisfies ActorStopAggregatedDecision
+        }
+        return aggregated
       })
 
-    const triggerActorPreStop = Effect.fn("Plugin.triggerActorPreStop")(function* (input: ActorPreStopInput) {
+    const triggerActorPreStop = Effect.fn("Plugin.triggerActorPreStop")(function* (
+      input: ActorPreStopInput,
+    ) {
       return yield* aggregateDecision(input, "actor.preStop")
     })
 
-    const triggerActorPostStop = Effect.fn("Plugin.triggerActorPostStop")(function* (input: ActorPostStopInput) {
+    const triggerActorPostStop = Effect.fn("Plugin.triggerActorPostStop")(function* (
+      input: ActorPostStopInput,
+    ) {
       return yield* aggregateDecision(input, "actor.postStop")
     })
 
@@ -470,7 +549,8 @@ export const layer = Layer.effect(
     >(name: Name, input: Input, output: Output) {
       if (!name) return output
       const s = yield* InstanceState.get(state)
-      for (const hook of s.hooks) {
+      const fh = yield* InstanceState.get(fileHookState)
+      for (const hook of [...s.hooks, ...fh.hooks]) {
         const fn = hook[name] as any
         if (!fn) continue
         yield* Effect.promise(async () => fn(input, output))
@@ -485,18 +565,17 @@ export const layer = Layer.effect(
 
     const init = Effect.fn("Plugin.init")(function* () {
       yield* InstanceState.get(state)
+      yield* InstanceState.get(fileHookState)
     })
 
-    return Service.of({ trigger, list, init, triggerActorPreStop, triggerActorPostStop })
+    const reloadFileHooks: Interface["reloadFileHooks"] = Effect.fn("Plugin.reloadFileHooks")(function* () {
+      yield* InstanceState.invalidate(fileHookState)
+    })
+
+    return Service.of({ trigger, list, init, reloadFileHooks, triggerActorPreStop, triggerActorPostStop })
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(EventV2Bridge.defaultLayer),
-  Layer.provide(Config.defaultLayer),
-  Layer.provide(RuntimeFlags.defaultLayer),
-)
-
-export const node = LayerNode.make(layer, [EventV2Bridge.node, Config.node, RuntimeFlags.node])
+export const defaultLayer = layer.pipe(Layer.provide(Bus.layer), Layer.provide(Config.defaultLayer))
 
 export * as Plugin from "."

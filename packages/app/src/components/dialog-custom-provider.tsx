@@ -1,16 +1,16 @@
-import { Button } from "@swust-code/ui/button"
+﻿import { Button } from "@swust-code/ui/button"
 import { useDialog } from "@swust-code/ui/context/dialog"
 import { Dialog } from "@swust-code/ui/dialog"
 import { IconButton } from "@swust-code/ui/icon-button"
 import { ProviderIcon } from "@swust-code/ui/provider-icon"
 import { useMutation } from "@tanstack/solid-query"
 import { TextField } from "@swust-code/ui/text-field"
-import { showToast } from "@/utils/toast"
+import { showToast } from "@swust-code/ui/toast"
 import { batch, For } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Link } from "@/components/link"
-import { useServerSDK } from "@/context/server-sdk"
-import { useServerSync } from "@/context/server-sync"
+import { useGlobalSDK } from "@/context/global-sdk"
+import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { type FormState, headerRow, modelRow, validateCustomProvider } from "./dialog-custom-provider-form"
 import { DialogSelectProvider } from "./dialog-select-provider"
@@ -21,8 +21,8 @@ type Props = {
 
 export function DialogCustomProvider(props: Props) {
   const dialog = useDialog()
-  const serverSync = useServerSync()
-  const serverSDK = useServerSDK()
+  const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
   const language = useLanguage()
 
   const [form, setForm] = createStore<FormState>({
@@ -105,8 +105,8 @@ export function DialogCustomProvider(props: Props) {
     const output = validateCustomProvider({
       form,
       t: language.t,
-      disabledProviders: serverSync.data.config.disabled_providers ?? [],
-      existingProviderIDs: new Set(serverSync.data.provider.all.keys()),
+      disabledProviders: globalSync.data.config.disabled_providers ?? [],
+      existingProviderIDs: new Set(globalSync.data.provider.all.map((p) => p.id)),
     })
     batch(() => {
       setForm("err", output.err)
@@ -118,11 +118,11 @@ export function DialogCustomProvider(props: Props) {
 
   const saveMutation = useMutation(() => ({
     mutationFn: async (result: NonNullable<ReturnType<typeof validate>>) => {
-      const disabledProviders = serverSync.data.config.disabled_providers ?? []
+      const disabledProviders = globalSync.data.config.disabled_providers ?? []
       const nextDisabled = disabledProviders.filter((id) => id !== result.providerID)
 
       if (result.key) {
-        await serverSDK.client.auth.set({
+        await globalSDK.client.auth.set({
           providerID: result.providerID,
           auth: {
             type: "api",
@@ -131,7 +131,7 @@ export function DialogCustomProvider(props: Props) {
         })
       }
 
-      await serverSync.updateConfig({
+      await globalSync.updateConfig({
         provider: { [result.providerID]: result.config },
         disabled_providers: nextDisabled,
       })

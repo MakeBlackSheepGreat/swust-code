@@ -1,76 +1,68 @@
 import { Context, Effect, Layer, Queue } from "effect"
-import { eq } from "drizzle-orm"
-import { Database } from "@swust-code/core/database/database"
-import { EventV2 } from "@swust-code/core/event"
-import type { ConfigV1 } from "@swust-code/core/v1/config/config"
-import { SessionV1 } from "@swust-code/core/v1/session"
-import { Config } from "@/config/config"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { InstanceState } from "@/effect/instance-state"
-import { DEFAULT_KINDS, extract, type Kind } from "./extract"
+import { Database, eq } from "../storage"
+import { Bus } from "../bus"
+import { MessageV2 } from "../session/message-v2"
+import { Config } from "../config"
+import { InstanceState } from "../effect"
 import { HistoryFtsTable } from "./fts.sql"
+import { extract, DEFAULT_KINDS, type Kind } from "./extract"
 import { makeResolver, type Resolver } from "./resolve"
+import { Log } from "../util"
+
+const log = Log.create({ service: "history.writer" })
 
 type Job =
-  | { readonly type: "upsert"; readonly part: SessionV1.Part; readonly time: number }
-  | { readonly type: "delete"; readonly partID: string }
+  | { type: "upsert"; part: MessageV2.Part; time: number }
+  | { type: "delete"; partID: string }
 
 export interface Interface {
   readonly init: () => Effect.Effect<void>
 }
 
-export class WriterService extends Context.Service<WriterService, Interface>()("@swust-code/History.Writer") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/History.Writer") {}
 
-function enabledKinds(config: ConfigV1.Info): ReadonlySet<Kind> {
-  return new Set((config.history?.kinds ?? DEFAULT_KINDS) as readonly Kind[])
-}
-
-export const layer = Layer.effect(
-  WriterService,
+export const layer: Layer.Layer<Service, never, Config.Service | Bus.Service> = Layer.effect(
+  Service,
   Effect.gen(function* () {
-    const config = yield* Config.Service
-    const events = yield* EventV2Bridge.Service
-    const db = (yield* Database.Service).db
+    const cfg = yield* Config.Service
+    const bus = yield* Bus.Service
 
-    const state = yield* InstanceState.make(
-      Effect.fn("History.Writer.state")(function* () {
-        const cfg = yield* config.get()
-        const enabled = enabledKinds(cfg)
+    const state = yield* InstanceState.make<{ started: boolean }>(
+      Effect.fn("History.Writer.state")(function* (_ctx) {
+        const config = yield* cfg.get()
+        const kinds = config.history?.kinds ?? DEFAULT_KINDS
+        const enabled = new Set<Kind>(kinds as readonly Kind[])
         if (enabled.size === 0) return { started: true }
 
         const queue = yield* Queue.unbounded<Job>()
-        const resolver = makeResolver(db)
+        const resolver = makeResolver()
 
-        const unsubscribe = yield* events.listen((event) => {
-          if (event.type === SessionV1.Event.PartUpdated.type) {
-            const data = event.data as EventV2.Data<typeof SessionV1.Event.PartUpdated>
-            return Queue.offer(queue, {
-              type: "upsert",
-              part: data.part as unknown as SessionV1.Part,
-              time: data.time,
-            }).pipe(Effect.ignore)
-          }
-          if (event.type === SessionV1.Event.PartRemoved.type) {
-            const data = event.data as EventV2.Data<typeof SessionV1.Event.PartRemoved>
-            return Queue.offer(queue, { type: "delete", partID: data.partID }).pipe(Effect.ignore)
-          }
-          return Effect.void
+        // Use subscribeCallback (synchronous PubSub.subscribe) so subscriptions
+        // are guaranteed live before init() returns. Stream-based subscribe is
+        // lazy (Stream.unwrap) and would race with immediate publishes.
+        yield* bus.subscribeCallback(MessageV2.Event.PartUpdated, (evt) => {
+          Queue.offerUnsafe(queue, { type: "upsert", part: evt.properties.part, time: evt.properties.time })
         })
-        yield* Effect.addFinalizer(() => unsubscribe)
+        yield* bus.subscribeCallback(MessageV2.Event.PartRemoved, (evt) => {
+          Queue.offerUnsafe(queue, { type: "delete", partID: evt.properties.partID })
+        })
 
         yield* Effect.forever(
           Effect.gen(function* () {
             const job = yield* Queue.take(queue)
-            yield* handle(db, job, resolver, enabled).pipe(
-              Effect.catchCause((cause) => Effect.logWarning("history write failed", { cause })),
+            yield* handle(job, resolver, enabled).pipe(
+              Effect.catchCause((cause) =>
+                Effect.sync(() => log.warn("write failed", { cause: String(cause) })),
+              ),
             )
           }),
         ).pipe(Effect.forkScoped)
+
         return { started: true }
       }),
     )
 
-    return WriterService.of({
+    return Service.of({
       init: Effect.fn("History.Writer.init")(function* () {
         yield* InstanceState.get(state)
       }),
@@ -78,47 +70,43 @@ export const layer = Layer.effect(
   }),
 )
 
-function handle(
-  db: Database.Interface["db"],
-  job: Job,
-  resolver: Resolver,
-  enabled: ReadonlySet<Kind>,
-) {
+function handle(job: Job, resolver: Resolver, enabled: ReadonlySet<Kind>) {
   if (job.type === "delete") {
-    return db.delete(HistoryFtsTable).where(eq(HistoryFtsTable.part_id, job.partID)).run().pipe(Effect.orDie)
+    return Effect.sync(() =>
+      Database.use((db) => db.delete(HistoryFtsTable).where(eq(HistoryFtsTable.part_id, job.partID)).run()),
+    )
   }
-
   return Effect.gen(function* () {
-    const role = yield* resolver.role(job.part.messageID)
-    const extracted = extract(job.part, role, enabled)
+    const part = job.part
+    const role = yield* resolver.role(part.messageID)
+    const extracted = extract(part, role, enabled)
     if (!extracted) return
-    const projectID = yield* resolver.projectID(job.part.sessionID)
+    const projectID = yield* resolver.projectID(part.sessionID)
 
-    yield* db
-      .insert(HistoryFtsTable)
-      .values({
-        part_id: job.part.id,
-        session_id: job.part.sessionID,
-        message_id: job.part.messageID,
-        project_id: projectID,
-        kind: extracted.kind,
-        tool_name: extracted.tool_name,
-        body: extracted.body,
-        time_created: job.time,
-      })
-      .onConflictDoUpdate({
-        target: HistoryFtsTable.part_id,
-        set: {
-          session_id: job.part.sessionID,
-          message_id: job.part.messageID,
+    Database.use((db) =>
+      db
+        .insert(HistoryFtsTable)
+        .values({
+          part_id: part.id,
+          session_id: part.sessionID,
+          message_id: part.messageID,
           project_id: projectID,
           kind: extracted.kind,
           tool_name: extracted.tool_name,
           body: extracted.body,
           time_created: job.time,
-        },
-      })
-      .run()
-      .pipe(Effect.orDie)
+        })
+        .onConflictDoUpdate({
+          target: HistoryFtsTable.part_id,
+          set: {
+            kind: extracted.kind,
+            tool_name: extracted.tool_name,
+            body: extracted.body,
+            time_created: job.time,
+          },
+        })
+        .run(),
+    )
   })
 }
+

@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, test } from "bun:test"
 import path from "path"
-import { Module } from "@swust-code/core/util/module"
-import { Filesystem } from "@/util/filesystem"
+import { Module } from "@swust-code/shared/util/module"
+import { Filesystem } from "../../src/util"
 import { tmpdir } from "../fixture/fixture"
 
 describe("util.module", () => {

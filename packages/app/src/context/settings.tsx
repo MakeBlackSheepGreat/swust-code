@@ -1,4 +1,4 @@
-import { createStore, reconcile } from "solid-js/store"
+﻿import { createStore, reconcile } from "solid-js/store"
 import { createEffect, createMemo } from "solid-js"
 import { createSimpleContext } from "@swust-code/ui/context"
 import { persisted } from "@/utils/persist"
@@ -31,9 +31,9 @@ export interface Settings {
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
-    showSessionProgressBar: boolean
-    showCustomAgents: boolean
-    newLayoutDesigns?: boolean
+  }
+  updates: {
+    startup: boolean
   }
   appearance: {
     fontSize: number
@@ -52,7 +52,6 @@ export interface Settings {
 export const monoDefault = "System Mono"
 export const sansDefault = "System Sans"
 export const terminalDefault = "JetBrainsMono Nerd Font Mono"
-export const newLayoutDesignsDefault = import.meta.env.VITE_SWUST_CODE_CHANNEL !== "prod"
 
 const monoFallback =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
@@ -116,8 +115,9 @@ const defaultSettings: Settings = {
     showReasoningSummaries: false,
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
-    showSessionProgressBar: true,
-    showCustomAgents: false,
+  },
+  updates: {
+    startup: true,
   },
   appearance: {
     fontSize: 14,
@@ -150,7 +150,6 @@ function withFallback<T>(read: () => T | undefined, fallback: T) {
 
 export const { use: useSettings, provider: SettingsProvider } = createSimpleContext({
   name: "Settings",
-  gate: false,
   init: () => {
     const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
 
@@ -228,20 +227,11 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setEditToolPartsExpanded(value: boolean) {
           setStore("general", "editToolPartsExpanded", value)
         },
-        showSessionProgressBar: withFallback(
-          () => store.general?.showSessionProgressBar,
-          defaultSettings.general.showSessionProgressBar,
-        ),
-        setShowSessionProgressBar(value: boolean) {
-          setStore("general", "showSessionProgressBar", value)
-        },
-        showCustomAgents: withFallback(() => store.general?.showCustomAgents, defaultSettings.general.showCustomAgents),
-        setShowCustomAgents(value: boolean) {
-          setStore("general", "showCustomAgents", value)
-        },
-        newLayoutDesigns: withFallback(() => store.general?.newLayoutDesigns, newLayoutDesignsDefault),
-        setNewLayoutDesigns(value: boolean) {
-          setStore("general", "newLayoutDesigns", value)
+      },
+      updates: {
+        startup: withFallback(() => store.updates?.startup, defaultSettings.updates.startup),
+        setStartup(value: boolean) {
+          setStore("updates", "startup", value)
         },
       },
       appearance: {

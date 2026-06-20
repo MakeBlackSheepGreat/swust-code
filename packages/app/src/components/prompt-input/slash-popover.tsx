@@ -1,11 +1,10 @@
-import { Component, For, Match, Show, Switch } from "solid-js"
+﻿import { Component, For, Match, Show, Switch } from "solid-js"
 import { FileIcon } from "@swust-code/ui/file-icon"
 import { Icon } from "@swust-code/ui/icon"
-import { getDirectory, getFilename } from "@swust-code/core/util/path"
+import { getDirectory, getFilename } from "@swust-code/shared/util/path"
 
-export type AtOption =
-  | { type: "agent"; name: string; display: string }
-  | { type: "file"; path: string; display: string; recent?: boolean }
+export type AtOption = { path: string; display: string; recent?: boolean }
+export type AgentOption = { name: string; display: string }
 
 export interface SlashCommand {
   id: string
@@ -18,13 +17,18 @@ export interface SlashCommand {
 }
 
 type PromptPopoverProps = {
-  popover: "at" | "slash" | null
+  popover: "at" | "agent" | "slash" | null
   setSlashPopoverRef: (el: HTMLDivElement) => void
   atFlat: AtOption[]
   atActive?: string
   atKey: (item: AtOption) => string
   setAtActive: (id: string) => void
   onAtSelect: (item: AtOption) => void
+  agentFlat: AgentOption[]
+  agentActive?: string
+  agentKey: (item: AgentOption) => string
+  setAgentActive: (id: string) => void
+  onAgentSelect: (item: AgentOption) => void
   slashFlat: SlashCommand[]
   slashActive?: string
   setSlashActive: (id: string) => void
@@ -54,21 +58,6 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
               <For each={props.atFlat.slice(0, 10)}>
                 {(item) => {
                   const key = props.atKey(item)
-
-                  if (item.type === "agent") {
-                    return (
-                      <button
-                        class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
-                        classList={{ "bg-surface-raised-base-hover": props.atActive === key }}
-                        onClick={() => props.onAtSelect(item)}
-                        onMouseEnter={() => props.setAtActive(key)}
-                      >
-                        <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
-                        <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.name}</span>
-                      </button>
-                    )
-                  }
-
                   const isDirectory = item.path.endsWith("/")
                   const directory = isDirectory ? item.path : getDirectory(item.path)
                   const filename = isDirectory ? "" : getFilename(item.path)
@@ -87,6 +76,29 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                           <span class="text-text-strong whitespace-nowrap">{filename}</span>
                         </Show>
                       </div>
+                    </button>
+                  )
+                }}
+              </For>
+            </Show>
+          </Match>
+          <Match when={props.popover === "agent"}>
+            <Show
+              when={props.agentFlat.length > 0}
+              fallback={<div class="text-text-weak px-2 py-1">{props.t("prompt.popover.emptyResults")}</div>}
+            >
+              <For each={props.agentFlat.slice(0, 10)}>
+                {(item) => {
+                  const key = props.agentKey(item)
+                  return (
+                    <button
+                      class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
+                      classList={{ "bg-surface-raised-base-hover": props.agentActive === key }}
+                      onClick={() => props.onAgentSelect(item)}
+                      onMouseEnter={() => props.setAgentActive(key)}
+                    >
+                      <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
+                      <span class="text-14-regular text-text-strong whitespace-nowrap">${item.name}</span>
                     </button>
                   )
                 }}

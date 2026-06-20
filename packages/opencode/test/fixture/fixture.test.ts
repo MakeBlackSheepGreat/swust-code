@@ -1,7 +1,8 @@
 import { $ } from "bun"
 import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
-import { tmpdir } from "./fixture"
+import path from "path"
+import { tmpdir, cleanupTmpdir } from "./fixture"
 
 describe("tmpdir", () => {
   test("disables fsmonitor for git fixtures", async () => {
@@ -22,5 +23,36 @@ describe("tmpdir", () => {
       .then(() => true)
       .catch(() => false)
     expect(exists).toBe(false)
+  })
+
+  test("reports dispose failures after cleaning the directory", async () => {
+    let dirpath = ""
+
+    await expect(
+      (async () => {
+        await using tmp = await tmpdir({
+          dispose: async (dir) => {
+            dirpath = dir
+            await fs.rm(path.join(dir, "missing", "child"))
+          },
+        })
+      })(),
+    ).rejects.toThrow()
+
+    const exists = await fs
+      .stat(dirpath)
+      .then(() => true)
+      .catch(() => false)
+    expect(exists).toBe(false)
+  })
+
+  test("reports cleanup failures", async () => {
+    const dir = await fs.mkdtemp(path.join("/tmp", "swust-code-test-cleanup-failure-"))
+
+    await expect(cleanupTmpdir(dir, () => Promise.reject(new Error("cleanup failed")))).rejects.toThrow(
+      `Failed to cleanup temporary directory ${dir}: cleanup failed`,
+    )
+
+    await fs.rm(dir, { recursive: true, force: true })
   })
 })

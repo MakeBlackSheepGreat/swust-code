@@ -1,4 +1,4 @@
-import { createStore, produce, reconcile } from "solid-js/store"
+﻿import { createStore, produce, reconcile } from "solid-js/store"
 import type { FileNode } from "@swust-code/sdk/v2"
 
 type DirectoryState = {

@@ -1,106 +1,81 @@
 import { Context, Effect, Layer } from "effect"
 import { and, asc, desc, eq, gt, sql } from "drizzle-orm"
-import { Database } from "@swust-code/core/database/database"
-import { PartTable, SessionTable } from "@swust-code/core/session/sql"
-import type { ConfigV1 } from "@swust-code/core/v1/config/config"
-import type { SessionV1 } from "@swust-code/core/v1/session"
-import { Config } from "@/config/config"
-import { InstanceState } from "@/effect/instance-state"
-import { DEFAULT_KINDS, extract, type Kind } from "./extract"
+import { Database } from "../storage"
+import { Config } from "../config"
+import { PartTable, SessionTable } from "../session/session.sql"
 import { HistoryFtsTable } from "./fts.sql"
+import { extract, DEFAULT_KINDS, type Kind } from "./extract"
 import { makeResolver, type Resolver } from "./resolve"
+import { Log } from "../util"
+import type { MessageV2 } from "../session/message-v2"
+
+const log = Log.create({ service: "history.backfill" })
 
 const BATCH = 500
 
-export interface BackfillInput {
-  readonly session_id?: string
-  readonly limit?: number
+/**
+ * Walk PartTable newest-session-first with the given enabled kinds.
+ * Idempotent — re-running skips already-indexed parts via NOT EXISTS.
+ * Exposed for tests so callers can pass a pre-resolved enabled set.
+ */
+export function backfillAll(enabled: ReadonlySet<Kind> = new Set(DEFAULT_KINDS)) {
+  return Effect.gen(function* () {
+    if (enabled.size === 0) return
+
+    const resolver = makeResolver()
+    const sessions = Database.use((db) =>
+      db
+        .select({ id: SessionTable.id, project_id: SessionTable.project_id })
+        .from(SessionTable)
+        .orderBy(desc(SessionTable.time_updated))
+        .all(),
+    )
+
+    for (const session of sessions) {
+      yield* scanSession(session, resolver, enabled).pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => log.warn("session scan failed", { session: session.id, cause: String(cause) })),
+        ),
+      )
+      yield* Effect.sleep("50 millis")
+    }
+    log.info("backfill complete", { sessions: sessions.length })
+  })
 }
-
-export interface Interface {
-  readonly init: () => Effect.Effect<void>
-  readonly backfill: (input?: BackfillInput) => Effect.Effect<number>
-}
-
-export class BackfillService extends Context.Service<BackfillService, Interface>()(
-  "@swust-code/History.Backfill",
-) {}
-
-function enabledKinds(config: ConfigV1.Info): ReadonlySet<Kind> {
-  return new Set((config.history?.kinds ?? DEFAULT_KINDS) as readonly Kind[])
-}
-
-export const backfillMissing = Effect.fn("History.Backfill.missing")(function* (
-  input?: BackfillInput,
-  enabled: ReadonlySet<Kind> = new Set(DEFAULT_KINDS),
-) {
-  const database = yield* Database.Service
-  return yield* backfillWith(database.db, input, enabled)
-})
-
-export const backfillWith = Effect.fn("History.Backfill.withDatabase")(function* (
-  db: Database.Interface["db"],
-  input?: BackfillInput,
-  enabled: ReadonlySet<Kind> = new Set(DEFAULT_KINDS),
-) {
-  if (enabled.size === 0) return 0
-
-  const resolver = makeResolver(db)
-  const sessionQuery = db.select({ id: SessionTable.id, project_id: SessionTable.project_id }).from(SessionTable)
-  const sessions = yield* (input?.session_id
-    ? sessionQuery.where(eq(SessionTable.id, input.session_id as never)).all()
-    : sessionQuery.orderBy(desc(SessionTable.time_updated)).all()
-  ).pipe(Effect.orDie)
-
-  let total = 0
-  let remaining = input?.limit ?? Number.POSITIVE_INFINITY
-  for (const session of sessions) {
-    if (remaining <= 0) break
-    const written = yield* scanSession(db, session, resolver, enabled, remaining)
-    total += written
-    remaining -= written
-    if (!input?.session_id) yield* Effect.sleep("50 millis")
-  }
-  return total
-})
 
 function scanSession(
-  db: Database.Interface["db"],
   session: { id: string; project_id: string },
   resolver: Resolver,
   enabled: ReadonlySet<Kind>,
-  limit: number,
 ) {
   return Effect.gen(function* () {
     let cursor = ""
-    let total = 0
-    while (total < limit) {
-      const parts = yield* db
-        .select()
-        .from(PartTable)
-        .where(
-          and(
-            eq(PartTable.session_id, session.id as never),
-            gt(PartTable.id, cursor as never),
-            sql`NOT EXISTS (SELECT 1 FROM history_fts WHERE history_fts.part_id = ${PartTable.id})`,
-          ),
-        )
-        .orderBy(asc(PartTable.id))
-        .limit(Math.min(BATCH, limit - total))
-        .all()
-        .pipe(Effect.orDie)
-      if (parts.length === 0) return total
+    while (true) {
+      const parts = Database.use((db) =>
+        db
+          .select()
+          .from(PartTable)
+          .where(
+            and(
+              eq(PartTable.session_id, session.id as any),
+              gt(PartTable.id, cursor as any),
+              sql`NOT EXISTS (SELECT 1 FROM history_fts WHERE history_fts.part_id = ${PartTable.id})`,
+            ),
+          )
+          .orderBy(asc(PartTable.id))
+          .limit(BATCH)
+          .all(),
+      )
+      if (parts.length === 0) return
 
-      total += yield* writeBatch(db, parts, session.project_id, resolver, enabled)
+      yield* writeBatch(parts, session.project_id, resolver, enabled)
       cursor = parts[parts.length - 1]!.id
       yield* Effect.sleep("10 millis")
     }
-    return total
   })
 }
 
 function writeBatch(
-  db: Database.Interface["db"],
   parts: Array<{ id: string; session_id: string; message_id: string; data: unknown; time_created: number }>,
   projectID: string,
   resolver: Resolver,
@@ -108,90 +83,79 @@ function writeBatch(
 ) {
   return Effect.gen(function* () {
     type ToWrite = {
-      readonly part: (typeof parts)[number]
-      readonly kind: Kind
-      readonly body: string
-      readonly tool_name: string | null
-      readonly time: number
+      part: (typeof parts)[number]
+      kind: Kind
+      body: string
+      tool_name: string | null
+      time: number
     }
     const writes: ToWrite[] = []
-    for (const row of parts) {
-      const role = yield* resolver.role(row.message_id)
-      const part = {
-        ...(row.data as object),
-        id: row.id,
-        sessionID: row.session_id,
-        messageID: row.message_id,
-      } as SessionV1.Part
-      const extracted = extract(part, role, enabled)
+    for (const p of parts) {
+      const role = yield* resolver.role(p.message_id)
+      // Reconstruct the MessageV2.Part shape that extract() expects.
+      // PartTable.data stores everything except id/sessionID/messageID.
+      const fullPart = {
+        id: p.id,
+        sessionID: p.session_id,
+        messageID: p.message_id,
+        ...(p.data as object),
+      } as MessageV2.Part
+      const extracted = extract(fullPart, role, enabled)
       if (!extracted) continue
       writes.push({
-        part: row,
+        part: p,
         kind: extracted.kind,
         body: extracted.body,
         tool_name: extracted.tool_name,
-        time: row.time_created,
+        time: p.time_created,
       })
     }
-    if (writes.length === 0) return 0
-
-    yield* db
-      .transaction((tx) =>
-        Effect.gen(function* () {
-          for (const write of writes) {
-            yield* tx
-              .insert(HistoryFtsTable)
-              .values({
-                part_id: write.part.id,
-                session_id: write.part.session_id,
-                message_id: write.part.message_id,
-                project_id: projectID,
-                kind: write.kind,
-                tool_name: write.tool_name,
-                body: write.body,
-                time_created: write.time,
-              })
-              .onConflictDoUpdate({
-                target: HistoryFtsTable.part_id,
-                set: {
-                  kind: write.kind,
-                  tool_name: write.tool_name,
-                  body: write.body,
-                  time_created: write.time,
-                },
-              })
-              .run()
-          }
-        }),
-      )
-      .pipe(Effect.orDie)
-    return writes.length
+    if (writes.length === 0) return
+    Database.transaction((tx) => {
+      for (const w of writes) {
+        tx.insert(HistoryFtsTable)
+          .values({
+            part_id: w.part.id,
+            session_id: w.part.session_id,
+            message_id: w.part.message_id,
+            project_id: projectID,
+            kind: w.kind,
+            tool_name: w.tool_name,
+            body: w.body,
+            time_created: w.time,
+          })
+          .onConflictDoUpdate({
+            target: HistoryFtsTable.part_id,
+            set: { kind: w.kind, tool_name: w.tool_name, body: w.body, time_created: w.time },
+          })
+          .run()
+      }
+    })
   })
 }
 
-export const layer = Layer.effect(
-  BackfillService,
+export interface Interface {
+  readonly init: () => Effect.Effect<void>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/History.Backfill") {}
+
+export const layer: Layer.Layer<Service, never, Config.Service> = Layer.effect(
+  Service,
   Effect.gen(function* () {
-    const config = yield* Config.Service
-    const database = yield* Database.Service
-    const state = yield* InstanceState.make(
-      Effect.fn("History.Backfill.state")(function* () {
-        const cfg = yield* config.get()
-        yield* backfillWith(database.db, undefined, enabledKinds(cfg)).pipe(
-          Effect.catchCause((cause) => Effect.logWarning("history backfill aborted", { cause })),
+    const cfg = yield* Config.Service
+    return Service.of({
+      init: Effect.fn("History.Backfill.init")(function* () {
+        const config = yield* cfg.get()
+        const kinds = config.history?.kinds ?? DEFAULT_KINDS
+        const enabled = new Set<Kind>(kinds as readonly Kind[])
+        // Fire-and-forget: do not block bootstrap on the potentially long scan.
+        yield* backfillAll(enabled).pipe(
+          Effect.catchCause((cause) =>
+            Effect.sync(() => log.warn("backfill aborted", { cause: String(cause) })),
+          ),
           Effect.forkDetach,
         )
-        return { started: true }
-      }),
-    )
-
-    return BackfillService.of({
-      init: Effect.fn("History.Backfill.init")(function* () {
-        yield* InstanceState.get(state)
-      }),
-      backfill: Effect.fn("History.Backfill.run")(function* (input?: BackfillInput) {
-        const cfg = yield* config.get()
-        return yield* backfillWith(database.db, input, enabledKinds(cfg))
       }),
     })
   }),

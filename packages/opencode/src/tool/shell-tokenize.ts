@@ -12,11 +12,14 @@ export interface ParseError {
   detail: string
 }
 
-function heredocPlaceholder(index: number) {
-  return `\x00HD${index}\x00`
+// Null-byte delimited placeholder that shell-quote passes through verbatim.
+function heredocPlaceholder(n: number) {
+  return `\x00HD${n}\x00`
 }
 
-type HeredocResult = { ok: true; stripped: string; bodies: string[] } | { ok: false; error: ParseError }
+type HeredocResult =
+  | { ok: true; stripped: string; bodies: string[] }
+  | { ok: false; error: ParseError }
 
 function extractHeredocs(script: string): HeredocResult {
   const bodies: string[] = []
@@ -27,6 +30,8 @@ function extractHeredocs(script: string): HeredocResult {
 
   while (i < script.length) {
     const ch = script[i]
+
+    // --- Inside a quoted string: pass through verbatim ---
     if (quote) {
       if (ch === "\\" && quote === '"' && i + 1 < script.length) {
         out += ch + script[i + 1]
@@ -46,6 +51,7 @@ function extractHeredocs(script: string): HeredocResult {
       continue
     }
 
+    // --- At top level ---
     if (ch === '"' || ch === "'") {
       quote = ch
       out += ch
@@ -53,23 +59,32 @@ function extractHeredocs(script: string): HeredocResult {
       continue
     }
 
+    // Check for `<<` at top level (but not `<<<` herestring)
     if (ch === "<" && script[i + 1] === "<") {
+      // `<<<` herestring: pass all three chars through so the existing operator
+      // check rejects them.
       if (script[i + 2] === "<") {
         out += "<<< "
         i += 3
+        // Skip to newline so the rest of the line goes through normally
         while (i < script.length && script[i] !== "\n") i++
         continue
       }
 
+      // Try to read a marker name starting at i+2
       let j = i + 2
       const markerStart = j
+      // Marker must start with letter or underscore
       if (j < script.length && /[A-Za-z_]/.test(script[j])) {
         while (j < script.length && /[A-Za-z0-9_]/.test(script[j])) j++
         const marker = script.slice(markerStart, j)
+
+        // After marker: only optional whitespace, then newline (or EOF)
         let k = j
         while (k < script.length && (script[k] === " " || script[k] === "\t")) k++
 
         if (k < script.length && script[k] !== "\n") {
+          // Non-whitespace after <<MARKER on the same line
           return {
             ok: false,
             error: {
@@ -80,20 +95,28 @@ function extractHeredocs(script: string): HeredocResult {
           }
         }
 
+        // Valid heredoc open: emit placeholder on the same line in output.
+        // Body lines and the closing marker are replaced with empty lines so
+        // that splitTopLevelLines sees the correct original line numbers.
         const bodyIndex = bodies.length
         const openLine = line
         out += heredocPlaceholder(bodyIndex) + "\n"
+        // Advance past <<MARKER + optional whitespace + \n
         i = k + 1
         line++
 
+        // Collect body lines until we see a line that trims to exactly `marker`
         const bodyLines: string[] = []
         let closed = false
         while (i < script.length) {
+          // Read one line (up to but not including its \n, or EOF)
           let lineEnd = i
           while (lineEnd < script.length && script[lineEnd] !== "\n") lineEnd++
           const bodyLine = script.slice(i, lineEnd)
+          // Emit a blank line to preserve original line numbering
           out += "\n"
           if (bodyLine.trim() === marker) {
+            // Closing line — consume it (and trailing \n if present)
             i = lineEnd + (lineEnd < script.length ? 1 : 0)
             line++
             closed = true
@@ -118,6 +141,12 @@ function extractHeredocs(script: string): HeredocResult {
         bodies.push(bodyLines.join("\n"))
         continue
       }
+
+      // `<<` without a valid marker — pass through so the existing operator
+      // check rejects it.
+      out += ch
+      i++
+      continue
     }
 
     out += ch
@@ -128,14 +157,17 @@ function extractHeredocs(script: string): HeredocResult {
   return { ok: true, stripped: out, bodies }
 }
 
+// Regex matching a heredoc placeholder token produced by extractHeredocs.
 const HD_RE = /^\x00HD(\d+)\x00$/
 
+// POSIX-style comment pre-pass: operates on the post-heredoc-extraction text so
+// heredoc bodies are already removed. Drops word-boundary `#` to end-of-line,
+// escapes mid-token `#` so shell-quote treats it as a literal character.
 function preprocessComments(input: string): string {
   let out = ""
   let i = 0
   let quote: '"' | "'" | null = null
-  let prevWasBoundary = true
-
+  let prevWasBoundary = true // start of input is a word boundary
   while (i < input.length) {
     const ch = input[i]
     if (quote) {
@@ -159,11 +191,13 @@ function preprocessComments(input: string): string {
     }
     if (ch === "\\") {
       if (i + 1 < input.length && input[i + 1] === "#") {
+        // Explicit \# escape: pass through verbatim so shell-quote produces literal #
         out += "\\#"
         i += 2
         prevWasBoundary = false
         continue
       }
+      // Other backslash: pass through
       out += ch
       i++
       prevWasBoundary = false
@@ -171,9 +205,11 @@ function preprocessComments(input: string): string {
     }
     if (ch === "#") {
       if (prevWasBoundary) {
+        // word-boundary # → real comment, drop to end of line (don't consume the \n)
         while (i < input.length && input[i] !== "\n") i++
         continue
       }
+      // mid-token # → escape so shell-quote treats as literal
       out += "\\#"
       i++
       prevWasBoundary = false
@@ -207,22 +243,22 @@ export function tokenize(script: string): Effect.Effect<Argv[], ParseError> {
       }
       const segTokens = shellQuoteParse(seg.text, (name: string) => "$" + name, { escape: "\\" })
       const stringTokens: string[] = []
-      for (const token of segTokens) {
-        if (typeof token === "string") {
-          const match = HD_RE.exec(token)
+      for (const t of segTokens) {
+        if (typeof t === "string") {
+          const match = HD_RE.exec(t)
           if (match) {
             stringTokens.push(bodies[parseInt(match[1], 10)])
             continue
           }
-          stringTokens.push(token)
+          stringTokens.push(t)
           continue
         }
-        if (typeof token === "object" && token !== null && "op" in token) {
-          const op = token as { op: string; pattern?: string }
+        if (typeof t === "object" && t !== null && "op" in t) {
+          const tok = t as { op: string; pattern?: string }
           const detail =
-            op.op === "glob" && op.pattern != null
-              ? `unsupported glob pattern: ${op.pattern}`
-              : `unsupported shell operator: ${op.op}`
+            tok.op === "glob" && tok.pattern != null
+              ? `unsupported glob pattern: ${tok.pattern}`
+              : `unsupported shell operator: ${tok.op}`
           return Effect.fail<ParseError>({
             kind: "unsupported-operator",
             line: seg.line,
@@ -253,6 +289,8 @@ function scanUnclosedQuote(segment: string): '"' | "'" | null {
   return quote
 }
 
+// Split the script into segments separated by line breaks that are NOT inside
+// quoted strings. Returns each segment's starting line (1-indexed) and text.
 function splitTopLevelLines(script: string): Array<{ line: number; text: string }> {
   const segments: Array<{ line: number; text: string }> = []
   let buf = ""
@@ -260,7 +298,6 @@ function splitTopLevelLines(script: string): Array<{ line: number; text: string 
   let line = 1
   let quote: '"' | "'" | null = null
   let i = 0
-
   while (i < script.length) {
     const ch = script[i]
     if (quote) {
@@ -288,6 +325,7 @@ function splitTopLevelLines(script: string): Array<{ line: number; text: string 
       continue
     }
     if (ch === "\\" && i + 1 < script.length && script[i + 1] === "\n") {
+      // POSIX line continuation: \<LF> disappears, next physical line continues this command
       line++
       i += 2
       continue

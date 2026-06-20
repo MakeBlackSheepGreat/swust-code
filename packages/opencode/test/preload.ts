@@ -7,12 +7,18 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { afterAll } from "bun:test"
 
 // Set XDG env vars FIRST, before any src/ imports
-const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
+const dir = path.join(os.tmpdir(), "swust-code-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
-afterAll(async () => {
-  const { AppRuntime } = await import("../src/effect/app-runtime")
-  await AppRuntime.dispose()
 
+// Route fixture tmpdirs under this per-PID dir so the afterAll rm below
+// transitively cleans up any fixtures whose Symbol.asyncDispose didn't run
+// (e.g. when bun test is killed/crashes/timeouts mid-run).
+const fixtureRoot = path.join(dir, "fixtures")
+await fs.mkdir(fixtureRoot, { recursive: true })
+process.env["SWUST_CODE_TEST_TMPDIR_ROOT"] = fixtureRoot
+afterAll(async () => {
+  const { Database } = await import("../src/storage")
+  Database.close()
   const busy = (error: unknown) =>
     typeof error === "object" && error !== null && "code" in error && error.code === "EBUSY"
   const rm = async (left: number): Promise<void> => {
@@ -20,8 +26,7 @@ afterAll(async () => {
     await sleep(100)
     return fs.rm(dir, { recursive: true, force: true }).catch((error) => {
       if (!busy(error)) throw error
-      if (left <= 1 && process.platform !== "win32") throw error
-      if (left <= 1) return
+      if (left <= 1) throw error
       return rm(left - 1)
     })
   }
@@ -36,21 +41,23 @@ process.env["XDG_CACHE_HOME"] = path.join(dir, "cache")
 process.env["XDG_CONFIG_HOME"] = path.join(dir, "config")
 process.env["XDG_STATE_HOME"] = path.join(dir, "state")
 process.env["SWUST_CODE_MODELS_PATH"] = path.join(import.meta.dir, "tool", "fixtures", "models-api.json")
-process.env["SWUST_CODE_EXPERIMENTAL_EVENT_SYSTEM"] = "true"
-process.env["SWUST_CODE_EXPERIMENTAL_WORKSPACES"] = "true"
 
-// Set test home directory to isolate tests from user's actual home directory
-// This prevents tests from picking up real user configs/skills from ~/.claude/skills
+// Set test home directory to isolate tests from user's actual home directory.
+// This prevents tests from picking up real user configs/skills from ~/.claude/skills.
+// Production code reads HOME/USERPROFILE directly (not os.homedir()) because Bun
+// caches os.homedir() at process start, so mutating it here would be a no-op.
 const testHome = path.join(dir, "home")
 await fs.mkdir(testHome, { recursive: true })
-process.env["SWUST_CODE_TEST_HOME"] = testHome
+process.env["HOME"] = testHome
+process.env["USERPROFILE"] = testHome
 
 // Set test managed config directory to isolate tests from system managed settings
 const testManagedConfigDir = path.join(dir, "managed")
 process.env["SWUST_CODE_TEST_MANAGED_CONFIG_DIR"] = testManagedConfigDir
+process.env["SWUST_CODE_DISABLE_DEFAULT_PLUGINS"] = "true"
 
 // Write the cache version file to prevent global/index.ts from clearing the cache
-const cacheDir = path.join(dir, "cache", "opencode")
+const cacheDir = path.join(dir, "cache", "swust-code")
 await fs.mkdir(cacheDir, { recursive: true })
 await fs.writeFile(path.join(cacheDir, "version"), "14")
 
@@ -77,16 +84,19 @@ delete process.env["CEREBRAS_API_KEY"]
 delete process.env["SAMBANOVA_API_KEY"]
 delete process.env["SWUST_CODE_SERVER_PASSWORD"]
 delete process.env["SWUST_CODE_SERVER_USERNAME"]
-delete process.env["SWUST_CODE_EXPERIMENTAL"]
-delete process.env["SWUST_CODE_ENABLE_EXPERIMENTAL_MODELS"]
-delete process.env["OTEL_EXPORTER_OTLP_ENDPOINT"]
-delete process.env["OTEL_EXPORTER_OTLP_HEADERS"]
-delete process.env["OTEL_RESOURCE_ATTRIBUTES"]
+delete process.env["SWUST_CODE_HOME"]
 
 // Use in-memory sqlite
 process.env["SWUST_CODE_DB"] = ":memory:"
 
 // Now safe to import from src/
+const { Log } = await import("../src/util")
 const { initProjectors } = await import("../src/server/projectors")
+
+void Log.init({
+  print: false,
+  dev: true,
+  level: "DEBUG",
+})
 
 initProjectors()

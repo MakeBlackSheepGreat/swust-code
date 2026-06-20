@@ -1,20 +1,16 @@
+﻿import type { Argv } from "yargs"
 import type { Session as SDKSession, Message, Part } from "@swust-code/sdk/v2"
-import { SessionV1 } from "@swust-code/core/v1/session"
-import { Session } from "@/session/session"
+import { Session } from "../../session"
 import { MessageV2 } from "../../session/message-v2"
-import { CliError, effectCmd } from "../effect-cmd"
-import { Database } from "@swust-code/core/database/database"
-import { SessionTable, MessageTable, PartTable } from "@swust-code/core/session/sql"
-import { InstanceRef } from "@/effect/instance-ref"
-import { ShareNext } from "@/share/share-next"
+import { cmd } from "./cmd"
+import { bootstrap } from "../bootstrap"
+import { Database } from "../../storage"
+import { SessionTable, MessageTable, PartTable } from "../../session/session.sql"
+import { Instance } from "../../project/instance"
+import { ShareNext } from "../../share"
 import { EOL } from "os"
-import path from "path"
-import { FSUtil } from "@swust-code/core/fs-util"
-import { Effect, Schema } from "effect"
-import type { InstanceContext } from "@/project/instance-context"
-
-const decodeMessageInfo = Schema.decodeUnknownSync(SessionV1.Info)
-const decodePart = Schema.decodeUnknownSync(SessionV1.Part)
+import { Filesystem } from "../../util"
+import { AppRuntime } from "@/effect/app-runtime"
 
 /** Discriminated union returned by the ShareNext API (GET /api/shares/:id/data) */
 export type ShareData =
@@ -78,147 +74,135 @@ export function transformShareData(shareData: ShareData[]): {
   }
 }
 
-type ExportData = { info: SDKSession; messages: Array<{ info: Message; parts: Part[] }> }
-
-export const ImportCommand = effectCmd({
+export const ImportCommand = cmd({
   command: "import <file>",
   describe: "import session data from JSON file or URL",
-  builder: (yargs) =>
-    yargs.positional("file", {
+  builder: (yargs: Argv) => {
+    return yargs.positional("file", {
       describe: "path to JSON file or share URL",
       type: "string",
       demandOption: true,
-    }),
-  handler: Effect.fn("Cli.import")(function* (args) {
-    const ctx = yield* InstanceRef
-    if (!ctx) return yield* Effect.die("InstanceRef not provided")
-    return yield* runImport(args.file, ctx)
-  }),
-})
-
-const runImport = Effect.fn("Cli.import.body")(function* (file: string, ctx: InstanceContext) {
-  const share = yield* ShareNext.Service
-  const fs = yield* FSUtil.Service
-  const { db } = yield* Database.Service
-
-  let exportData: ExportData | undefined
-
-  const isUrl = file.startsWith("http://") || file.startsWith("https://")
-
-  if (isUrl) {
-    const slug = parseShareUrl(file)
-    if (!slug) {
-      const baseUrl = yield* Effect.orDie(share.url())
-      process.stdout.write(`Invalid URL format. Expected: ${baseUrl}/share/<slug>`)
-      process.stdout.write(EOL)
-      return
-    }
-
-    const baseUrl = new URL(file).origin
-    const req = yield* Effect.orDie(share.request())
-    const headers = shouldAttachShareAuthHeaders(file, req.baseUrl) ? req.headers : {}
-
-    const tryFetch = (url: string) =>
-      Effect.tryPromise({
-        try: () => fetch(url, { headers }),
-        catch: (e) =>
-          new CliError({
-            message: `Failed to fetch share data: ${e instanceof Error ? e.message : String(e)}`,
-          }),
-      })
-
-    const dataPath = req.api.data(slug)
-    let response = yield* tryFetch(`${baseUrl}${dataPath}`)
-
-    if (!response.ok && dataPath !== `/api/share/${slug}/data`) {
-      response = yield* tryFetch(`${baseUrl}/api/share/${slug}/data`)
-    }
-
-    if (!response.ok) {
-      process.stdout.write(`Failed to fetch share data: ${response.statusText}`)
-      process.stdout.write(EOL)
-      return
-    }
-
-    const shareData = yield* Effect.tryPromise({
-      try: () => response.json() as Promise<ShareData[]>,
-      catch: () => new CliError({ message: "Share data was not valid JSON" }),
     })
-    const transformed = transformShareData(shareData)
+  },
+  handler: async (args) => {
+    await bootstrap(process.cwd(), async () => {
+      let exportData:
+        | {
+            info: SDKSession
+            messages: Array<{
+              info: Message
+              parts: Part[]
+            }>
+          }
+        | undefined
 
-    if (!transformed) {
-      process.stdout.write(`Share not found or empty: ${slug}`)
-      process.stdout.write(EOL)
-      return
-    }
+      const isUrl = args.file.startsWith("http://") || args.file.startsWith("https://")
 
-    exportData = transformed
-  } else {
-    exportData = (yield* fs.readJson(file).pipe(Effect.orElseSucceed(() => undefined))) as
-      | NonNullable<typeof exportData>
-      | undefined
-    if (!exportData) {
-      process.stdout.write(`File not found: ${file}`)
-      process.stdout.write(EOL)
-      return
-    }
-  }
+      if (isUrl) {
+        const slug = parseShareUrl(args.file)
+        if (!slug) {
+          const baseUrl = await AppRuntime.runPromise(ShareNext.Service.use((svc) => svc.url()))
+          process.stdout.write(`Invalid URL format. Expected: ${baseUrl}/share/<slug>`)
+          process.stdout.write(EOL)
+          return
+        }
 
-  if (!exportData) {
-    process.stdout.write(`Failed to read session data`)
-    process.stdout.write(EOL)
-    return
-  }
+        const parsed = new URL(args.file)
+        const baseUrl = parsed.origin
+        const req = await AppRuntime.runPromise(ShareNext.Service.use((svc) => svc.request()))
+        const headers = shouldAttachShareAuthHeaders(args.file, req.baseUrl) ? req.headers : {}
 
-  const info = Schema.decodeUnknownSync(Session.Info)({
-    ...exportData.info,
-    projectID: ctx.project.id,
-    directory: ctx.directory,
-    path: path.relative(path.resolve(ctx.worktree), ctx.directory).replaceAll("\\", "/"),
-  }) as Session.Info
-  const row = Session.toRow(info)
-  yield* db
-    .insert(SessionTable)
-    .values(row)
-    .onConflictDoUpdate({
-      target: SessionTable.id,
-      set: { project_id: row.project_id, directory: row.directory, path: row.path },
-    })
-    .run()
-    .pipe(Effect.orDie)
-
-  for (const msg of exportData.messages) {
-    const msgInfo = decodeMessageInfo(msg.info) as SessionV1.Info
-    const { id, sessionID: _, ...msgData } = msgInfo
-    yield* db
-      .insert(MessageTable)
-      .values({
-        id,
-        session_id: row.id,
-        time_created: msgInfo.time?.created ?? Date.now(),
-        data: msgData as never,
-      })
-      .onConflictDoNothing()
-      .run()
-      .pipe(Effect.orDie)
-
-    for (const part of msg.parts) {
-      const partInfo = decodePart(part) as SessionV1.Part
-      const { id: partId, sessionID: _s, messageID, ...partData } = partInfo
-      yield* db
-        .insert(PartTable)
-        .values({
-          id: partId,
-          message_id: messageID,
-          session_id: row.id,
-          data: partData,
+        const dataPath = req.api.data(slug)
+        let response = await fetch(`${baseUrl}${dataPath}`, {
+          headers,
         })
-        .onConflictDoNothing()
-        .run()
-        .pipe(Effect.orDie)
-    }
-  }
 
-  process.stdout.write(`Imported session: ${exportData.info.id}`)
-  process.stdout.write(EOL)
+        if (!response.ok && dataPath !== `/api/share/${slug}/data`) {
+          response = await fetch(`${baseUrl}/api/share/${slug}/data`, {
+            headers,
+          })
+        }
+
+        if (!response.ok) {
+          process.stdout.write(`Failed to fetch share data: ${response.statusText}`)
+          process.stdout.write(EOL)
+          return
+        }
+
+        const shareData: ShareData[] = await response.json()
+        const transformed = transformShareData(shareData)
+
+        if (!transformed) {
+          process.stdout.write(`Share not found or empty: ${slug}`)
+          process.stdout.write(EOL)
+          return
+        }
+
+        exportData = transformed
+      } else {
+        exportData = await Filesystem.readJson<NonNullable<typeof exportData>>(args.file).catch(() => undefined)
+        if (!exportData) {
+          process.stdout.write(`File not found: ${args.file}`)
+          process.stdout.write(EOL)
+          return
+        }
+      }
+
+      if (!exportData) {
+        process.stdout.write(`Failed to read session data`)
+        process.stdout.write(EOL)
+        return
+      }
+
+      const info = Session.Info.parse({
+        ...exportData.info,
+        projectID: Instance.project.id,
+      })
+      const row = Session.toRow(info)
+      Database.use((db) =>
+        db
+          .insert(SessionTable)
+          .values(row)
+          .onConflictDoUpdate({ target: SessionTable.id, set: { project_id: row.project_id } })
+          .run(),
+      )
+
+      for (const msg of exportData.messages) {
+        const msgInfo = MessageV2.Info.parse(msg.info)
+        const { id, sessionID: _, ...msgData } = msgInfo
+        Database.use((db) =>
+          db
+            .insert(MessageTable)
+            .values({
+              id,
+              session_id: row.id,
+              time_created: msgInfo.time?.created ?? Date.now(),
+              data: msgData,
+            })
+            .onConflictDoNothing()
+            .run(),
+        )
+
+        for (const part of msg.parts) {
+          const partInfo = MessageV2.Part.parse(part)
+          const { id: partId, sessionID: _s, messageID, ...partData } = partInfo
+          Database.use((db) =>
+            db
+              .insert(PartTable)
+              .values({
+                id: partId,
+                message_id: messageID,
+                session_id: row.id,
+                data: partData,
+              })
+              .onConflictDoNothing()
+              .run(),
+          )
+        }
+      }
+
+      process.stdout.write(`Imported session: ${exportData.info.id}`)
+      process.stdout.write(EOL)
+    })
+  },
 })

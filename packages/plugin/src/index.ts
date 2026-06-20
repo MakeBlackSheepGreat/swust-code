@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   Event,
   createOpencodeClient,
   Project,
@@ -8,9 +8,10 @@ import type {
   UserMessage,
   Message,
   Part,
+  Auth,
   Config as SDKConfig,
 } from "@swust-code/sdk"
-import type { Provider as ProviderV2, Model as ModelV2, Auth } from "@swust-code/sdk/v2"
+import type { Provider as ProviderV2, Model as ModelV2 } from "@swust-code/sdk/v2"
 
 import type { BunShell } from "./shell.js"
 import { type ToolDefinition } from "./tool.js"
@@ -44,7 +45,7 @@ export type WorkspaceTarget =
       headers?: HeadersInit
     }
 
-export type WorkspaceAdapter = {
+export type WorkspaceAdaptor = {
   name: string
   description: string
   configure(config: WorkspaceInfo): WorkspaceInfo | Promise<WorkspaceInfo>
@@ -59,7 +60,7 @@ export type PluginInput = {
   directory: string
   worktree: string
   experimental_workspace: {
-    register(type: string, adapter: WorkspaceAdapter): void
+    register(type: string, adaptor: WorkspaceAdaptor): void
   }
   serverUrl: URL
   $: BunShell
@@ -152,7 +153,6 @@ export type AuthHook = {
               type: "success"
               key: string
               provider?: string
-              metadata?: Record<string, string>
             }
           | {
               type: "failed"
@@ -165,10 +165,11 @@ export type AuthHook = {
 export type AuthOAuthResult = { url: string; instructions: string } & (
   | {
       method: "auto"
-      callback(): Promise<
+      callback(code?: string): Promise<
         | ({
             type: "success"
             provider?: string
+            metadata?: Record<string, string>
           } & (
             | {
                 refresh: string
@@ -177,7 +178,7 @@ export type AuthOAuthResult = { url: string; instructions: string } & (
                 accountId?: string
                 enterpriseUrl?: string
               }
-            | { key: string; metadata?: Record<string, string> }
+            | { key: string }
           ))
         | {
             type: "failed"
@@ -190,6 +191,7 @@ export type AuthOAuthResult = { url: string; instructions: string } & (
         | ({
             type: "success"
             provider?: string
+            metadata?: Record<string, string>
           } & (
             | {
                 refresh: string
@@ -198,7 +200,7 @@ export type AuthOAuthResult = { url: string; instructions: string } & (
                 accountId?: string
                 enterpriseUrl?: string
               }
-            | { key: string; metadata?: Record<string, string> }
+            | { key: string }
           ))
         | {
             type: "failed"
@@ -223,20 +225,13 @@ export type AuthOuathResult = AuthOAuthResult
 
 /**
  * Agent types excluded from actor.preStop / actor.postStop by default.
- * Includes built-in agents plus runtime-only pseudo-agents that are not meant
- * to be matched by generic lifecycle hooks unless a matcher explicitly opts in.
+ * Includes the agents registered in src/agent/agent.ts plus runtime-only
+ * pseudo-agents ("main" = root actor, "compaction" = auto-compaction subsystem)
+ * that are never spawned via the agent registry.
  */
 export const BUILT_IN_AGENTS = [
-  "main",
-  "general",
-  "build",
-  "explore",
-  "summary",
-  "title",
-  "checkpoint-writer",
-  "dream",
-  "distill",
-  "compaction",
+  "main", "general", "build", "explore", "summary",
+  "title", "checkpoint-writer", "dream", "distill", "compaction",
 ] as const
 
 export type BuiltInAgent = (typeof BUILT_IN_AGENTS)[number]
@@ -250,11 +245,14 @@ export type ActorMatcher = {
     | string
     | string[]
     | { include: string[]; exclude?: string[] }
-    | { excludeOnly: string[] }
+    | { excludeOnly: string[] } // matches every agent (incl. built-ins) except those listed
 }
 
 export type ActorStopBaseInput = {
   sessionID: string
+  /** Parent session id when the actor runs in a child session (e.g. checkpoint-writer
+   *  runs under a child session keyed on parent_id). Undefined when sessionID === parent.
+   *  Plugins that re-derive paths from sessionID should read `parentSessionID ?? sessionID`. */
   parentSessionID?: string
   actorID: string
   parentActorID?: string
@@ -264,7 +262,7 @@ export type ActorStopBaseInput = {
   task: string
   description?: string
   finalText?: string
-  task_id?: string
+  task_id?: string  // Spec ②: if set, postStop hooks can validate tasks/<task_id>/progress.md
   iteration: number
 }
 
@@ -272,7 +270,9 @@ export type ActorPreStopInput = ActorStopBaseInput
 
 export type ActorPostStopInput = ActorStopBaseInput & {
   outcome: ActorOutcome
-  error?: string
+  error?: string  // outcome === "failure" 时存在
+  // false → the spawned agent cannot use the Write tool (read-only, e.g. explore).
+  // Absent/undefined → unknown; hooks must NOT suppress on absence (fail-open).
   canWrite?: boolean
 }
 
@@ -300,7 +300,6 @@ export type ActorPostStopRegistration =
   | { matcher?: ActorMatcher; run: ActorPostStopHook }
 
 export interface Hooks {
-  dispose?: () => Promise<void>
   event?: (input: { event: Event }) => Promise<void>
   config?: (input: Config) => Promise<void>
   tool?: {
@@ -345,7 +344,7 @@ export interface Hooks {
   ) => Promise<void>
   "tool.execute.before"?: (
     input: { tool: string; sessionID: string; callID: string },
-    output: { args: any },
+    output: { args: any; cancel?: boolean; cancelReason?: string },
   ) => Promise<void>
   "shell.env"?: (
     input: { cwd: string; sessionID?: string; callID?: string },
@@ -374,7 +373,6 @@ export interface Hooks {
       system: string[]
     },
   ) => Promise<void>
-  "experimental.provider.small_model"?: (input: { provider: ProviderV2 }, output: { model?: ModelV2 }) => Promise<void>
   /**
    * Called before session compaction starts. Allows plugins to customize
    * the compaction prompt.
@@ -413,15 +411,18 @@ export interface Hooks {
    */
   "tool.definition"?: (input: { toolID: string }, output: { description: string; parameters: any }) => Promise<void>
   /**
-   * Fires when an actor is about to deliver finalText to its caller. Set
-   * output.continue = true with output.reason to inject one more actor turn.
+   * Fires when an actor (subagent or peer) is about to deliver finalText to its caller.
+   * Set `output.continue = true` with `output.reason = "..."` to inject the reason as a
+   * synthetic user message and have the actor run another turn before delivery.
    * Default matcher excludes BUILT_IN_AGENTS.
    */
   "actor.preStop"?: ActorPreStopRegistration
   /**
-   * Fires after an actor delivered finalText to its caller. A continuation may
-   * run extra cleanup/validation turns, but the caller's delivered text is
-   * already locked.
+   * Fires AFTER an actor has delivered finalText to its caller. The actor stays alive
+   * until the postStop chain ends. Like preStop, can return continue=true with reason
+   * to make the actor run another turn — but the new finalText does NOT propagate to
+   * the caller (the caller already got finalText_locked at delivery time).
+   * Default matcher excludes BUILT_IN_AGENTS.
    */
   "actor.postStop"?: ActorPostStopRegistration
 }

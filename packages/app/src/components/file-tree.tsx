@@ -1,4 +1,4 @@
-import { useFile } from "@/context/file"
+﻿import { useFile } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
 import { Collapsible } from "@swust-code/ui/collapsible"
 import { FileIcon } from "@swust-code/ui/file-icon"

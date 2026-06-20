@@ -1,58 +1,20 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
-import { pathToFileURL } from "url"
-import { Effect, Layer } from "effect"
-import { FSUtil } from "@swust-code/core/fs-util"
-import { provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
-import { ProviderAuth } from "@/provider/auth"
-
-import { Plugin } from "@/plugin"
-import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Auth } from "@/auth"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { TestConfig } from "../fixture/config"
-import { testEffect } from "../lib/effect"
-import { CrossSpawnSpawner } from "@swust-code/core/cross-spawn-spawner"
-import { ProviderV2 } from "@swust-code/core/provider"
-
-const it = testEffect(Layer.mergeAll(CrossSpawnSpawner.defaultLayer, FSUtil.defaultLayer))
-
-function layer(directory: string, plugins: string[]) {
-  return ProviderAuth.layer.pipe(
-    Layer.provide(Auth.defaultLayer),
-    Layer.provide(
-      Plugin.layer.pipe(
-        Layer.provide(EventV2Bridge.defaultLayer),
-        Layer.provide(RuntimeFlags.layer()),
-        Layer.provide(
-          TestConfig.layer({
-            get: () =>
-              Effect.succeed({
-                plugin: plugins,
-                plugin_origins: plugins.map((plugin) => ({
-                  spec: plugin,
-                  source: path.join(directory, "swust-code.json"),
-                  scope: "local" as const,
-                })),
-              }),
-            directories: () => Effect.succeed([directory]),
-          }),
-        ),
-      ),
-    ),
-  )
-}
+import fs from "fs/promises"
+import { Effect } from "effect"
+import { tmpdir } from "../fixture/fixture"
+import { Instance } from "../../src/project/instance"
+import { ProviderAuth } from "../../src/provider"
+import { ProviderID } from "../../src/provider/schema"
 
 describe("plugin.auth-override", () => {
-  it.instance(
-    "user plugin overrides built-in github-copilot auth",
-    () =>
-      Effect.gen(function* () {
-        const tmp = yield* TestInstance
-        const fs = yield* FSUtil.Service
-        const pluginDir = path.join(tmp.directory, ".swust-code", "plugin")
+  test("user plugin overrides built-in github-copilot auth", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        const pluginDir = path.join(dir, ".swust-code", "plugin")
+        await fs.mkdir(pluginDir, { recursive: true })
 
-        yield* fs.writeWithDirs(
+        await Bun.write(
           path.join(pluginDir, "custom-copilot-auth.ts"),
           [
             "export default {",
@@ -70,23 +32,35 @@ describe("plugin.auth-override", () => {
             "",
           ].join("\n"),
         )
+      },
+    })
 
-        const plain = yield* tmpdirScoped({ git: true })
-        const plugin = pathToFileURL(path.join(pluginDir, "custom-copilot-auth.ts")).href
-        const methods = yield* ProviderAuth.use.methods().pipe(Effect.provide(layer(tmp.directory, [plugin])))
-        const plainMethods = yield* ProviderAuth.use
-          .methods()
-          .pipe(Effect.provide(layer(plain, [])), provideInstance(plain))
+    await using plain = await tmpdir()
 
-        const copilot = methods[ProviderV2.ID.make("github-copilot")]
-        expect(copilot).toBeDefined()
-        expect(copilot.length).toBe(1)
-        expect(copilot[0].label).toBe("Test Override Auth")
-        expect(plainMethods[ProviderV2.ID.make("github-copilot")][0].label).not.toBe("Test Override Auth")
-      }),
-    { git: true },
-    30000,
-  )
+    const methods = await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        return Effect.runPromise(
+          ProviderAuth.Service.use((svc) => svc.methods()).pipe(Effect.provide(ProviderAuth.defaultLayer)),
+        )
+      },
+    })
+
+    const plainMethods = await Instance.provide({
+      directory: plain.path,
+      fn: async () => {
+        return Effect.runPromise(
+          ProviderAuth.Service.use((svc) => svc.methods()).pipe(Effect.provide(ProviderAuth.defaultLayer)),
+        )
+      },
+    })
+
+    const copilot = methods[ProviderID.make("github-copilot")]
+    expect(copilot).toBeDefined()
+    expect(copilot.length).toBe(1)
+    expect(copilot[0].label).toBe("Test Override Auth")
+    expect(plainMethods[ProviderID.make("github-copilot")][0].label).not.toBe("Test Override Auth")
+  }, 30000) // Increased timeout for plugin installation
 })
 
 const file = path.join(import.meta.dir, "../../src/plugin/index.ts")

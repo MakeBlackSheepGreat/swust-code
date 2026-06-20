@@ -1,8 +1,7 @@
-import { Show, createEffect, createMemo, onCleanup } from "solid-js"
+﻿import { Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@swust-code/ui/motion-spring"
-import { useLayout } from "@/context/layout"
 import { PromptInput } from "@/components/prompt-input"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
@@ -17,13 +16,11 @@ import type { SessionComposerState } from "@/pages/session/composer/session-comp
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { NEW_SESSION_CONTENT_WIDTH } from "@/pages/session/new-session-layout"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
   ready: boolean
   centered: boolean
-  placement?: "dock" | "inline"
   inputRef: (el: HTMLDivElement) => void
   newSessionWorktree: string
   onNewSessionWorktreeReset: () => void
@@ -49,12 +46,10 @@ export function SessionComposerRegion(props: {
   setPromptDockRef: (el: HTMLDivElement) => void
 }) {
   const navigate = useNavigate()
-  const layout = useLayout()
   const prompt = usePrompt()
   const language = useLanguage()
   const route = useSessionKey()
   const sync = useSync()
-  const view = layout.view(route.sessionKey)
 
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
@@ -144,16 +139,11 @@ export function SessionComposerRegion(props: {
     <div
       ref={props.setPromptDockRef}
       data-component="session-prompt-dock"
-      classList={{
-        "w-full flex flex-col justify-center items-center pointer-events-none": true,
-        "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline",
-      }}
+      class="shrink-0 w-full pb-3 flex flex-col justify-center items-center bg-background-stronger pointer-events-none"
     >
       <div
         classList={{
-          "w-full pointer-events-auto": true,
-          "px-3": props.placement !== "inline",
-          [NEW_SESSION_CONTENT_WIDTH]: props.placement === "inline",
+          "w-full px-3 pointer-events-auto": true,
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
         }}
       >
@@ -217,8 +207,6 @@ export function SessionComposerRegion(props: {
                   <SessionTodoDock
                     sessionID={route.params.id}
                     todos={props.state.todos()}
-                    collapsed={view.todoCollapsed.get()}
-                    onToggle={() => view.todoCollapsed.set(!view.todoCollapsed.get())}
                     collapseLabel={language.t("session.todo.collapse")}
                     expandLabel={language.t("session.todo.expand")}
                     dockProgress={value()}
@@ -263,7 +251,6 @@ export function SessionComposerRegion(props: {
                 fallback={
                   <Show when={!props.state.blocked()}>
                     <PromptInput
-                      variant={props.placement === "inline" ? "new-session" : undefined}
                       ref={props.inputRef}
                       newSessionWorktree={props.newSessionWorktree}
                       onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}

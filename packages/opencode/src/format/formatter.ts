@@ -1,12 +1,11 @@
-import { Npm } from "@swust-code/core/npm"
-import type { InstanceContext } from "../project/instance-context"
-import { Filesystem } from "@/util/filesystem"
-import { Process } from "@/util/process"
-import { which } from "@swust-code/core/util/which"
+import { Npm } from "../npm"
+import type { InstanceContext } from "../project/instance"
+import { Filesystem } from "../util"
+import { Process } from "../util"
+import { which } from "../util/which"
+import { Flag } from "@/flag/flag"
 
-export interface Context extends Pick<InstanceContext, "directory" | "worktree"> {
-  experimentalOxfmt: boolean
-}
+export interface Context extends Pick<InstanceContext, "directory" | "worktree"> {}
 
 export interface Info {
   name: string
@@ -91,7 +90,7 @@ export const oxfmt: Info = {
   },
   extensions: [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"],
   async enabled(context) {
-    if (!context.experimentalOxfmt) return false
+    if (!Flag.SWUST_CODE_EXPERIMENTAL_OXFMT) return false
     const items = await Filesystem.findUp("package.json", context.directory, context.worktree)
     for (const item of items) {
       const json = await Filesystem.readJson<{

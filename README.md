@@ -1,11 +1,19 @@
 <h1 align="center">SWUST Code</h1>
 
 <p align="center">
-  <strong>An open-source AI coding agent with persistent memory, goal-driven autonomy, and self-improvement.</strong>
+  <img src="assets/readme/swust-code-banner.png" alt="SWUST Code" width="700">
 </p>
 
 <p align="center">
-  <a href="https://swust-code-docs.pages.dev"><img src="https://img.shields.io/badge/docs-live-brightgreen" alt="Docs"></a>
+  <strong>SWUST Code: Where Models and Agents Co-Evolve</strong>
+</p>
+
+<p align="center">
+  Official Chinese name: <strong>龙山灵码</strong>
+</p>
+
+<p align="center">
+  <a href="https://swust-code.dev"><img src="https://img.shields.io/badge/docs-live-brightgreen" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
   <a href="https://github.com/MakeBlackSheepGreat/swust-code"><img src="https://img.shields.io/github/stars/MakeBlackSheepGreat/swust-code?style=social" alt="Stars"></a>
 </p>
@@ -16,174 +24,238 @@
 
 ---
 
-SWUST Code is built on top of [OpenCode](https://github.com/anomalyco/opencode) by Anomaly Co., with key capabilities ported from [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi, [DevEco Code](https://github.com/nicognaW/deveco-code) by nicognaW, and [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix) by esengine. It keeps all core OpenCode capabilities (multiple providers, TUI, LSP, MCP, plugins) and adds persistent memory, goal-driven autonomy, self-improvement, multi-agent orchestration, workflow engine, layered security, and cache-first architecture.
+SWUST Code, officially named 龙山灵码 in Chinese, is a terminal-native AI coding agent built as a fork of [MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code). It keeps MiMo-Code's native foundation first: multi-provider model routing, TUI, LSP, MCP, plugins, persistent memory, checkpoints, actor/subagent orchestration, task tracking, goal stop conditions, Compose workflows, Dream/Distill self-improvement, and voice input.
 
-From MiMo-Code we ported: persistent memory and raw history search (FTS5), Dream/Distill self-improvement, Compose skills, Actor/Spawn-compatible subagent orchestration, checkpoint system, context compaction, workflow engine, retry strategy, and doom loop detection.
+On top of that foundation, SWUST Code adds the SWUST brand layer, Chinese-first product polish, richer sidebar context, attention notifications, task completion gates, document validation, cache-stable context optimization, `@path` memory imports, and one-fact-per-file memory storage.
 
-From DevEco Code we ported: NAPI bridge for native tool loading, workspace adapter pattern, document validation system, and tool output pruning.
+> **[Read the documentation](https://swust-code.dev/docs/)** — installation, configuration, providers, TUI, agents, permissions, MCP, plugins, and developer guides.
 
-From DeepSeek-Reasonix we ported: cache-stable prefix architecture, `@path` import directive for memory files, one-fact-per-file memory store with frontmatter, and slash command system.
+---
 
-> **[Read the full documentation](https://swust-code-docs.pages.dev)** — installation, configuration, features, API reference, and developer guides.
+## Project Positioning
+
+This fork follows a simple rule: **when MiMo-Code already provides a capability, SWUST Code tracks MiMo-Code behavior first; when a capability is missing from MiMo-Code, SWUST Code layers the SWUST-specific implementation on top.**
+
+| Layer | What it provides |
+|-------|------------------|
+| **MiMo-Code base** | Provider integration, TUI/server runtime, LSP, MCP, plugins, memory, checkpoints, actor/subagent runtime, tasks, goal, Compose, Dream/Distill, voice |
+| **SWUST layer** | 龙山灵码 branding, Chinese localization, SWUST sidebar/attention UX, task gate policy, document validation, memory import/fact-store utilities, cache-stable prompt layout |
+| **Compatibility layer** | OpenAI-compatible providers, MiMo voice model configuration, Claude Code auth import, project/global config files |
+
+AI provider names are intentionally preserved. `MiMo Auto`, `Xiaomi MiMo Platform`, `mimo/mimo-auto`, and `xiaomi/mimo-*` model IDs refer to the original provider services and are not rebranded.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Install via npm
-npm install -g swust-code
+# One-line install
+curl -fsSL https://raw.githubusercontent.com/MakeBlackSheepGreat/swust-code/main/install | bash
 
-# Or build from source
-git clone https://github.com/MakeBlackSheepGreat/swust-code.git
-cd swust-code && bun install
-bun run --cwd packages/opencode src/index.ts
+# Or install via npm
+npm install -g @swust-code/cli
+
+# Run
+swust-code
 ```
 
-The first launch guides you through configuration automatically. Supported options:
-- **Anthropic** — Claude models via API key
-- **OpenAI** — GPT models via API key
-- **Google** — Gemini models via API key
+The first launch guides you through configuration automatically:
+
+- **MiMo Auto (free for a limited time)** — anonymous channel, zero configuration
+- **Xiaomi MiMo Platform** — OAuth login
+- **Import from Claude Code** — migrate existing authentication in one step
 - **Custom Provider** — add any OpenAI-compatible API in the TUI
+
+<details>
+<summary><strong>WSL: clipboard issues</strong></summary>
+
+If copied text is garbled on WSL, install `xsel`:
+
+```bash
+sudo apt install xsel
+```
+
+</details>
 
 ---
 
 ## Core Features
 
-### Version 0.3 Focus
-
-SWUST Code 0.3 adds two primary agent modes plus MiMo-compatible actor, memory, and history tool entrypoints:
-
-- **compose** — a primary orchestration agent that injects MiMo Compose guidance and the built-in `compose:*` skill catalog.
-- **goal** — a primary goal-driven agent mode that automatically sets the user's request as the session stopping condition and keeps the independent goal gate active.
-- **actor** — a MiMo-compatible `operation` API and optional shell-style invocation for `run`, `spawn`, `status`, `wait`, `cancel`, and `send`, backed by the same-session `ActorSpawn` runtime.
-- **memory** — a MiMo-compatible LLM tool for BM25 search across SWUST global, project, and session memory, backed by the core FTS5 memory index.
-- **history** — a MiMo-style fallback tool for raw conversation trajectory search, with `search` snippets and `around` context expansion by `message_id`.
-
-### Multiple Agents
+### Agents
 
 | Agent | Description |
 |-------|-------------|
-| **build** | Default. Full tool permissions for development |
+| **build** | Default development agent with full tool permissions |
 | **plan** | Read-only analysis mode for code exploration and solution design |
-| **compose** | Workflow orchestration mode using bundled `compose:*` skills |
-| **goal** | Goal-driven mode that continues until the request is completed, verified, or blocked |
-| **explore** | Fast read-only search agent for locating code |
+| **compose** | Structured orchestration mode for specs-driven and skill-driven workflows |
+| **goal** | Autonomous mode that keeps working until the request is completed, verified, or blocked |
 
-Press `Tab` to switch between primary agents. Subagents are created by the system as needed.
+Press `Tab` to switch between primary agents. The runtime can create subagents as needed, track their lifecycle, cancel them, run them in the background, and keep their work connected to the parent session.
 
-### Persistent Memory
+### Memory & Checkpoints
 
-Cross-session memory powered by SQLite FTS5 full-text search:
+Persistent memory is backed by SQLite FTS5 search and MiMo-Code's checkpoint stack:
 
-- **Project memory** (`MEMORY.md`) — persistent project knowledge, rules, and architecture decisions
-- **Global memory** (`global/MEMORY.md`) — cross-project user preferences
-- **Session checkpoint** (`checkpoint.md`) — structured 11-section state snapshot with per-section token budgets
-- **Session notes** (`notes.md`) — temporary scratchpad for agents
-- **Fact store** — one-fact-per-file storage with frontmatter, complementary to FTS5 search
+- **Project memory** (`MEMORY.md`) — project knowledge, rules, and architecture decisions
+- **Session checkpoint** (`checkpoint.md`) — structured state snapshots maintained automatically
+- **Scratch notes** (`notes.md`) — temporary agent notes
+- **Task progress** (`tasks/<id>/progress.md`) — per-task execution logs
+- **Fact store** — one-fact-per-file markdown storage with frontmatter and generated indexes
+- **`@path` imports** — inline file references for memory documents
 
-Memory files support `@path` imports for cross-referencing. Memory is injected automatically when a session resumes.
+When a session resumes or approaches the context limit, SWUST Code reconstructs useful context from checkpoints, memory, notes, task progress, and recent conversation state instead of forcing the agent to relearn the project.
 
-The built-in `memory` tool is exposed to agents with the MiMo `operation: "search"` API: `query`, `scope`, `scope_id`, `type`, and `limit`. SWUST maps MiMo `global`, `projects`, and `sessions` scopes to its current memory index; `cc` scope and `type` filtering are accepted for compatibility and return explicit notes until those indexes are implemented.
+### Goal & Task Gates
 
-The built-in `history` tool follows the MiMo escalation pattern: agents try `memory` first, then use `history` for exact or verbatim recall from raw session parts. A MiMo-style history writer listens to `message.part.updated` / `message.part.removed`, while background backfill indexes older `message` / `part` rows. `history.search` supports project/global scope plus session, kind, tool, and time filters. `history.around` expands a hit's `message_id` into neighboring messages for context. Configure indexed kinds with `history.kinds`.
+`/goal` sets an autonomous stopping condition for the current session. When the agent tries to stop, an independent judge model evaluates whether the goal is actually satisfied. Task gates add a second safeguard by checking unfinished task state before allowing a main agent or eligible subagent to finish.
 
-### Goal-Driven Autonomy
+### Compose Workflows
 
-The `goal` agent mode and the `--goal` flag both set a stopping condition for a session:
+Compose mode inherits MiMo-Code's structured development workflow: planning, implementation, review, TDD, debugging, verification, and merging can be coordinated through built-in skills and subagents.
+
+### TUI Sidebar & Attention
+
+The SWUST TUI keeps the MiMo/OpenTUI terminal experience and adds a more operational sidebar:
+
+- working directory and instruction file visibility
+- goal, task, todo, LSP, MCP, and changed-file sections
+- context window health, token usage, runtime status, cost, and cache metrics
+- getting-started prompts for free models and provider setup
+- configurable attention notifications and sound packs
+
+### Safety & Validation
+
+SWUST Code keeps the provider/tool permission model and adds stricter guardrails where the fork needs them:
+
+- task gate checks for unfinished work
+- bash command safety analysis before risky execution paths
+- document validation helpers for spec-driven files
+- write-path guardrails for memory-related writes
+- cache-stable prompt prefixes to improve provider cache hit rates
+
+### Voice Input
+
+Real-time streaming voice input is powered by TenVAD and MiMo ASR. Activate it with `/voice`; audio is segmented by pauses and transcribed incrementally into the input. MiMo-hosted ASR requires MiMo login and `sox` (`brew install sox` on macOS, equivalent package on other platforms).
+
+<details>
+<summary><strong>WSLg audio setup</strong></summary>
 
 ```bash
-swust-code run --goal "fix all TypeScript errors" "start working"
+sudo apt install -y sox pulseaudio libasound2-plugins
+export PULSE_SERVER=unix:/mnt/wslg/PulseServer
 ```
 
-When the agent tries to stop, an independent judge model evaluates the conversation to decide whether the condition is truly satisfied — preventing premature stops during autonomous work. Re-entry is capped at 12 attempts per goal.
+</details>
 
-In interactive mode, `/goal <condition>` routes the turn through the `goal` agent mode and sets that condition as the stop condition. Use `/goal clear` or `/goal reset` to remove it.
+<details>
+<summary><strong>SSH remote audio (Mac -> remote host)</strong></summary>
+
+```bash
+# Mac (local)
+brew install pulseaudio
+pulseaudio --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1" --exit-idle-time=-1 --daemonize
+# Add to ~/.ssh/config: RemoteForward 4713 127.0.0.1:4713
+
+# Remote host
+apt install -y pulseaudio pulseaudio-utils sox
+export PULSE_SERVER=tcp:127.0.0.1:4713
+# Verify: pactl info
+```
+
+</details>
+
+<details>
+<summary><strong>Non-MiMo voice providers (OpenRouter, internal API, etc.)</strong></summary>
+
+Voice input can route through other OpenAI-compatible providers via the `voice` config field. The ASR model (`mimo-v2.5-asr`) is only available on MiMo's platform; voice control mode (`mimo-v2.5`) is available on OpenRouter and compatible relay platforms.
+
+**OpenRouter (voice control only):**
+
+Use `/connect` to sign in to OpenRouter, then add:
+
+```jsonc
+{
+  "voice": {
+    "control_model": "openrouter/xiaomi/mimo-v2.5"
+  }
+}
+```
+
+**Internal / self-hosted relay (ASR + voice control):**
+
+```jsonc
+{
+  "provider": {
+    "internal": {
+      "options": {
+        "baseURL": "https://your-api-gateway.example.com/v1",
+        "apiKey": "sk-..."
+      },
+      "models": {
+        "xiaomi/mimo-v2.5-asr": { "name": "MiMo-V2.5-ASR" },
+        "xiaomi/mimo-v2.5": { "name": "MiMo-V2.5" }
+      }
+    }
+  },
+  "voice": {
+    "asr_model": "internal/xiaomi/mimo-v2.5-asr",
+    "control_model": "internal/xiaomi/mimo-v2.5"
+  }
+}
+```
+
+Custom providers must register at least one model in their `models` field to be recognized. The model names in `voice.*_model` are sent directly to the API and do not need to match the registered model keys exactly.
+
+</details>
 
 ### Dream & Distill
 
-- **`swust-code dream`** — scans recent session traces, extracts persistent knowledge into project memory, and removes outdated entries.
-- **`swust-code distill`** — discovers repeated manual workflows in recent work and packages high-confidence candidates into reusable skills.
-
-Automatic Dream/Distill follows MiMo's config shape: `dream.auto` / `distill.auto` disable the background trigger when set to `false`, and `dream.interval_days` / `distill.interval_days` control the minimum gap between runs. Defaults are 7 days for Dream and 30 days for Distill.
-
-### Subagent System
-
-The primary agent can create subagents on demand through the native `task` tool or the MiMo-compatible `actor` tool. The `actor` tool accepts the MiMo `operation` envelope:
-
-- **run** — starts a subagent and returns its result inline.
-- **spawn** — starts a background actor and returns an `actor_id`.
-- **status / wait / cancel / send** — inspects, waits for, cancels, or sends an inbox message to a spawned actor.
-- **model / output_schema** — forwards model overrides and structured-output schemas to the target subagent.
-- **shell invocation** — set `tool.invocation_style_by_tool.actor = "shell"` to expose MiMo-style `actor run ...`, `actor spawn ...`, `actor wait ...` scripts.
-
-The current actor implementation uses the MiMo-style `ActorSpawn` path: subagent messages stay in the parent session under an isolated `agentID` slice such as `general-1`, while the main transcript remains the default view. Actor lifecycle state is persisted in an `actor_registry` table. Actor `send` writes durable inbox rows, schedules a receiver wake when `SessionPrompt` is live, and the prompt loop drains inbox rows into the receiver's actor slice. Gate-eligible subagents also run a MiMo-style TaskGate completion check before final delivery. Plugin-driven actor `preStop`/`postStop` hook aggregation is wired into the actor lifecycle, with hook ReAct re-entry events published through SWUST Code's EventV2 stream. The MiMo-style built-in hook plugins are active: `checkpoint-splitover` validates `checkpoint-writer` output before stop, and `subagent-progress-checker` verifies task-bound writable subagents write `tasks/<task_id>/progress.md` with the required five-section journal.
-
-The hidden MiMo-style `checkpoint-writer` subagent is registered as a system-spawned actor type. SWUST also includes the MiMo `checkpoint-progress-reconcile` scanner, which detects NEW/CHANGED `tasks/<task_id>/progress.md` files by comparing `written-at` frontmatter with `last-reconciled-written-at` checkpoint markers.
-
-### Workflow Engine
-
-Scriptable multi-agent orchestration with crash recovery:
-
-- **Journal persistence** — JSONL logs with deterministic key deduplication
-- **Crash recovery** — resume from last checkpoint on restart
-- **Concurrency control** — semaphore bounded to `min(16, 2*cores)`
-- **Built-in workflow** — Deep Research (6-phase pipeline with adversarial jury voting)
-
-### Security
-
-4-step permission pipeline with bash command safety analysis. Tools default to fail-closed: `isReadOnly=false`, `isDestructive=true`.
-
-### Cache-First Architecture
-
-The system prompt is split into a byte-stable prefix (agent prompt + tools + memory) and a per-turn tail (checkpoint + notes + tasks). The prefix stays identical across turns so LLM provider caches remain warm, reducing token costs in long sessions.
-
-### Slash Commands
-
-Interactive commands in the TUI:
-
-| Command | Description |
-|---------|-------------|
-| `/memory <query>` | Search persistent memory |
-| `/goal <condition>` | Run in goal agent mode with an autonomous stop condition |
-| `/dream` | Trigger memory consolidation |
-| `/distill` | Trigger workflow discovery |
-| `/help` | Show available commands |
+- **`/dream`** — scans recent session traces, extracts durable knowledge into project memory, and removes outdated entries
+- **`/distill`** — discovers repeated workflows and packages high-confidence candidates into reusable skills, subagents, or commands
 
 ---
 
 ## Configuration
 
-SWUST Code is configured via `.swust-code/config.json` in the project directory (or `~/.config/swust-code/config.json` globally). See the [Configuration Guide](https://swust-code-docs.pages.dev/guide/config).
+SWUST Code uses `swust-code.json` / `swust-code.jsonc` for runtime configuration and `tui.json` / `tui.jsonc` for TUI-specific settings.
+
+Common locations:
+
+- Global runtime config: `~/.config/swust-code/swust-code.json`
+- Global TUI config: `~/.config/swust-code/tui.json`
+- Project runtime config: `swust-code.json` in the project root
+- Project TUI config: `tui.json` in the project root
+
+Key configuration areas include providers, models, permissions, agents, commands, MCP servers, plugins, memory/checkpoint behavior, keybindings, themes, and experimental features such as Max Mode.
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────┐
-│           CLI / TUI / Web / Desktop              │
-├─────────────────────────────────────────────────┤
-│           Session Runner                         │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐        │
-│  │ Memory   │ │ Goal     │ │ Dream    │        │
-│  │ Context  │ │ Gate     │ │ Trigger  │        │
-│  └──────────┘ └──────────┘ └──────────┘        │
-├─────────────────────────────────────────────────┤
-│  Tools / Security / Actor / Workflow / Skills    │
-├─────────────────────────────────────────────────┤
-│  SQLite FTS5 + Drizzle ORM + Effect-TS          │
-└─────────────────────────────────────────────────┘
+```text
+┌──────────────────────────────────────────────────────────┐
+│                  CLI / TUI / Web / Desktop               │
+├──────────────────────────────────────────────────────────┤
+│                    Session Runtime                       │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
+│  │ Memory      │ │ Checkpoint  │ │ Goal / Task Gates   │ │
+│  │ Context     │ │ Compaction  │ │ Compose / Actors    │ │
+│  └─────────────┘ └─────────────┘ └─────────────────────┘ │
+├──────────────────────────────────────────────────────────┤
+│        Tools / Permissions / MCP / LSP / Plugins          │
+├──────────────────────────────────────────────────────────┤
+│        SQLite FTS5 + Drizzle ORM + Effect-TS + Bun        │
+└──────────────────────────────────────────────────────────┘
 ```
 
-| Layer | Technology |
-|-------|-----------|
-| Runtime | Bun 1.3.14 |
-| Effect System | Effect-TS 4.0 beta |
+| Area | Technology |
+|------|------------|
+| Runtime | Bun 1.3.11 |
+| Effect system | Effect-TS 4 beta |
 | Database | SQLite + Drizzle ORM + FTS5 |
-| LLM | Vercel AI SDK (15+ providers) |
-| Frontend | SolidJS + OpenTUI |
-| Package Manager | Bun + Turborepo |
+| LLM integration | Vercel AI SDK and OpenAI-compatible providers |
+| Terminal UI | SolidJS + OpenTUI |
+| Monorepo | Bun workspaces + Turborepo |
 
 ---
 
@@ -191,27 +263,42 @@ SWUST Code is configured via `.swust-code/config.json` in the project directory 
 
 ```bash
 bun install              # Install dependencies
-bun run dev              # Run in development mode
-bun turbo typecheck      # Type check
-bun turbo test           # Run tests
+bun run dev              # Run the CLI in development mode
+bun turbo typecheck      # Type check all packages
 ```
+
+Package and command names:
+
+- npm package: `@swust-code/cli`
+- CLI binary: `swust-code`
+- repo package manager: `bun@1.3.11`
 
 ---
 
 ## Documentation
 
-Full documentation is available at **[swust-code-docs.pages.dev](https://swust-code-docs.pages.dev)**.
+Documentation is available at **[swust-code.dev/docs](https://swust-code.dev/docs/)**.
+
+---
+
+## Community
+
+Scan the QR code to join the community group chat:
+
+<p align="center">
+  <img src="assets/readme/community-qrcode.jpg" alt="Community group chat QR code" width="240">
+</p>
 
 ---
 
 ## Acknowledgments
 
-SWUST Code stands on the shoulders of four open-source projects:
+SWUST Code is built on open-source work from several projects:
 
-- [**OpenCode**](https://github.com/anomalyco/opencode) by Anomaly Co. — the foundation. All core capabilities (multi-provider LLM, TUI, LSP, MCP, plugin system) come from OpenCode.
-- [**MiMo-Code**](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi — persistent memory (FTS5), Dream/Distill self-improvement, Actor/Spawn orchestration, checkpoint system, context compaction, workflow engine, retry strategy, doom loop detection.
-- [**DevEco Code**](https://github.com/nicognaW/deveco-code) by nicognaW — NAPI bridge for native tool loading, workspace adapter pattern, document validation system, tool output pruning.
-- [**DeepSeek-Reasonix**](https://github.com/esengine/DeepSeek-Reasonix) by esengine — cache-stable prefix architecture, `@path` import directive, one-fact-per-file memory store, slash command system.
+- [**MiMo-Code**](https://github.com/XiaomiMiMo/MiMo-Code) by Xiaomi — the current base of this fork and the source of the native memory, checkpoint, actor, goal, Compose, Dream/Distill, voice, TUI, provider, MCP, LSP, and plugin stack.
+- [**OpenCode**](https://github.com/anomalyco/opencode) by Anomaly Co. — important upstream heritage in the broader terminal-native coding agent ecosystem.
+- [**DevEco Code**](https://github.com/nicognaW/deveco-code) by nicognaW — reference for document validation ideas used by the SWUST layer.
+- [**DeepSeek-Reasonix**](https://github.com/esengine/DeepSeek-Reasonix) by esengine — reference for cache-stable context and memory organization ideas used by the SWUST layer.
 
 We are grateful to the maintainers and contributors of these projects for making their work available under open-source licenses.
 
@@ -219,4 +306,6 @@ We are grateful to the maintainers and contributors of these projects for making
 
 ## License
 
-[MIT](LICENSE)
+Source code is licensed under the [MIT License](./LICENSE).
+
+Use of SWUST Code is also subject to the [Use Restrictions](./USE_RESTRICTIONS.md). Use of Xiaomi MiMo-hosted services is subject to the [MiMo Terms of Service](https://platform.xiaomimimo.com/docs/terms/user-agreement). Use of the MiMo name, logo, and trademarks is subject to the MiMo Trademark Policy.

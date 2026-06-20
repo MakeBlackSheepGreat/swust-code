@@ -1,4 +1,4 @@
-import { Button } from "@swust-code/ui/button"
+﻿import { Button } from "@swust-code/ui/button"
 import { useDialog } from "@swust-code/ui/context/dialog"
 import { Dialog } from "@swust-code/ui/dialog"
 import { List, type ListRef } from "@swust-code/ui/list"
@@ -45,7 +45,7 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
       <div class="flex flex-col gap-3 px-2.5" onKeyDown={handleKeyDown}>
         <div class="text-14-medium text-text-base px-2.5">{language.t("dialog.model.unpaid.freeModels.title")}</div>
         <List
-          class="px-3 [&_[data-slot=list-scroll]]:overflow-visible"
+          class="[&_[data-slot=list-scroll]]:overflow-visible"
           ref={(ref) => (listRef = ref)}
           items={model.list}
           current={model.current()}
@@ -90,8 +90,8 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
             <div class="px-2 text-14-medium text-text-base">{language.t("dialog.model.unpaid.addMore.title")}</div>
             <div class="w-full">
               <List
-                class="w-full px-3"
-                key={(p) => p.id}
+                class="w-full px-0"
+                key={(x) => x?.id}
                 items={providers.popular}
                 activeIcon="plus-small"
                 sortBy={(a, b) => {
@@ -109,7 +109,7 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
                     <ProviderIcon data-slot="list-item-extra-icon" id={i.id} />
                     <span>{i.name}</span>
                     <Show when={i.id === "opencode"}>
-                      <div class="text-14-regular text-text-weak">{language.t("dialog.provider.swust-code.tagline")}</div>
+                      <div class="text-14-regular text-text-weak">{language.t("dialog.provider.opencode.tagline")}</div>
                     </Show>
                     <Show when={i.id === "opencode"}>
                       <Tag>{language.t("dialog.provider.tag.recommended")}</Tag>
@@ -117,7 +117,7 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
                     <Show when={i.id === "opencode-go"}>
                       <>
                         <div class="text-14-regular text-text-weak">
-                          {language.t("dialog.provider.swust-codeGo.tagline")}
+                          {language.t("dialog.provider.opencodeGo.tagline")}
                         </div>
                         <Tag>{language.t("dialog.provider.tag.recommended")}</Tag>
                       </>

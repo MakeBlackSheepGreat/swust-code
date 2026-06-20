@@ -1,13 +1,14 @@
 import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
+import { AppRuntime } from "@/effect/app-runtime"
 import { Installation } from "../../installation"
-import { Global } from "@swust-code/core/global"
+import { Global } from "../../global"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
-import { Filesystem } from "@/util/filesystem"
-import { Process } from "@/util/process"
+import { Filesystem } from "../../util"
+import { Process } from "../../util"
 
 interface UninstallArgs {
   keepConfig: boolean
@@ -24,7 +25,7 @@ interface RemovalTargets {
 
 export const UninstallCommand = {
   command: "uninstall",
-  describe: "uninstall SWUST Code and remove all related files",
+  describe: "uninstall swust-code and remove all related files",
   builder: (yargs: Argv) =>
     yargs
       .option("keep-config", {
@@ -57,7 +58,7 @@ export const UninstallCommand = {
     UI.empty()
     prompts.intro("Uninstall SWUST Code")
 
-    const method = await Installation.method()
+    const method = await AppRuntime.runPromise(Installation.Service.use((svc) => svc.method()))
     prompts.log.info(`Installation method: ${method}`)
 
     const targets = await collectRemovalTargets(args, method)
@@ -129,13 +130,13 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string> = {
-      npm: "npm uninstall -g opencode-ai",
-      pnpm: "pnpm uninstall -g opencode-ai",
-      bun: "bun remove -g opencode-ai",
-      yarn: "yarn global remove opencode-ai",
-      brew: "brew uninstall opencode",
-      choco: "choco uninstall opencode",
-      scoop: "scoop uninstall opencode",
+      npm: "npm uninstall -g @swust-code/cli",
+      pnpm: "pnpm uninstall -g @swust-code/cli",
+      bun: "bun remove -g @swust-code/cli",
+      // TODO(swust-code): uncomment when published to these channels
+      // brew: "brew uninstall swust-code",
+      // choco: "choco uninstall swust-code",
+      // scoop: "scoop uninstall swust-code",
     }
     prompts.log.info(`  ✓ Package: ${cmds[method] || method}`)
   }
@@ -180,32 +181,29 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string[]> = {
-      npm: ["npm", "uninstall", "-g", "opencode-ai"],
-      pnpm: ["pnpm", "uninstall", "-g", "opencode-ai"],
-      bun: ["bun", "remove", "-g", "opencode-ai"],
-      yarn: ["yarn", "global", "remove", "opencode-ai"],
-      brew: ["brew", "uninstall", "opencode"],
-      choco: ["choco", "uninstall", "opencode"],
-      scoop: ["scoop", "uninstall", "opencode"],
+      npm: ["npm", "uninstall", "-g", "@swust-code/cli"],
+      pnpm: ["pnpm", "uninstall", "-g", "@swust-code/cli"],
+      bun: ["bun", "remove", "-g", "@swust-code/cli"],
+      // TODO(swust-code): uncomment when published to these channels
+      // brew: ["brew", "uninstall", "swust-code"],
+      // choco: ["choco", "uninstall", "swust-code"],
+      // scoop: ["scoop", "uninstall", "swust-code"],
     }
 
     const cmd = cmds[method]
     if (cmd) {
       spinner.start(`Running ${cmd.join(" ")}...`)
-      const result = await Process.run(method === "choco" ? ["choco", "uninstall", "opencode", "-y", "-r"] : cmd, {
+      const result = await Process.run(cmd, {
         nothrow: true,
       })
       if (result.code !== 0) {
         spinner.stop(`Package manager uninstall failed: exit code ${result.code}`, 1)
-        const text = `${result.stdout.toString("utf8")}\n${result.stderr.toString("utf8")}`
-        if (method === "choco" && text.includes("not running from an elevated command shell")) {
-          prompts.log.warn(`You may need to run '${cmd.join(" ")}' from an elevated command shell`)
-        } else {
-          prompts.log.warn(`You may need to run manually: ${cmd.join(" ")}`)
-        }
+        prompts.log.warn(`You may need to run manually: ${cmd.join(" ")}`)
       } else {
         spinner.stop("Package removed")
       }
+    } else {
+      prompts.log.warn(`Uninstall not supported for method "${method}" yet, skipping package removal`)
     }
   }
 
@@ -266,7 +264,7 @@ async function getShellConfigFile(): Promise<string | null> {
     if (!exists) continue
 
     const content = await Filesystem.readText(file).catch(() => "")
-    if (content.includes("# swust-code") || content.includes("# opencode") || content.includes(".swust-code/bin")) {
+    if (content.includes("# swust-code") || content.includes(".swust-code/bin")) {
       return file
     }
   }
@@ -284,7 +282,7 @@ async function cleanShellConfig(file: string) {
   for (const line of lines) {
     const trimmed = line.trim()
 
-    if (trimmed === "# swust-code" || trimmed === "# opencode") {
+    if (trimmed === "# swust-code") {
       skip = true
       continue
     }

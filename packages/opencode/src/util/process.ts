@@ -1,10 +1,9 @@
 import { type ChildProcess } from "child_process"
-import type { Stream } from "node:stream"
 import launch from "cross-spawn"
 import { buffer } from "node:stream/consumers"
 import { errorMessage } from "./error"
 
-export type Stdio = "inherit" | "pipe" | "ignore" | number | Stream
+export type Stdio = "inherit" | "pipe" | "ignore"
 export type Shell = boolean | string
 
 export interface Options {
@@ -173,5 +172,3 @@ export async function text(cmd: string[], opts: RunOptions = {}): Promise<TextRe
 export async function lines(cmd: string[], opts: RunOptions = {}): Promise<string[]> {
   return (await text(cmd, opts)).text.split(/\r?\n/).filter(Boolean)
 }
-
-export * as Process from "./process"

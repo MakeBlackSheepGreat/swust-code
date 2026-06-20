@@ -1,10 +1,16 @@
 import yargs from "yargs"
-import { TuiThreadCommand } from "./cli/cmd/tui"
-import { InstallationVersion } from "@swust-code/core/installation/version"
+import { TuiThreadCommand } from "./cli/cmd/tui/thread"
+import { InstallationVersion } from "./installation/version"
 import { hideBin } from "yargs/helpers"
+import { Log } from "./node"
+
+Log.init({
+  print: false,
+})
+
 const cli = yargs(hideBin(process.argv))
   .parserConfiguration({ "populate--": true })
-  .scriptName("opencode")
+  .scriptName("mimo")
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
@@ -22,10 +28,6 @@ const cli = yargs(hideBin(process.argv))
   .option("pure", {
     describe: "run without external plugins",
     type: "boolean",
-  })
-  .middleware((opts) => {
-    if (opts.printLogs) process.env.SWUST_CODE_PRINT_LOGS = "1"
-    if (opts.logLevel) process.env.SWUST_CODE_LOG_LEVEL = opts.logLevel
   })
   .command(TuiThreadCommand)
   .parse()

@@ -1,10 +1,16 @@
+﻿import z from "zod"
 import { EOL } from "os"
-import { Schema } from "effect"
+import { NamedError } from "@swust-code/shared/util/error"
 import { logo as glyphs } from "./logo"
 
-const wordmark = glyphs.left.map((row, index) => `${row} ${glyphs.right[index] ?? ""}`)
+const wordmark = [
+  `⠀                                       `,
+  `█▀▄▀█ █ █▄ ▄█ █▀▀█ █▀▀ █▀▀█ █▀▀▄ █▀▀▀`,
+  `█ ▀ █ █ █ ▀ █ █  █ █   █  █ █  █ █▀▀ `,
+  `▀   ▀ ▀ ▀   ▀ ▀▀▀▀ ▀▀▀ ▀▀▀▀ ▀▀▀  ▀▀▀▀`,
+]
 
-export class CancelledError extends Schema.TaggedErrorClass<CancelledError>()("UICancelledError", {}) {}
+export const CancelledError = NamedError.create("UICancelledError", z.void())
 
 export const Style = {
   TEXT_HIGHLIGHT: "\x1b[96m",
@@ -63,7 +69,7 @@ export function logo(pad?: string) {
     shadow: "\x1b[38;5;238m",
     bg: "\x1b[48;5;238m",
   }
-  const gap = " "
+  const gap = "  "
   const draw = (line: string, fg: string, shadow: string, bg: string) => {
     const parts: string[] = []
     for (const char of line) {

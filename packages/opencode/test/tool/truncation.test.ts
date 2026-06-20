@@ -1,38 +1,25 @@
 import { describe, test, expect } from "bun:test"
-import { ConfigV1 } from "@swust-code/core/v1/config/config"
 import { NodeFileSystem } from "@effect/platform-node"
-import { FSUtil } from "@swust-code/core/fs-util"
 import { Effect, FileSystem, Layer } from "effect"
-import { Truncate } from "@/tool/truncate"
-import { Config } from "@/config/config"
+import { Truncate } from "../../src/tool"
 import { Identifier } from "../../src/id/id"
-import { Process } from "@/util/process"
+import { Process } from "../../src/util"
+import { Filesystem } from "../../src/util"
 import path from "path"
 import { testEffect } from "../lib/effect"
 import { writeFileStringScoped } from "../lib/filesystem"
-import { TestConfig } from "../fixture/config"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures")
 const ROOT = path.resolve(import.meta.dir, "..", "..")
 
-const it = testEffect(Layer.mergeAll(Truncate.defaultLayer, NodeFileSystem.layer, FSUtil.defaultLayer))
-
-const configuredLayer = (cfg: ConfigV1.Info) =>
-  Layer.mergeAll(
-    Truncate.defaultLayer,
-    NodeFileSystem.layer,
-    FSUtil.defaultLayer,
-    TestConfig.layer({ get: () => Effect.succeed(cfg) }),
-  )
-const configuredIt = (cfg: ConfigV1.Info) => testEffect(configuredLayer(cfg))
+const it = testEffect(Layer.mergeAll(Truncate.defaultLayer, NodeFileSystem.layer))
 
 describe("Truncate", () => {
   describe("output", () => {
     it.live("truncates large json file by bytes", () =>
       Effect.gen(function* () {
         const svc = yield* Truncate.Service
-        const fsys = yield* FSUtil.Service
-        const content = yield* fsys.readFileString(path.join(FIXTURES_DIR, "models-api.json"))
+        const content = yield* Effect.promise(() => Filesystem.readText(path.join(FIXTURES_DIR, "models-api.json")))
         const result = yield* svc.output(content)
 
         expect(result.truncated).toBe(true)
@@ -107,66 +94,10 @@ describe("Truncate", () => {
       expect(Truncate.MAX_BYTES).toBe(50 * 1024)
     })
 
-    it.live("limits() falls back to MAX_LINES/MAX_BYTES when Config is not provided", () =>
-      Effect.gen(function* () {
-        const svc = yield* Truncate.Service
-        const resolved = yield* svc.limits()
-        expect(resolved.maxLines).toBe(Truncate.MAX_LINES)
-        expect(resolved.maxBytes).toBe(Truncate.MAX_BYTES)
-      }),
-    )
-
-    describe("with tool_output config", () => {
-      const limitsIt = configuredIt({ tool_output: { max_lines: 123, max_bytes: 456 } })
-      limitsIt.live("limits() reflects config overrides", () =>
-        Effect.gen(function* () {
-          const resolved = yield* (yield* Truncate.Service).limits()
-          expect(resolved.maxLines).toBe(123)
-          expect(resolved.maxBytes).toBe(456)
-        }),
-      )
-
-      // Huge byte budget isolates line truncation. 100 lines against max_lines: 10
-      // proves the configured line limit is what `output()` enforces.
-      const lineIt = configuredIt({ tool_output: { max_lines: 10, max_bytes: 1024 * 1024 } })
-      lineIt.live("output() truncates to configured max_lines", () =>
-        Effect.gen(function* () {
-          const content = Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n")
-          const result = yield* (yield* Truncate.Service).output(content)
-          expect(result.truncated).toBe(true)
-          expect(result.content).toContain("...90 lines truncated...")
-        }),
-      )
-
-      // Huge line budget isolates byte truncation.
-      const byteIt = configuredIt({ tool_output: { max_lines: 1_000_000, max_bytes: 100 } })
-      byteIt.live("output() truncates to configured max_bytes", () =>
-        Effect.gen(function* () {
-          const content = "a".repeat(1000)
-          const result = yield* (yield* Truncate.Service).output(content)
-          expect(result.truncated).toBe(true)
-          expect(result.content).toContain("bytes truncated...")
-        }),
-      )
-
-      const overrideIt = configuredIt({ tool_output: { max_lines: 10, max_bytes: 100 } })
-      overrideIt.live("per-call options still override config", () =>
-        Effect.gen(function* () {
-          const content = Array.from({ length: 50 }, (_, i) => `line${i}`).join("\n")
-          const result = yield* (yield* Truncate.Service).output(content, {
-            maxLines: 1000,
-            maxBytes: 1024 * 1024,
-          })
-          expect(result.truncated).toBe(false)
-        }),
-      )
-    })
-
     it.live("large single-line file truncates with byte message", () =>
       Effect.gen(function* () {
         const svc = yield* Truncate.Service
-        const fsys = yield* FSUtil.Service
-        const content = yield* fsys.readFileString(path.join(FIXTURES_DIR, "models-api.json"))
+        const content = yield* Effect.promise(() => Filesystem.readText(path.join(FIXTURES_DIR, "models-api.json")))
         const result = yield* svc.output(content)
 
         expect(result.truncated).toBe(true)
@@ -188,13 +119,12 @@ describe("Truncate", () => {
         expect(result.outputPath).toBeDefined()
         expect(result.outputPath).toContain("tool_")
 
-        const fsys = yield* FSUtil.Service
-        const written = yield* fsys.readFileString(result.outputPath!)
+        const written = yield* Effect.promise(() => Filesystem.readText(result.outputPath!))
         expect(written).toBe(lines)
       }),
     )
 
-    it.live("suggests Actor tool when agent has actor permission", () =>
+    it.live("suggests actor tool when agent has actor permission", () =>
       Effect.gen(function* () {
         const svc = yield* Truncate.Service
         const lines = Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n")
@@ -203,11 +133,11 @@ describe("Truncate", () => {
 
         expect(result.truncated).toBe(true)
         expect(result.content).toContain("Grep")
-        expect(result.content).toContain("Actor tool")
+        expect(result.content).toContain("actor tool")
       }),
     )
 
-    it.live("omits Actor tool hint when agent lacks actor permission", () =>
+    it.live("omits actor tool hint when agent lacks actor permission", () =>
       Effect.gen(function* () {
         const svc = yield* Truncate.Service
         const lines = Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n")
@@ -216,7 +146,7 @@ describe("Truncate", () => {
 
         expect(result.truncated).toBe(true)
         expect(result.content).toContain("Grep")
-        expect(result.content).not.toContain("Actor tool")
+        expect(result.content).not.toContain("actor tool")
       }),
     )
 
@@ -239,6 +169,63 @@ describe("Truncate", () => {
 
       expect(out.code).toBe(0)
     }, 20000)
+
+    it.live("head+tail with errors in tail shows head and tail sections", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        // Build a large output: many normal lines + error lines at the end
+        const normalLines = Array.from({ length: 100 }, (_, i) => `normal line ${i}`)
+        const errorLines = ["Error: something went wrong", "exit code 1"]
+        const allLines = [...normalLines, ...errorLines]
+        const text = allLines.join("\n")
+
+        const result = yield* svc.output(text, { maxLines: 10, direction: "head+tail" })
+
+        expect(result.truncated).toBe(true)
+        // Should contain head content
+        expect(result.content).toContain("normal line 0")
+        // Should contain tail error content
+        expect(result.content).toContain("Error: something went wrong")
+        expect(result.content).toContain("exit code 1")
+        // Should contain omission marker
+        expect(result.content).toContain("lines omitted — showing head and tail")
+      }),
+    )
+
+    it.live("head+tail without errors in tail degrades to head mode", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        // Build output with no error keywords at the end
+        const lines = Array.from({ length: 100 }, (_, i) => `normal line ${i}`)
+        const text = lines.join("\n")
+
+        const result = yield* svc.output(text, { maxLines: 10, direction: "head+tail" })
+
+        expect(result.truncated).toBe(true)
+        // Should behave like head: contains first lines
+        expect(result.content).toContain("normal line 0")
+        // Should NOT contain head+tail omission marker (degraded to head)
+        expect(result.content).not.toContain("lines omitted — showing head and tail")
+        // Should contain normal truncation marker
+        expect(result.content).toContain("truncated...")
+      }),
+    )
+
+    it.live("pressureCaps halves maxLines before size check", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        // With maxLines=20 and pressureCaps=true, effective limit becomes 10
+        const lines = Array.from({ length: 15 }, (_, i) => `line${i}`).join("\n")
+
+        // Without pressureCaps: 15 lines fits within maxLines=20, so not truncated
+        const resultNoPressure = yield* svc.output(lines, { maxLines: 20 })
+        expect(resultNoPressure.truncated).toBe(false)
+
+        // With pressureCaps: effective maxLines=10, so 15 lines gets truncated
+        const resultWithPressure = yield* svc.output(lines, { maxLines: 20, pressureCaps: true })
+        expect(resultWithPressure.truncated).toBe(true)
+      }),
+    )
   })
 
   describe("cleanup", () => {

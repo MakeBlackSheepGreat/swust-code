@@ -1,40 +1,30 @@
-import { PermissionV1 } from "@swust-code/core/v1/permission"
-import { afterEach, describe, expect } from "bun:test"
-import { Cause, Effect, Exit, Layer, Stream } from "effect"
+﻿import { afterEach, describe, expect } from "bun:test"
+import { Cause, Effect, Exit, Layer } from "effect"
 import path from "path"
 import { Agent } from "../../src/agent/agent"
-import { CrossSpawnSpawner } from "@swust-code/core/cross-spawn-spawner"
-import { FSUtil } from "@swust-code/core/fs-util"
-import { Global } from "@swust-code/core/global"
-import { Config } from "@/config/config"
-import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Ripgrep } from "@swust-code/core/ripgrep"
-import { LSP } from "@/lsp/lsp"
+import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
+import { LSP } from "../../src/lsp"
 import { Permission } from "../../src/permission"
+import { Instance } from "../../src/project/instance"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instruction } from "../../src/session/instruction"
 import { ReadTool } from "../../src/tool/read"
-import { Truncate } from "@/tool/truncate"
-import { Tool } from "@/tool/tool"
-import { Filesystem } from "@/util/filesystem"
-import {
-  disposeAllInstances,
-  provideInstance,
-  testInstanceStoreLayer,
-  TestInstance,
-  tmpdirScoped,
-} from "../fixture/fixture"
+import { Truncate } from "../../src/tool"
+import { Tool } from "../../src/tool"
+import { Filesystem } from "../../src/util"
+import { provideInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures")
 
 afterEach(async () => {
-  await disposeAllInstances()
+  await Instance.disposeAll()
 })
 
 const ctx = {
   sessionID: SessionID.make("ses_test"),
-  messageID: MessageID.make("msg_test"),
+  messageID: MessageID.make(""),
   callID: "",
   agent: "build",
   abort: AbortSignal.any([]),
@@ -43,18 +33,16 @@ const ctx = {
   ask: () => Effect.void,
 }
 
-const readLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
+const it = testEffect(
   Layer.mergeAll(
     Agent.defaultLayer,
-    FSUtil.defaultLayer,
+    AppFileSystem.defaultLayer,
     CrossSpawnSpawner.defaultLayer,
     Instruction.defaultLayer,
     LSP.defaultLayer,
-    Ripgrep.defaultLayer,
     Truncate.defaultLayer,
-  )
-
-const it = testEffect(Layer.mergeAll(readLayer(), testInstanceStoreLayer))
+  ),
+)
 
 const init = Effect.fn("ReadToolTest.init")(function* () {
   const info = yield* ReadTool
@@ -93,51 +81,21 @@ const fail = Effect.fn("ReadToolTest.fail")(function* (
 const full = (p: string) => (process.platform === "win32" ? Filesystem.normalizePath(p) : p)
 const glob = (p: string) =>
   process.platform === "win32" ? Filesystem.normalizePathPattern(p) : p.replaceAll("\\", "/")
-const githubBase = <A, E, R>(url: string, self: Effect.Effect<A, E, R>) =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
-      const previous = process.env.SWUST_CODE_REPO_CLONE_GITHUB_BASE_URL
-      process.env.SWUST_CODE_REPO_CLONE_GITHUB_BASE_URL = url
-      return previous
-    }),
-    () => self,
-    (previous) =>
-      Effect.sync(() => {
-        if (previous) process.env.SWUST_CODE_REPO_CLONE_GITHUB_BASE_URL = previous
-        else delete process.env.SWUST_CODE_REPO_CLONE_GITHUB_BASE_URL
-      }),
-  )
-const git = Effect.fn("ReadToolTest.git")(function* (cwd: string, args: string[]) {
-  return yield* Effect.promise(async () => {
-    const proc = Bun.spawn(["git", ...args], {
-      cwd,
-      stdout: "pipe",
-      stderr: "pipe",
-    })
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ])
-    if (code !== 0) throw new Error(stderr.trim() || stdout.trim() || `git ${args.join(" ")} failed`)
-    return stdout.trim()
-  })
-})
 const put = Effect.fn("ReadToolTest.put")(function* (p: string, content: string | Buffer | Uint8Array) {
-  const fs = yield* FSUtil.Service
+  const fs = yield* AppFileSystem.Service
   yield* fs.writeWithDirs(p, content)
 })
 const load = Effect.fn("ReadToolTest.load")(function* (p: string) {
-  const fs = yield* FSUtil.Service
+  const fs = yield* AppFileSystem.Service
   return yield* fs.readFileString(p)
 })
 const asks = () => {
-  const items: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+  const items: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
   return {
     items,
     next: {
       ...ctx,
-      ask: (req: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">) =>
+      ask: (req: Omit<Permission.Request, "id" | "sessionID" | "tool">) =>
         Effect.sync(() => {
           items.push(req)
         }),
@@ -197,23 +155,10 @@ describe("tool.read external_directory permission", () => {
         yield* exec(dir, { filePath: alt }, next)
         const read = items.find((item) => item.permission === "read")
         expect(read).toBeDefined()
-        expect(read!.patterns).toEqual([path.relative(dir, full(target))])
+        expect(read!.patterns).toEqual([full(target)])
       }),
     )
   }
-
-  it.live("uses worktree-relative path for read permission so user rules match like edit/write", () =>
-    Effect.gen(function* () {
-      const dir = yield* tmpdirScoped({ git: true })
-      yield* put(path.join(dir, "src", "secret.ts"), "shh")
-
-      const { items, next } = asks()
-      yield* exec(dir, { filePath: path.join(dir, "src", "secret.ts") }, next)
-      const read = items.find((item) => item.permission === "read")
-      expect(read).toBeDefined()
-      expect(read!.patterns).toEqual([path.join("src", "secret.ts")])
-    }),
-  )
 
   it.live("asks for directory-scoped external_directory permission when reading external directory", () =>
     Effect.gen(function* () {
@@ -282,7 +227,7 @@ describe("tool.read env file permissions", () => {
                 let asked = false
                 const next = {
                   ...ctx,
-                  ask: (req: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">) =>
+                  ask: (req: Omit<Permission.Request, "id" | "sessionID" | "tool">) =>
                     Effect.sync(() => {
                       for (const pattern of req.patterns) {
                         const rule = Permission.evaluate(req.permission, pattern, info.permission)
@@ -290,7 +235,7 @@ describe("tool.read env file permissions", () => {
                           asked = true
                         }
                         if (rule.action === "deny") {
-                          throw new PermissionV1.DeniedError({ ruleset: info.permission })
+                          throw new Permission.DeniedError({ ruleset: info.permission })
                         }
                       }
                     }),
@@ -310,60 +255,28 @@ describe("tool.read env file permissions", () => {
 })
 
 describe("tool.read truncation", () => {
-  it.instance("truncates large file by bytes and sets truncated metadata", () =>
+  it.live("truncates large file by bytes and sets truncated metadata", () =>
     Effect.gen(function* () {
-      const test = yield* TestInstance
+      const dir = yield* tmpdirScoped()
       const base = yield* load(path.join(FIXTURES_DIR, "models-api.json"))
       const target = 60 * 1024
       const content = base.length >= target ? base : base.repeat(Math.ceil(target / base.length))
-      yield* put(path.join(test.directory, "large.json"), content)
+      yield* put(path.join(dir, "large.json"), content)
 
-      const result = yield* run({ filePath: path.join(test.directory, "large.json") })
+      const result = yield* exec(dir, { filePath: path.join(dir, "large.json") })
       expect(result.metadata.truncated).toBe(true)
       expect(result.output).toContain("Output capped at")
       expect(result.output).toContain("Use offset=")
     }),
   )
 
-  it.instance("stops streaming after the byte cap", () =>
+  it.live("truncates by line count when limit is specified", () =>
     Effect.gen(function* () {
-      const test = yield* TestInstance
-      const filepath = path.join(test.directory, "huge.txt")
-      const content = `${"x".repeat(80)}\n`.repeat(50_000)
-      yield* put(filepath, content)
-
-      const fs = yield* FSUtil.Service
-      const counter = { bytes: 0 }
-      const result = yield* run({ filePath: filepath }).pipe(
-        Effect.provideService(
-          FSUtil.Service,
-          FSUtil.Service.of({
-            ...fs,
-            stream: (file, options) =>
-              fs.stream(file, options).pipe(
-                Stream.tap((chunk) =>
-                  Effect.sync(() => {
-                    counter.bytes += chunk.length
-                  }),
-                ),
-              ),
-          }),
-        ),
-      )
-
-      expect(result.metadata.truncated).toBe(true)
-      expect(result.output).toContain("Output capped at")
-      expect(counter.bytes).toBeLessThan(Buffer.byteLength(content, "utf-8") / 2)
-    }),
-  )
-
-  it.instance("truncates by line count when limit is specified", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
+      const dir = yield* tmpdirScoped()
       const lines = Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n")
-      yield* put(path.join(test.directory, "many-lines.txt"), lines)
+      yield* put(path.join(dir, "many-lines.txt"), lines)
 
-      const result = yield* run({ filePath: path.join(test.directory, "many-lines.txt"), limit: 10 })
+      const result = yield* exec(dir, { filePath: path.join(dir, "many-lines.txt"), limit: 10 })
       expect(result.metadata.truncated).toBe(true)
       expect(result.output).toContain("Showing lines 1-10 of 100")
       expect(result.output).toContain("Use offset=11")
@@ -373,23 +286,14 @@ describe("tool.read truncation", () => {
     }),
   )
 
-  it.instance("does not truncate small file", () =>
+  it.live("does not truncate small file", () =>
     Effect.gen(function* () {
-      const test = yield* TestInstance
-      yield* put(path.join(test.directory, "small.txt"), "hello world")
+      const dir = yield* tmpdirScoped()
+      yield* put(path.join(dir, "small.txt"), "hello world")
 
-      const result = yield* run({ filePath: path.join(test.directory, "small.txt") })
+      const result = yield* exec(dir, { filePath: path.join(dir, "small.txt") })
       expect(result.metadata.truncated).toBe(false)
       expect(result.output).toContain("End of file")
-      expect(result.metadata.display).toMatchObject({
-        type: "file",
-        path: path.join(test.directory, "small.txt"),
-        text: "hello world",
-        lineStart: 1,
-        lineEnd: 1,
-        totalLines: 1,
-        truncated: false,
-      })
     }),
   )
 
@@ -457,14 +361,6 @@ describe("tool.read truncation", () => {
       const result = yield* exec(dir, { filePath: path.join(dir, "dir"), offset: 6, limit: 5 })
       expect(result.metadata.truncated).toBe(false)
       expect(result.output).not.toContain("Showing 5 of 10 entries")
-      expect(result.metadata.display).toMatchObject({
-        type: "directory",
-        path: path.join(dir, "dir"),
-        entries: ["file-5.txt", "file-6.txt", "file-7.txt", "file-8.txt", "file-9.txt"],
-        offset: 6,
-        totalEntries: 10,
-        truncated: false,
-      })
     }),
   )
 
@@ -542,24 +438,6 @@ root_type Monster;`
       expect(result.attachments).toBeUndefined()
       expect(result.output).toContain("namespace MyGame")
       expect(result.output).toContain("table Monster")
-    }),
-  )
-
-  it.live("falls through unsupported image mime types to text", () =>
-    Effect.gen(function* () {
-      const dir = yield* tmpdirScoped()
-      const cases = [
-        ["image.bmp", "BM text content"],
-        ["photo.tiff", "II text content"],
-        ["photo.avif", "avif text content"],
-      ] as const
-
-      for (const item of cases) {
-        yield* put(path.join(dir, item[0]), item[1])
-        const result = yield* exec(dir, { filePath: path.join(dir, item[0]) })
-        expect(result.attachments).toBeUndefined()
-        expect(result.output).toContain(item[1])
-      }
     }),
   )
 })

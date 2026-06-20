@@ -1,7 +1,5 @@
-import { LayerNode } from "@swust-code/core/effect/layer-node"
 import { Context, Effect, Layer } from "effect"
-import { serviceUse } from "@swust-code/core/effect/service-use"
-import { InstanceState } from "@/effect/instance-state"
+import { InstanceState } from "@/effect"
 
 type State = Record<string, string | undefined>
 
@@ -12,9 +10,7 @@ export interface Interface {
   readonly remove: (key: string) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/Env") {}
-
-export const use = serviceUse(Service)
+export class Service extends Context.Service<Service, Interface>()("@opencode/Env") {}
 
 export const layer = Layer.effect(
   Service,
@@ -37,7 +33,5 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = layer
-
-export const node = LayerNode.make(layer, [])
 
 export * as Env from "."

@@ -1,24 +1,31 @@
 import { APICallError } from "ai"
 import { STATUS_CODES } from "http"
 import { iife } from "@/util/iife"
-import type { ProviderV2 } from "@swust-code/core/provider"
-import { isContextOverflow } from "@swust-code/llm"
+import type { ProviderID } from "./schema"
 
-export class HeaderTimeoutError extends Error {
-  public override readonly name = "ProviderHeaderTimeoutError"
-
-  constructor(public readonly ms: number) {
-    super(`Provider response headers timed out after ${ms}ms`)
-  }
-}
-
-export class ResponseStreamError extends Error {
-  public override readonly name = "ProviderResponseStreamError"
-
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options)
-  }
-}
+// Adapted from overflow detection patterns in:
+// https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/utils/overflow.ts
+const OVERFLOW_PATTERNS = [
+  /prompt is too long/i, // Anthropic
+  /input is too long for requested model/i, // Amazon Bedrock
+  /exceeds the context window/i, // OpenAI (Completions + Responses API message text)
+  /input token count.*exceeds the maximum/i, // Google (Gemini)
+  /maximum prompt length is \d+/i, // xAI (Grok)
+  /reduce the length of the messages/i, // Groq
+  /maximum context length is \d+ tokens/i, // OpenRouter, DeepSeek, vLLM
+  /exceeds the limit of \d+/i, // GitHub Copilot
+  /exceeds the available context size/i, // llama.cpp server
+  /greater than the context length/i, // LM Studio
+  /context window exceeds limit/i, // MiniMax
+  /exceeded model token limit/i, // Kimi For Coding, Moonshot
+  /context[_ ]length[_ ]exceeded/i, // Generic fallback
+  /request entity too large/i, // HTTP 413
+  /context length is only \d+ tokens/i, // vLLM
+  /input length.*exceeds.*context length/i, // vLLM
+  /prompt too long; exceeded (?:max )?context length/i, // Ollama explicit overflow error
+  /too large for model with \d+ maximum context length/i, // Mistral
+  /model_context_window_exceeded/i, // z.ai non-standard finish_reason surfaced as error text
+]
 
 function isOpenAiErrorRetryable(e: APICallError) {
   const status = e.statusCode
@@ -29,8 +36,40 @@ function isOpenAiErrorRetryable(e: APICallError) {
 
 // Providers not reliably handled in this function:
 // - z.ai: can accept overflow silently (needs token-count/context-window checks)
-function message(providerID: ProviderV2.ID, e: APICallError) {
+function isOverflow(message: string) {
+  if (OVERFLOW_PATTERNS.some((p) => p.test(message))) return true
+
+  // Providers/status patterns handled outside of regex list:
+  // - Cerebras: often returns "400 (no body)" / "413 (no body)"
+  // - Mistral: often returns "400 (no body)" / "413 (no body)"
+  return /^4(00|13)\s*(status code)?\s*\(no body\)/i.test(message)
+}
+
+// Provider IDs served by the MiMo model gateway. Its error bodies carry
+// non-standard semantics (e.g. moderation/risk-control blocks under HTTP 400),
+// so the gateway-specific handling below is scoped to these providers and leaves
+// every other provider's error flow untouched.
+const MIMO_GATEWAY_PROVIDERS = new Set(["xiaomi", "mimo"])
+
+// MiMo gateway error.code values worth relabeling: moderation (421) and
+// risk-control (441) blocks arrive under a generic HTTP 400.
+const FRIENDLY_GATEWAY_CODES: Record<string, string> = {
+  "421": "Request blocked by content moderation",
+  "441": "Request blocked by risk control",
+}
+
+function message(providerID: ProviderID, e: APICallError) {
   return iife(() => {
+    // MiMo gateway: relabel known block codes and surface error.param (the real
+    // reason often lives there while error.message stays generic). json() returns
+    // undefined for non-JSON, so HTML/proxy error pages fall through to the
+    // original handling below.
+    const gw = MIMO_GATEWAY_PROVIDERS.has(providerID) ? json(e.responseBody)?.error : undefined
+    if (gw && typeof gw === "object") {
+      const base = FRIENDLY_GATEWAY_CODES[String(gw.code)] ?? (typeof gw.message === "string" ? gw.message : "")
+      if (base) return typeof gw.param === "string" && gw.param !== base ? `${base}: ${gw.param}` : base
+    }
+
     const msg = e.message
     if (msg === "") {
       if (e.responseBody) return e.responseBody
@@ -95,13 +134,12 @@ export type ParsedStreamError =
   | {
       type: "api_error"
       message: string
-      isRetryable: boolean
+      isRetryable: false
       responseBody: string
     }
 
 export function parseStreamError(input: unknown): ParsedStreamError | undefined {
-  const raw = json(input)
-  const body = typeof raw?.message === "string" ? (json(raw.message) ?? raw) : raw
+  const body = json(input)
   if (!body) return
 
   const responseBody = JSON.stringify(body)
@@ -135,14 +173,6 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
         isRetryable: false,
         responseBody,
       }
-    case "server_is_overloaded":
-    case "server_error":
-      return {
-        type: "api_error",
-        message: typeof body?.error?.message === "string" ? body?.error?.message : "Server error.",
-        isRetryable: true,
-        responseBody,
-      }
   }
 }
 
@@ -162,10 +192,10 @@ export type ParsedAPICallError =
       metadata?: Record<string, string>
     }
 
-export function parseAPICallError(input: { providerID: ProviderV2.ID; error: APICallError }): ParsedAPICallError {
+export function parseAPICallError(input: { providerID: ProviderID; error: APICallError }): ParsedAPICallError {
   const m = message(input.providerID, input.error)
   const body = json(input.error.responseBody)
-  if (isContextOverflow(m) || input.error.statusCode === 413 || body?.error?.code === "context_length_exceeded") {
+  if (isOverflow(m) || input.error.statusCode === 413 || body?.error?.code === "context_length_exceeded") {
     return {
       type: "context_overflow",
       message: m,
@@ -184,5 +214,3 @@ export function parseAPICallError(input: { providerID: ProviderV2.ID; error: API
     metadata,
   }
 }
-
-export * as ProviderError from "./error"

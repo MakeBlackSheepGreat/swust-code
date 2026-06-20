@@ -1,122 +1,171 @@
-import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
-import { sql } from "drizzle-orm"
-import { Database } from "@swust-code/core/database/database"
-import { EventV2 } from "@swust-code/core/event"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { TaskRegistry } from "@/task/registry"
-import { parseTaskScript } from "@/tool/task"
-import { SessionID } from "@/session/schema"
+import { afterEach, describe, expect } from "bun:test"
+import { Cause, Effect, Layer } from "effect"
+import { Bus } from "../../src/bus"
+import { Session } from "../../src/session"
+import { TaskRegistry } from "../../src/task/registry"
+import { Instance } from "../../src/project/instance"
+import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { isRecoverableError } from "../../src/tool/recoverable"
+import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
 
-const database = Database.layerFromPath(":memory:")
-const eventLayer = EventV2.layer.pipe(Layer.provide(database))
-const bridgeLayer = EventV2Bridge.layer.pipe(Layer.provide(eventLayer))
-const taskLayer = TaskRegistry.layer.pipe(Layer.provide(bridgeLayer), Layer.provide(database))
-const layer = Layer.merge(database, taskLayer)
-const it = testEffect(layer)
-
-const sessionID = SessionID.make("ses_task_tree")
-
-const seedSession = Effect.fn("TaskRegistryTest.seedSession")(function* () {
-  const { db } = yield* Database.Service
-  const now = Date.now()
-  yield* db
-    .run(sql`
-      INSERT INTO project (
-        id, worktree, vcs, name, time_created, time_updated, sandboxes
-      ) VALUES (
-        'proj_task_tree', '/tmp/swust-code-task-tree', NULL, 'task tree', ${now}, ${now}, '[]'
-      )
-    `)
-    .pipe(Effect.orDie)
-  yield* db
-    .run(sql`
-      INSERT INTO session (
-        id, project_id, slug, directory, title, version, time_created, time_updated
-      ) VALUES (
-        ${sessionID}, 'proj_task_tree', 'task-tree', '/tmp/swust-code-task-tree', 'Task tree', 'test', ${now}, ${now}
-      )
-    `)
-    .pipe(Effect.orDie)
+afterEach(async () => {
+  await Instance.disposeAll()
 })
 
-describe("task.registry", () => {
-  it.effect("creates a MiMo-style task tree and transitions lifecycle states", () =>
-    Effect.gen(function* () {
-      yield* seedSession()
-      const registry = yield* TaskRegistry.Service
+const env = Layer.mergeAll(
+  CrossSpawnSpawner.defaultLayer,
+  Bus.defaultLayer,
+  Session.defaultLayer,
+  TaskRegistry.defaultLayer,
+)
 
-      const parent = yield* registry.create({ session_id: sessionID, summary: "Implement parser", owner: "build" })
-      const sibling = yield* registry.create({ session_id: sessionID, summary: "Write docs", owner: "build" })
-      const child = yield* registry.create({
-        session_id: sessionID,
-        parent_id: parent.id,
-        summary: "Lexer",
-        owner: "explore-1",
-      })
+const it = testEffect(env)
 
-      expect(String(parent.id)).toBe("T1")
-      expect(String(sibling.id)).toBe("T2")
-      expect(String(child.id)).toBe("T1.1")
+const seedSession = Effect.fn("Test.seedSession")(function* () {
+  const session = yield* Session.Service
+  return yield* session.create({ title: "Test" })
+})
 
-      const started = yield* registry.start({
-        session_id: sessionID,
-        id: parent.id,
-        owner: "build",
-        event_summary: "starting parser",
-      })
-      expect(started.status).toBe("in_progress")
+describe("TaskRegistry.create", () => {
+  it.live("creates a top-level task with id T1", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const reg = yield* TaskRegistry.Service
+        const sess = yield* seedSession()
 
-      const blocked = yield* registry.block({ session_id: sessionID, id: parent.id, event_summary: "waiting on grammar" })
-      expect(blocked.status).toBe("blocked")
-
-      const unblocked = yield* registry.unblock({ session_id: sessionID, id: parent.id, event_summary: "grammar ready" })
-      expect(unblocked.status).toBe("open")
-
-      const renamed = yield* registry.rename({ session_id: sessionID, id: parent.id, summary: "Implement recursive parser" })
-      expect(renamed.summary).toBe("Implement recursive parser")
-
-      const done = yield* registry.done({ session_id: sessionID, id: parent.id, event_summary: "tests pass" })
-      expect(done.status).toBe("done")
-      expect(done.ended_at).toBeDefined()
-      expect(done.cleanup_after).toBeDefined()
-
-      const notResurrected = yield* registry.start({ session_id: sessionID, id: parent.id, owner: "build" })
-      expect(notResurrected.status).toBe("done")
-
-      const active = yield* registry.list({ session_id: sessionID })
-      expect(active.map((task) => String(task.id))).toEqual(["T2", "T1.1"])
-
-      const events = yield* registry.events({ session_id: sessionID, task_id: parent.id })
-      expect(events.map((event) => event.kind)).toEqual([
-        "created",
-        "started",
-        "blocked",
-        "unblocked",
-        "renamed",
-        "done",
-      ])
-    }),
+        const task = yield* reg.create({
+          session_id: sess.id,
+          summary: "Refactor auth",
+        })
+        expect(task.id).toBe("T1")
+        expect(task.status).toBe("open")
+        expect(task.parent_task_id).toBeUndefined()
+      }),
+    ),
   )
 
-  it.effect("parses MiMo task shell scripts", () =>
-    Effect.gen(function* () {
-      const parsed = yield* parseTaskScript(
-        [
-          'task create "Implement auth"',
-          'task create "Lexer" --parent T1',
-          'task start T1 --reason "now"',
-          'task done T1 "all tests pass"',
-        ].join("\n"),
-      )
+  it.live("creates sequential top-level ids T1, T2, T3", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const reg = yield* TaskRegistry.Service
+        const sess = yield* seedSession()
 
-      expect(parsed).toEqual([
-        { operation: { action: "create", summary: "Implement auth" } },
-        { operation: { action: "create", summary: "Lexer", parent_id: "T1" } },
-        { operation: { action: "start", id: "T1", event_summary: "now" } },
-        { operation: { action: "done", id: "T1", event_summary: "all tests pass" } },
-      ])
-    }),
+        const t1 = yield* reg.create({ session_id: sess.id, summary: "a" })
+        const t2 = yield* reg.create({ session_id: sess.id, summary: "b" })
+        const t3 = yield* reg.create({ session_id: sess.id, summary: "c" })
+        expect(t1.id).toBe("T1")
+        expect(t2.id).toBe("T2")
+        expect(t3.id).toBe("T3")
+      }),
+    ),
+  )
+
+  it.live("creates subtask T1.1 under T1", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const reg = yield* TaskRegistry.Service
+        const sess = yield* seedSession()
+
+        const t1 = yield* reg.create({ session_id: sess.id, summary: "parent" })
+        const sub = yield* reg.create({ session_id: sess.id, summary: "child", parent_id: t1.id })
+        expect(sub.id).toBe("T1.1")
+        expect(sub.parent_task_id).toBe("T1")
+      }),
+    ),
+  )
+
+  it.live("emits 'created' task_event on create", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const reg = yield* TaskRegistry.Service
+        const sess = yield* seedSession()
+        const t = yield* reg.create({ session_id: sess.id, summary: "x" })
+        const events = yield* reg.events({ session_id: sess.id, task_id: t.id })
+        expect(events.length).toBe(1)
+        expect(events[0].kind).toBe("created")
+      }),
+    ),
+  )
+
+  it.live("two sessions can each have a T1 without colliding", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const reg = yield* TaskRegistry.Service
+        const a = yield* seedSession()
+        const b = yield* seedSession()
+
+        const ta = yield* reg.create({ session_id: a.id, summary: "in A" })
+        const tb = yield* reg.create({ session_id: b.id, summary: "in B" })
+        expect(ta.id).toBe("T1")
+        expect(tb.id).toBe("T1")
+        expect(ta.session_id).toBe(a.id)
+        expect(tb.session_id).toBe(b.id)
+      }),
+    ),
+  )
+})
+
+describe("TaskRegistry not-found is agent-recoverable", () => {
+  it.live("start on a nonexistent id dies with an actionable RecoverableError", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const reg = yield* TaskRegistry.Service
+        const sess = yield* seedSession()
+
+        const exit = yield* Effect.exit(reg.start({ session_id: sess.id, id: "T99" }))
+        expect(exit._tag).toBe("Failure")
+        if (exit._tag !== "Failure") return
+        const err = Cause.squash(exit.cause)
+        expect(isRecoverableError(err)).toBe(true)
+        expect((err as Error).message).toContain("task list")
+      }),
+    ),
+  )
+})
+
+describe("TaskRegistry.list", () => {
+  it.live("lists active tasks for a session by default", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const reg = yield* TaskRegistry.Service
+        const sess = yield* seedSession()
+        yield* reg.create({ session_id: sess.id, summary: "a" })
+        yield* reg.create({ session_id: sess.id, summary: "b" })
+
+        const list = yield* reg.list({ session_id: sess.id })
+        expect(list.length).toBe(2)
+      }),
+    ),
+  )
+
+  it.live("excludes terminal tasks by default", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const reg = yield* TaskRegistry.Service
+        const sess = yield* seedSession()
+        const t1 = yield* reg.create({ session_id: sess.id, summary: "a" })
+        yield* reg.done({ session_id: sess.id, id: t1.id })
+        yield* reg.create({ session_id: sess.id, summary: "b" })
+
+        const list = yield* reg.list({ session_id: sess.id })
+        expect(list.length).toBe(1)
+        expect(list[0].summary).toBe("b")
+      }),
+    ),
+  )
+
+  it.live("includes terminal when include_terminal=true", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const reg = yield* TaskRegistry.Service
+        const sess = yield* seedSession()
+        const t1 = yield* reg.create({ session_id: sess.id, summary: "a" })
+        yield* reg.done({ session_id: sess.id, id: t1.id })
+
+        const list = yield* reg.list({ session_id: sess.id, include_terminal: true })
+        expect(list.length).toBe(1)
+      }),
+    ),
   )
 })

@@ -1,4 +1,4 @@
-import { Component, createMemo } from "solid-js"
+﻿import { Component, createMemo } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
@@ -6,10 +6,10 @@ import { usePrompt } from "@/context/prompt"
 import { useDialog } from "@swust-code/ui/context/dialog"
 import { Dialog } from "@swust-code/ui/dialog"
 import { List } from "@swust-code/ui/list"
-import { showToast } from "@/utils/toast"
+import { showToast } from "@swust-code/ui/toast"
 import { extractPromptFromParts } from "@/utils/prompt"
 import type { TextPart as SDKTextPart } from "@swust-code/sdk/v2/client"
-import { base64Encode } from "@swust-code/core/util/encode"
+import { base64Encode } from "@swust-code/shared/util/encode"
 import { useLanguage } from "@/context/language"
 
 interface ForkableMessage {
@@ -88,7 +88,7 @@ export const DialogFork: Component = () => {
   return (
     <Dialog title={language.t("command.session.fork")}>
       <List
-        class="flex-1 px-3 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
+        class="flex-1 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
         search={{ placeholder: language.t("common.search.placeholder"), autofocus: true }}
         emptyMessage={language.t("dialog.fork.empty")}
         key={(x) => x.id}

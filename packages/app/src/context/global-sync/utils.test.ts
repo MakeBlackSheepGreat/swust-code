@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, test } from "bun:test"
 import type { Agent } from "@swust-code/sdk/v2/client"
-import { directoryKey, normalizeAgentList } from "./utils"
+import { normalizeAgentList } from "./utils"
 
 const agent = (name = "build") =>
   ({
@@ -31,22 +31,5 @@ describe("normalizeAgentList", () => {
   test("drops invalid payloads", () => {
     expect(normalizeAgentList({ name: "AbortError" })).toEqual([])
     expect(normalizeAgentList([{ name: "build" }, agent("docs")])).toEqual([agent("docs")])
-  })
-})
-
-describe("directoryKey", () => {
-  test("normalizes slashes", () => {
-    expect(String(directoryKey("C:\\Repos\\sst\\opencode"))).toBe("C:/Repos/sst/opencode")
-    expect(String(directoryKey("C:/Repos/sst/opencode"))).toBe("C:/Repos/sst/opencode")
-  })
-
-  test("preserves backslashes in posix paths", () => {
-    expect(String(directoryKey("/tmp/foo\\bar"))).toBe("/tmp/foo\\bar")
-  })
-
-  test("trims trailing slashes without breaking roots", () => {
-    expect(String(directoryKey("C:/Repos/sst/opencode/"))).toBe("C:/Repos/sst/opencode")
-    expect(String(directoryKey("C:/"))).toBe("C:/")
-    expect(String(directoryKey("/"))).toBe("/")
   })
 })

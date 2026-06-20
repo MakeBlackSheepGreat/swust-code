@@ -1,9 +1,9 @@
-import { createEffect, createMemo, on, onCleanup } from "solid-js"
+﻿import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PermissionRequest, QuestionRequest, Todo } from "@swust-code/sdk/v2"
 import { useParams } from "@solidjs/router"
-import { showToast } from "@/utils/toast"
-import { useServerSync } from "@/context/server-sync"
+import { showToast } from "@swust-code/ui/toast"
+import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
@@ -27,7 +27,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   const params = useParams()
   const sdk = useSDK()
   const sync = useSync()
-  const serverSync = useServerSync()
+  const globalSync = useGlobalSync()
   const language = useLanguage()
   const permission = usePermission()
 
@@ -50,14 +50,21 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   const todos = createMemo((): Todo[] => {
     const id = params.id
     if (!id) return []
-    return serverSync.data.session_todo[id] ?? []
+    return globalSync.data.session_todo[id] ?? []
   })
 
   const done = createMemo(
     () => todos().length > 0 && todos().every((todo) => todo.status === "completed" || todo.status === "cancelled"),
   )
 
-  const live = createMemo(() => sync.data.session_working(params.id ?? "") || blocked())
+  const status = createMemo(() => {
+    const id = params.id
+    if (!id) return idle
+    return sync.data.session_status[id] ?? idle
+  })
+
+  const busy = createMemo(() => status().type !== "idle")
+  const live = createMemo(() => busy() || blocked())
 
   const [store, setStore] = createStore({
     responding: undefined as string | undefined,
@@ -111,7 +118,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   const clear = () => {
     const id = params.id
     if (!id) return
-    serverSync.todo.set(id, [])
+    globalSync.todo.set(id, [])
     sync.set("todo", id, [])
   }
 

@@ -73,8 +73,8 @@ Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).
   - `packages/opencode`: OpenCode core business logic & server.
   - `packages/opencode/src/cli/cmd/tui/`: The TUI code, written in SolidJS with [opentui](https://github.com/sst/opentui)
   - `packages/app`: The shared web UI components, written in SolidJS
-  - `packages/desktop`: The native desktop app, built with Electron (wraps `packages/app`)
-  - `packages/plugin`: Source for `@opencode-ai/plugin`
+  - `packages/desktop`: The native desktop app, built with Tauri (wraps `packages/app`)
+  - `packages/plugin`: Source for `@swust-code/plugin`
 
 ### Understanding bun dev vs opencode
 
@@ -123,20 +123,32 @@ This starts a local dev server at http://localhost:5173 (or similar port shown i
 
 ### Running the Desktop App
 
-The desktop app is an Electron application that wraps the web UI.
+The desktop app is a native Tauri application that wraps the web UI.
 
-To run the desktop app in development:
+To run the native desktop app:
+
+```bash
+bun run --cwd packages/desktop tauri dev
+```
+
+This starts the web dev server on http://localhost:1420 and opens the native window.
+
+If you only want the web dev server (no native shell):
 
 ```bash
 bun run --cwd packages/desktop dev
 ```
 
-To create a production build and package the app:
+To create a production `dist/` and build the native app bundle:
 
 ```bash
-bun run --cwd packages/desktop build
-bun run --cwd packages/desktop package
+bun run --cwd packages/desktop tauri build
 ```
+
+This runs `bun run --cwd packages/desktop build` automatically via Tauri’s `beforeBuildCommand`.
+
+> [!NOTE]
+> Running the desktop app requires additional Tauri dependencies (Rust toolchain, platform-specific libraries). See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for setup instructions.
 
 > [!NOTE]
 > If you make changes to the API or SDK (e.g. `packages/opencode/src/server/server.ts`), run `./script/generate.ts` to regenerate the SDK and related files.

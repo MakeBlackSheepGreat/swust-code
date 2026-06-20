@@ -1,864 +1,164 @@
-import { afterEach, describe, expect } from "bun:test"
+﻿import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
-import { fileURLToPath, pathToFileURL } from "url"
-import { Effect, Layer, Result, Schema } from "effect"
-import { LayerNode } from "@swust-code/core/effect/layer-node"
-import { ToolRegistry } from "@/tool/registry"
-import { Tool } from "@/tool/tool"
-import { parseActorScript, recoverActorArgs } from "@/tool/actor"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { Effect, Layer } from "effect"
+import { Instance } from "../../src/project/instance"
+import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
+import { ToolRegistry } from "../../src/tool"
+import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { TestConfig } from "../fixture/config"
-import { Config } from "@/config/config"
-import { Plugin } from "@/plugin"
-import { Agent } from "@/agent/agent"
-import { InstanceState } from "@/effect/instance-state"
 
-import { ToolJsonSchema } from "@/tool/json-schema"
-import { MessageID, SessionID } from "@/session/schema"
-import { RuntimeFlags } from "@/effect/runtime-flags"
-import { ProviderV2 } from "@swust-code/core/provider"
-import { ModelV2 } from "@swust-code/core/model"
+const node = CrossSpawnSpawner.defaultLayer
 
-const configLayer = TestConfig.layer({
-  directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".swust-code")])),
-})
-
-const actorShellConfigLayer = TestConfig.layer({
-  get: () =>
-    Effect.succeed({
-      tool: {
-        invocation_style_by_tool: {
-          actor: "shell" as const,
-        },
-      },
-    }),
-  directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".swust-code")])),
-})
-
-// Fake Plugin.Service that returns a single plugin whose `tool` map contains
-// one definition with `args: undefined`. Used to exercise the plugin entry
-// point of `fromPlugin` for the #27451 / #27630 regression.
-const brokenPluginLayer = Layer.succeed(
-  Plugin.Service,
-  Plugin.Service.of({
-    init: () => Effect.void,
-    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
-      Effect.succeed(output)) as Plugin.Interface["trigger"],
-    triggerActorPreStop: () =>
-      Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
-    triggerActorPostStop: () =>
-      Effect.succeed({ continue: false, contributingPluginNames: [], contributingHookIDs: [] }),
-    list: () =>
-      Effect.succeed([
-        {
-          tool: {
-            broken_plugin_tool: {
-              description: "plugin tool with missing args",
-              args: undefined as unknown as Record<string, never>,
-              execute: async () => "ok",
-            },
-          },
-        },
-      ]),
-  }),
-)
-
-const root = LayerNode.group([ToolRegistry.node, Agent.node])
-const replacements = [
-  LayerNode.replace(Config.node, configLayer),
-  LayerNode.replace(RuntimeFlags.node, RuntimeFlags.layer()),
-]
-
-const it = testEffect(LayerNode.buildLayer(root, { replacements }))
-const withBrokenPlugin = testEffect(
-  LayerNode.buildLayer(root, {
-    replacements: [...replacements, LayerNode.replace(Plugin.node, brokenPluginLayer)],
-  }),
-)
-const withActorShellStyle = testEffect(
-  LayerNode.buildLayer(root, {
-    replacements: [
-      LayerNode.replace(Config.node, actorShellConfigLayer),
-      LayerNode.replace(RuntimeFlags.node, RuntimeFlags.layer()),
-    ],
-  }),
-)
-const withWorkflowTool = testEffect(
-  LayerNode.buildLayer(root, {
-    replacements: [
-      LayerNode.replace(Config.node, configLayer),
-      LayerNode.replace(RuntimeFlags.node, RuntimeFlags.layer({ experimentalWorkflowTool: true })),
-    ],
-  }),
-)
+const it = testEffect(Layer.mergeAll(ToolRegistry.defaultLayer, node))
 
 afterEach(async () => {
-  await disposeAllInstances()
+  await Instance.disposeAll()
 })
 
 describe("tool.registry", () => {
-  it.instance("does not expose task_status", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-
-      expect(ids).not.toContain("task_status")
-    }),
-  )
-
-  it.instance("hides workflow unless the MiMo-compatible workflow flag is enabled", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-
-      expect(ids).not.toContain("workflow")
-    }),
-  )
-
-  it.instance("exposes the MiMo-compatible actor tool", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const agent = yield* Agent.Service
-      const build = yield* agent.get("build")
-      if (!build) throw new Error("build agent not found")
-
-      const actor = (yield* registry.tools({
-        providerID: ProviderV2.ID.opencode,
-        modelID: ModelV2.ID.make("test"),
-        agent: build,
-      })).find((tool) => tool.id === "actor")
-
-      expect(actor).toBeDefined()
-      expect(actor?.description).toContain("Launch a new actor")
-      expect(actor?.description).toContain("Available agent types")
-      expect(actor?.description).not.toContain("- dream:")
-      expect((actor?.jsonSchema?.properties as Record<string, unknown> | undefined)?.operation).toBeDefined()
-      expect(
-        Result.isSuccess(
-          Schema.decodeUnknownResult(actor!.parameters)({
-            operation: {
-              action: "run",
-              subagent_type: "general",
-              description: "Check behavior",
-              prompt: "Report what changed.",
-              model: "openai/gpt-5",
-              output_schema: {
-                type: "object",
-                properties: {
-                  summary: { type: "string" },
-                },
-                required: ["summary"],
-              },
-            },
-          }),
-        ),
-      ).toBe(true)
-      expect(
-        Result.isSuccess(
-          Schema.decodeUnknownResult(actor!.parameters)({
-            operation: {
-              action: "run",
-              subagent_type: "dream",
-              description: "Hidden agent",
-              prompt: "This should not be callable from actor.",
-            },
-          }),
-        ),
-      ).toBe(false)
-    }),
-  )
-
-  it.instance("adds the MiMo-style available skill catalog to the skill tool description", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const visible = path.join(test.directory, ".swust-code", "skill", "visible-tool-skill")
-      const hidden = path.join(test.directory, ".swust-code", "skill", "hidden-tool-skill")
-      yield* Effect.promise(() => fs.mkdir(visible, { recursive: true }))
-      yield* Effect.promise(() => fs.mkdir(hidden, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(visible, "SKILL.md"),
-          [
-            "---",
-            "name: visible-tool-skill",
-            "description: Visible in tool descriptions.",
-            "---",
-            "",
-            "Visible skill body.",
-            "",
-          ].join("\n"),
-        ),
-      )
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(hidden, "SKILL.md"),
-          [
-            "---",
-            "name: hidden-tool-skill",
-            "description: Hidden from tool descriptions.",
-            "hidden: true",
-            "---",
-            "",
-            "Hidden skill body.",
-            "",
-          ].join("\n"),
-        ),
-      )
-
-      const registry = yield* ToolRegistry.Service
-      const agent = yield* Agent.Service
-      const build = yield* agent.get("build")
-      if (!build) throw new Error("build agent not found")
-
-      const skill = (yield* registry.tools({
-        providerID: ProviderV2.ID.opencode,
-        modelID: ModelV2.ID.make("test"),
-        agent: build,
-      })).find((tool) => tool.id === "skill")
-
-      expect(skill).toBeDefined()
-      expect(skill?.description).toContain("Load a specialized skill")
-      expect(skill?.description).toContain("visible-tool-skill")
-      expect(skill?.description).not.toContain("hidden-tool-skill")
-      expect(skill?.description).not.toContain("compose:brainstorm")
-    }),
-  )
-
-  it.effect("parses MiMo actor shell scripts and recovers JSON-shaped calls", () =>
-    Effect.gen(function* () {
-      const parsed = yield* parseActorScript(
-        [
-          'actor run explore "Find parser errors" "Scan parser.ts" --model lite --timeout 1000',
-          'actor wait explore-1 --timeout 50',
-        ].join("\n"),
-      )
-
-      expect(parsed[0]).toMatchObject({
-        operation: {
-          action: "run",
-          subagent_type: "explore",
-          description: "Find parser errors",
-          prompt: "Scan parser.ts",
-          model: "lite",
-          timeout_ms: 1000,
-        },
-      })
-      expect(parsed[1]).toEqual({
-        operation: {
-          action: "wait",
-          actor_id: "explore-1",
-          timeout_ms: 50,
-        },
-      })
-
-      expect(
-        recoverActorArgs({
-          subagent_type: "general",
-          description: "Review work",
-          prompt: "Check the patch",
-          background: true,
-        }),
-      ).toEqual({
-        operation: {
-          action: "spawn",
-          subagent_type: "general",
-          description: "Review work",
-          prompt: "Check the patch",
-        },
-      })
-    }),
-  )
-
-  withActorShellStyle.instance("wraps actor with the MiMo shell invocation style when configured", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const agent = yield* Agent.Service
-      const build = yield* agent.get("build")
-      if (!build) throw new Error("build agent not found")
-
-      const actor = (yield* registry.tools({
-        providerID: ProviderV2.ID.opencode,
-        modelID: ModelV2.ID.make("test"),
-        agent: build,
-      })).find((tool) => tool.id === "actor")
-
-      expect(actor).toBeDefined()
-      expect(actor?.description).toContain("Script structure")
-      expect((actor?.jsonSchema?.properties as Record<string, unknown> | undefined)?.operation).toBeUndefined()
-      expect((actor?.jsonSchema?.properties as Record<string, unknown> | undefined)?.script).toBeDefined()
-      expect(Result.isSuccess(Schema.decodeUnknownResult(actor!.parameters)({ script: 'actor status "general-1"' }))).toBe(
-        true,
-      )
-    }),
-  )
-
-  it.instance("exposes the MiMo-compatible task tree tool", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const agent = yield* Agent.Service
-      const build = yield* agent.get("build")
-      if (!build) throw new Error("build agent not found")
-      const task = (yield* registry.tools({
-        providerID: ProviderV2.ID.opencode,
-        modelID: ModelV2.ID.make("test"),
-        agent: build,
-      })).find((tool) => tool.id === "task")
-
-      expect(task).toBeDefined()
-      expect(task?.description).toContain("Persistent work-item tool")
-      expect((task?.jsonSchema?.properties as Record<string, unknown> | undefined)?.operation).toBeDefined()
-      expect(
-        Result.isSuccess(
-          Schema.decodeUnknownResult(task!.parameters)({
-            operation: {
-              action: "create",
-              summary: "Implement parser",
-            },
-          }),
-        ),
-      ).toBe(true)
-    }),
-  )
-
-  it.instance("exposes the MiMo-compatible memory tool", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-      expect(ids).toContain("memory")
-
-      const agent = yield* Agent.Service
-      const build = yield* agent.get("build")
-      if (!build) throw new Error("build agent not found")
-      const memory = (yield* registry.tools({
-        providerID: ProviderV2.ID.opencode,
-        modelID: ModelV2.ID.make("test"),
-        agent: build,
-      })).find((tool) => tool.id === "memory")
-
-      expect(memory).toBeDefined()
-      expect(memory?.description).toContain("Search session/project/global memory")
-      const schema = ToolJsonSchema.fromTool(memory!)
-      expect(schema.properties).toMatchObject({
-        operation: expect.any(Object),
-        query: expect.any(Object),
-        scope: expect.any(Object),
-        scope_id: expect.any(Object),
-        type: expect.any(Object),
-        limit: expect.any(Object),
-      })
-      expect(
-        Result.isSuccess(
-          Schema.decodeUnknownResult(memory!.parameters)({
-            operation: "search",
-            query: "checkpoint",
-            scope: "projects",
-            scope_id: "project-1",
-            type: "snapshot",
-            limit: 5,
-          }),
-        ),
-      ).toBe(true)
-    }),
-  )
-
-  it.instance("exposes the MiMo-compatible history tool", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-      expect(ids).toContain("history")
-
-      const agent = yield* Agent.Service
-      const build = yield* agent.get("build")
-      if (!build) throw new Error("build agent not found")
-      const history = (yield* registry.tools({
-        providerID: ProviderV2.ID.opencode,
-        modelID: ModelV2.ID.make("test"),
-        agent: build,
-      })).find((tool) => tool.id === "history")
-
-      expect(history).toBeDefined()
-      expect(history?.description).toContain("Search RAW conversation trajectory")
-      const schema = ToolJsonSchema.fromTool(history!)
-      expect(schema.properties).toMatchObject({
-        operation: expect.any(Object),
-        query: expect.any(Object),
-        scope: expect.any(Object),
-        message_id: expect.any(Object),
-        before: expect.any(Object),
-        after: expect.any(Object),
-      })
-      expect(
-        Result.isSuccess(
-          Schema.decodeUnknownResult(history!.parameters)({
-            operation: "around",
-            message_id: "msg_anchor",
-            before: 1,
-            after: 1,
-          }),
-        ),
-      ).toBe(true)
-    }),
-  )
-
-  withWorkflowTool.instance("exposes the MiMo-compatible workflow tool when enabled", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-      expect(ids).toContain("workflow")
-
-      const agent = yield* Agent.Service
-      const build = yield* agent.get("build")
-      if (!build) throw new Error("build agent not found")
-      const workflow = (yield* registry.tools({
-        providerID: ProviderV2.ID.opencode,
-        modelID: ModelV2.ID.make("test"),
-        agent: build,
-      })).find((tool) => tool.id === "workflow")
-
-      expect(workflow).toBeDefined()
-      expect(workflow?.description).toContain("Execute a workflow script")
-      expect(workflow?.description).toContain("## Built-in workflows")
-      expect(workflow?.description).toContain("deep-research")
-      const schema = ToolJsonSchema.fromTool(workflow!)
-      const schemaText = JSON.stringify(schema)
-      expect(schemaText).toContain("operation")
-      expect(schemaText).toContain("name")
-      expect(schemaText).toContain("script")
-      expect(schemaText).toContain("args")
-      expect(
-        Result.isSuccess(
-          Schema.decodeUnknownResult(workflow!.parameters)({
-            operation: "run",
-            name: "deep-research",
-            args: "research question",
-          }),
-        ),
-      ).toBe(true)
-    }),
-  )
-
-  it.instance("hides subagent background parameter unless experimental background subagents are enabled", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const agent = yield* Agent.Service
-      const build = yield* agent.get("build")
-      if (!build) throw new Error("build agent not found")
-      const subagent = (yield* registry.tools({
-        providerID: ProviderV2.ID.opencode,
-        modelID: ModelV2.ID.make("test"),
-        agent: build,
-      })).find((tool) => tool.id === "subagent")
-
-      expect(subagent?.jsonSchema).toBeDefined()
-      const properties = subagent?.jsonSchema?.properties as Record<string, unknown> | undefined
-      expect(properties?.background).toBeUndefined()
-      expect(properties?.model).toBeDefined()
-      expect(properties?.output_schema).toBeDefined()
-    }),
-  )
-
-  it.instance("loads tools from .swust-code/tool (singular)", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const opencode = path.join(test.directory, ".swust-code")
-      const tool = path.join(opencode, "tool")
-      yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(tool, "hello.ts"),
-          [
-            "export default {",
-            "  description: 'hello tool',",
-            "  args: {},",
-            "  execute: async () => {",
-            "    return 'hello world'",
-            "  },",
-            "}",
-            "",
-          ].join("\n"),
-        ),
-      )
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-      expect(ids).toContain("hello")
-    }),
-  )
-
-  it.instance("ignores non-tool exports in .swust-code/tool files", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const tool = path.join(test.directory, ".swust-code", "tool")
-      yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(tool, "mixed.ts"),
-          [
-            "export const helper = 'not a tool'",
-            "export default {",
-            "  description: 'mixed tool',",
-            "  args: {},",
-            "  execute: async () => 'ok',",
-            "}",
-            "",
-          ].join("\n"),
-        ),
-      )
-
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-      expect(ids).toContain("mixed")
-      expect(ids).not.toContain("mixed_helper")
-    }),
-  )
-
-  // Regression for #27451 / #27630: a custom tool that omits `args` must not
-  // crash registry initialization with
-  // `Object.entries requires that input parameter not be null or undefined`.
-  // Pre-1.14.49 the code path was `z.object(def.args)`, and `z.object(undefined)`
-  // silently produced an empty schema — so the tool registered as no-args.
-  // Preserve that tolerance.
-  it.instance("tolerates a custom tool exporting null/undefined args (no-args fallback)", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const tool = path.join(test.directory, ".swust-code", "tool")
-      yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(tool, "noargs.ts"),
-          [
-            "export default {",
-            "  description: 'tool with no args',",
-            "  args: undefined,",
-            "  execute: async () => 'ok',",
-            "}",
-            "",
-          ].join("\n"),
-        ),
-      )
-
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-      // Built-in tools must still load — a single malformed custom tool must
-      // not poison the whole registry.
-      expect(ids).toContain("read")
-      const loaded = (yield* registry.all()).find((t) => t.id === "noargs")
-      if (!loaded) throw new Error("noargs tool was not loaded")
-      expect(loaded.jsonSchema).toMatchObject({ type: "object", properties: {} })
-    }),
-  )
-
-  // Same regression, plugin entry point. The original reports (#27451, #27630)
-  // came in through `plugin.list()` — `oh-my-opencode` was registering a tool
-  // with `args: undefined` and crashing every message submit. The file-scan
-  // and plugin-list loops both funnel through `fromPlugin`, but covering both
-  // entry points means a future refactor that splits them won't silently lose
-  // protection.
-  withBrokenPlugin.instance("tolerates a plugin tool registered with null/undefined args", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-      expect(ids).toContain("read")
-      expect(ids).toContain("broken_plugin_tool")
-    }),
-  )
-
-  it.instance("loads tools from .swust-code/tools (plural)", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const opencode = path.join(test.directory, ".swust-code")
-      const tools = path.join(opencode, "tools")
-      yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(tools, "hello.ts"),
-          [
-            "export default {",
-            "  description: 'hello tool',",
-            "  args: {},",
-            "  execute: async () => {",
-            "    return 'hello world'",
-            "  },",
-            "}",
-            "",
-          ].join("\n"),
-        ),
-      )
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-      expect(ids).toContain("hello")
-    }),
-  )
-
-  it.instance("loads Zod-schema custom tools with JSON Schema and validation", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const customTools = path.join(test.directory, ".swust-code", "tools")
-      const pluginTool = pathToFileURL(path.resolve(import.meta.dir, "../../../plugin/src/tool.ts")).href
-      yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(customTools, "sql.ts"),
-          [
-            `import { tool } from ${JSON.stringify(pluginTool)}`,
-            "export default tool({",
-            "  description: 'query database',",
-            "  args: { query: tool.schema.string().describe('SQL query to execute') },",
-            "  execute: async ({ query }) => query,",
-            "})",
-            "",
-          ].join("\n"),
-        ),
-      )
-
-      const registry = yield* ToolRegistry.Service
-      const loaded = (yield* registry.all()).find((tool) => tool.id === "sql")
-      if (!loaded) throw new Error("custom sql tool was not loaded")
-      expect(loaded?.jsonSchema).toMatchObject({
-        type: "object",
-        properties: {
-          query: { type: "string", description: "SQL query to execute" },
-        },
-        required: ["query"],
-      })
-      expect(Result.isSuccess(Schema.decodeUnknownResult(loaded.parameters)({ query: "select 1" }))).toBe(true)
-      expect(Result.isSuccess(Schema.decodeUnknownResult(loaded.parameters)({}))).toBe(false)
-
-      const agents = yield* Agent.Service
-      const promptTools = yield* registry.tools({
-        providerID: ProviderV2.ID.opencode,
-        modelID: ModelV2.ID.make("test"),
-        agent: yield* agents.defaultInfo(),
-      })
-      const promptTool = promptTools.find((tool) => tool.id === "sql")
-      if (!promptTool) throw new Error("custom sql tool was not returned for prompts")
-      expect(ToolJsonSchema.fromTool(promptTool)).toMatchObject({
-        properties: {
-          query: { type: "string", description: "SQL query to execute" },
-        },
-        required: ["query"],
-      })
-    }),
-  )
-
-  it.instance(
-    "preserves Zod arg descriptions from older config-scoped plugin packages",
-    () =>
+  it.live("loads tools from .swust-code/tool (singular)", () =>
+    provideTmpdirInstance((dir) =>
       Effect.gen(function* () {
-        const test = yield* TestInstance
-        const opencode = path.join(test.directory, ".swust-code")
-        const customTools = path.join(opencode, "tools")
-        const plugin = path.join(opencode, "node_modules", "@swust-code", "plugin")
-        yield* Effect.promise(() => fs.mkdir(path.join(plugin, "dist"), { recursive: true }))
-        yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
-        yield* Effect.promise(() =>
-          fs.cp(path.dirname(fileURLToPath(import.meta.resolve("zod"))), path.join(opencode, "node_modules", "zod"), {
-            dereference: true,
-            recursive: true,
-          }),
-        )
+        const opencode = path.join(dir, ".swust-code")
+        const tool = path.join(opencode, "tool")
+        yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
         yield* Effect.promise(() =>
           Bun.write(
-            path.join(plugin, "package.json"),
-            JSON.stringify({ name: "@swust-code/plugin", type: "module", exports: { ".": "./dist/index.js" } }),
-          ),
-        )
-        yield* Effect.promise(() =>
-          Bun.write(
-            path.join(plugin, "dist", "index.js"),
+            path.join(tool, "hello.ts"),
             [
-              "import { z } from 'zod'",
-              "export function tool(input) {",
-              "  return input",
-              "}",
-              "tool.schema = z",
-              "",
-            ].join("\n"),
-          ),
-        )
-        yield* Effect.promise(() =>
-          Bun.write(
-            path.join(customTools, "addition.ts"),
-            [
-              'import { tool } from "@swust-code/plugin"',
-              "export default tool({",
-              "  description: 'Use this tool to add two numbers and return their sum.',",
-              "  args: {",
-              "    left: tool.schema.number().describe('The first number to add'),",
-              "    right: tool.schema.number().describe('The second number to add'),",
+              "export default {",
+              "  description: 'hello tool',",
+              "  args: {},",
+              "  execute: async () => {",
+              "    return 'hello world'",
               "  },",
-              "  execute: async (args) => `${args.left} + ${args.right} = ${args.left + args.right}`,",
-              "})",
+              "}",
               "",
             ].join("\n"),
           ),
         )
-
         const registry = yield* ToolRegistry.Service
-        const loaded = (yield* registry.all()).find((tool) => tool.id === "addition")
-        if (!loaded) throw new Error("custom addition tool was not loaded")
-
-        expect(ToolJsonSchema.fromTool(loaded)).toMatchObject({
-          properties: {
-            left: { type: "number", description: "The first number to add" },
-            right: { type: "number", description: "The second number to add" },
-          },
-        })
+        const ids = yield* registry.ids()
+        expect(ids).toContain("hello")
       }),
-    20_000,
+    ),
   )
 
-  it.instance("preserves attachments from structured custom tool results", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const customTools = path.join(test.directory, ".swust-code", "tools")
-      const pluginTool = pathToFileURL(path.resolve(import.meta.dir, "../../../plugin/src/tool.ts")).href
-      yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(customTools, "image.ts"),
-          [
-            `import { tool } from ${JSON.stringify(pluginTool)}`,
-            "export default tool({",
-            "  description: 'image tool',",
-            "  args: {},",
-            "  execute: async () => ({",
-            "    output: 'here is an image',",
-            "    attachments: [{ type: 'file', mime: 'image/png', filename: 'picture.png', url: 'data:image/png;base64,AAAA' }],",
-            "  }),",
-            "})",
-            "",
-          ].join("\n"),
-        ),
-      )
-
-      const registry = yield* ToolRegistry.Service
-      const loaded = (yield* registry.all()).find((tool) => tool.id === "image")
-      if (!loaded) throw new Error("custom image tool was not loaded")
-      const agents = yield* Agent.Service
-      const result = yield* loaded.execute({}, {
-        sessionID: SessionID.make("ses_test"),
-        messageID: MessageID.make("msg_test"),
-        agent: (yield* agents.defaultInfo()).name,
-        abort: new AbortController().signal,
-        messages: [],
-        metadata: () => Effect.void,
-        ask: () => Effect.void,
-      } satisfies Tool.Context)
-
-      expect(result.output).toBe("here is an image")
-      expect(result.attachments).toEqual([
-        { type: "file", mime: "image/png", filename: "picture.png", url: "data:image/png;base64,AAAA" },
-      ])
-    }),
+  it.live("loads tools from .swust-code/tools (plural)", () =>
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const opencode = path.join(dir, ".swust-code")
+        const tools = path.join(opencode, "tools")
+        yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(tools, "hello.ts"),
+            [
+              "export default {",
+              "  description: 'hello tool',",
+              "  args: {},",
+              "  execute: async () => {",
+              "    return 'hello world'",
+              "  },",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        )
+        const registry = yield* ToolRegistry.Service
+        const ids = yield* registry.ids()
+        expect(ids).toContain("hello")
+      }),
+    ),
   )
 
-  it.instance("loads legacy JSON-schema-shaped custom tools with wire schema", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const tools = path.join(test.directory, ".swust-code", "tools")
-      yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(tools, "legacy.ts"),
-          [
-            "export default {",
-            "  description: 'legacy schema tool',",
-            "  args: { text: { type: 'string', description: 'Text to render' } },",
-            "  execute: async ({ text }) => text,",
-            "}",
-            "",
-          ].join("\n"),
-        ),
-      )
-
-      const registry = yield* ToolRegistry.Service
-      const loaded = (yield* registry.all()).find((tool) => tool.id === "legacy")
-      if (!loaded) throw new Error("legacy custom tool was not loaded")
-      expect(ToolJsonSchema.fromTool(loaded)).toMatchObject({
-        type: "object",
-        properties: {
-          text: { type: "string", description: "Text to render" },
-        },
-        required: ["text"],
-      })
-    }),
-  )
-
-  it.instance("loads tools with external dependencies without crashing", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const opencode = path.join(test.directory, ".swust-code")
-      const tools = path.join(opencode, "tools")
-      yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(opencode, "package.json"),
-          JSON.stringify({
-            name: "custom-tools",
-            dependencies: {
-              "@swust-code/plugin": "^0.0.0",
-              cowsay: "^1.6.0",
-            },
-          }),
-        ),
-      )
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(opencode, "package-lock.json"),
-          JSON.stringify({
-            name: "custom-tools",
-            lockfileVersion: 3,
-            packages: {
-              "": {
-                dependencies: {
-                  "@swust-code/plugin": "^0.0.0",
-                  cowsay: "^1.6.0",
+  it.live("loads tools with external dependencies without crashing", () =>
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const opencode = path.join(dir, ".swust-code")
+        const tools = path.join(opencode, "tools")
+        yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(opencode, "package.json"),
+            JSON.stringify({
+              name: "custom-tools",
+              dependencies: {
+                "@swust-code/plugin": "^0.0.0",
+                cowsay: "^1.6.0",
+              },
+            }),
+          ),
+        )
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(opencode, "package-lock.json"),
+            JSON.stringify({
+              name: "custom-tools",
+              lockfileVersion: 3,
+              packages: {
+                "": {
+                  dependencies: {
+                    "@swust-code/plugin": "^0.0.0",
+                    cowsay: "^1.6.0",
+                  },
                 },
               },
-            },
-          }),
-        ),
-      )
+            }),
+          ),
+        )
 
-      const cowsay = path.join(opencode, "node_modules", "cowsay")
-      yield* Effect.promise(() => fs.mkdir(cowsay, { recursive: true }))
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(cowsay, "package.json"),
-          JSON.stringify({
-            name: "cowsay",
-            type: "module",
-            exports: "./index.js",
-          }),
-        ),
-      )
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(cowsay, "index.js"),
-          ["export function say({ text }) {", "  return `moo ${text}`", "}", ""].join("\n"),
-        ),
-      )
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(tools, "cowsay.ts"),
-          [
-            "import { say } from 'cowsay'",
-            "export default {",
-            "  description: 'tool that imports cowsay at top level',",
-            "  args: { text: { type: 'string' } },",
-            "  execute: async ({ text }: { text: string }) => {",
-            "    return say({ text })",
-            "  },",
-            "}",
-            "",
-          ].join("\n"),
-        ),
-      )
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-      expect(ids).toContain("cowsay")
-    }),
+        const cowsay = path.join(opencode, "node_modules", "cowsay")
+        yield* Effect.promise(() => fs.mkdir(cowsay, { recursive: true }))
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(cowsay, "package.json"),
+            JSON.stringify({
+              name: "cowsay",
+              type: "module",
+              exports: "./index.js",
+            }),
+          ),
+        )
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(cowsay, "index.js"),
+            ["export function say({ text }) {", "  return `moo ${text}`", "}", ""].join("\n"),
+          ),
+        )
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(tools, "cowsay.ts"),
+            [
+              "import { say } from 'cowsay'",
+              "export default {",
+              "  description: 'tool that imports cowsay at top level',",
+              "  args: { text: { type: 'string' } },",
+              "  execute: async ({ text }: { text: string }) => {",
+              "    return say({ text })",
+              "  },",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        )
+        const registry = yield* ToolRegistry.Service
+        const ids = yield* registry.ids()
+        expect(ids).toContain("cowsay")
+      }),
+    ),
+  )
+
+  it.live("todowrite tool is not registered; task is", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        const ids = yield* registry.ids()
+        expect(ids).not.toContain("todowrite")
+        expect(ids).not.toContain("todo")
+        expect(ids).toContain("task")
+      }),
+    ),
   )
 })

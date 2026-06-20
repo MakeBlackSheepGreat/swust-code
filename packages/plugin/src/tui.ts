@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AgentPart,
   OpencodeClient,
   Event,
@@ -6,6 +6,7 @@ import type {
   LspStatus,
   McpStatus,
   Todo,
+  SessionTaskResponse,
   Message,
   Part,
   Provider,
@@ -16,39 +17,11 @@ import type {
   TextPart,
   Config as SdkConfig,
 } from "@swust-code/sdk/v2"
-import type { CliRenderer, KeyEvent, RGBA, Renderable, SlotMode } from "@opentui/core"
-import type { Binding, Keymap } from "@opentui/keymap"
-import {
-  createBindingLookup as createKeymapBindingLookup,
-  type BindingConfig,
-  type CreateBindingLookupOptions,
-  type KeySequenceFormatPart,
-  type SequenceBindingLike,
-} from "@opentui/keymap/extras"
+import type { CliRenderer, ParsedKey, RGBA, SlotMode } from "@opentui/core"
 import type { JSX, SolidPlugin } from "@opentui/solid"
 import type { Config as PluginConfig, PluginOptions } from "./index.js"
 
-export type { CliRenderer, KeyEvent, Renderable, SlotMode } from "@opentui/core"
-export { stringifyKeySequence, stringifyKeyStroke } from "@opentui/keymap"
-export type { Binding, KeyLike, KeySequencePart, KeyStringifyInput, StringifyOptions } from "@opentui/keymap"
-export { formatCommandBindings, formatKeySequence } from "@opentui/keymap/extras"
-export type {
-  BindingConfig,
-  BindingLookup,
-  BindingValue,
-  CreateBindingLookupOptions,
-  FormatCommandBindingsOptions,
-  FormatKeySequenceOptions,
-  KeySequenceFormatPart,
-  SequenceBindingLike,
-} from "@opentui/keymap/extras"
-
-export function createBindingLookup(
-  config: BindingConfig<Renderable, KeyEvent> | undefined,
-  options?: CreateBindingLookupOptions<Renderable, KeyEvent>,
-) {
-  return createKeymapBindingLookup<Renderable, KeyEvent>(config ?? {}, options)
-}
+export type { CliRenderer, SlotMode } from "@opentui/core"
 
 export type TuiRouteCurrent =
   | {
@@ -71,23 +44,6 @@ export type TuiRouteDefinition = {
   render: (input: { params?: Record<string, unknown> }) => JSX.Element
 }
 
-export type TuiKeys = {
-  formatSequence: (parts: readonly KeySequenceFormatPart[] | undefined) => string
-  formatBindings: (bindings: readonly SequenceBindingLike[] | undefined) => string | undefined
-}
-
-export type TuiKeymap = Keymap<Renderable, KeyEvent>
-
-export type TuiModeApi = {
-  current: () => string
-  push: (mode: string) => () => void
-}
-
-/**
- * Legacy `api.command` shape kept so v1 plugins can initialize. Remove in v2.
- *
- * @deprecated Use `api.keymap.registerLayer({ commands, bindings })` instead.
- */
 export type TuiCommand = {
   title: string
   value: string
@@ -101,22 +57,25 @@ export type TuiCommand = {
     name: string
     aliases?: string[]
   }
-  onSelect?: (dialog?: TuiDialogStack) => void | Promise<void>
+  onSelect?: () => void
 }
 
-/**
- * Legacy `api.command` API kept so v1 plugins can initialize. Remove in v2.
- *
- * @deprecated Use `api.keymap.registerLayer`, `api.keymap.dispatchCommand`, and
- * `api.keymap.dispatchCommand("command.palette.show")` instead.
- */
-export type TuiCommandApi = {
-  /** @deprecated Use `api.keymap.registerLayer({ commands, bindings })` instead. */
-  register: (cb: () => TuiCommand[]) => () => void
-  /** @deprecated Use `api.keymap.dispatchCommand(name)` instead. */
-  trigger: (value: string) => void
-  /** @deprecated Use `api.keymap.dispatchCommand("command.palette.show")` instead. */
-  show: () => void
+export type TuiKeybind = {
+  name: string
+  ctrl: boolean
+  meta: boolean
+  shift: boolean
+  super?: boolean
+  leader: boolean
+}
+
+export type TuiKeybindMap = Record<string, string>
+
+export type TuiKeybindSet = {
+  readonly all: TuiKeybindMap
+  get: (name: string) => string
+  match: (name: string, evt: ParsedKey) => boolean
+  print: (name: string) => string
 }
 
 export type TuiDialogProps = {
@@ -206,10 +165,12 @@ export type TuiPromptRef = {
   blur(): void
   focus(): void
   submit(): void
+  paste(): void
 }
 
 export type TuiPromptProps = {
   sessionID?: string
+  workspaceID?: string
   visible?: boolean
   disabled?: boolean
   onSubmit?: () => void
@@ -377,6 +338,7 @@ export type TuiState = {
   readonly config: SdkConfig
   readonly provider: ReadonlyArray<Provider>
   readonly path: {
+    home: string
     state: string
     config: string
     worktree: string
@@ -388,24 +350,25 @@ export type TuiState = {
     get: (sessionID: string) => Session | undefined
     diff: (sessionID: string) => ReadonlyArray<TuiSidebarFileItem>
     todo: (sessionID: string) => ReadonlyArray<TuiSidebarTodoItem>
+    task: (sessionID: string) => ReadonlyArray<TuiSidebarTaskItem>
     messages: (sessionID: string) => ReadonlyArray<Message>
     status: (sessionID: string) => SessionStatus | undefined
+    goal: (sessionID: string) => TuiSidebarGoal | undefined
+    cwd: (sessionID: string) => string | undefined
     permission: (sessionID: string) => ReadonlyArray<PermissionRequest>
     question: (sessionID: string) => ReadonlyArray<QuestionRequest>
   }
   part: (messageID: string) => ReadonlyArray<Part>
   lsp: () => ReadonlyArray<TuiSidebarLspItem>
   mcp: () => ReadonlyArray<TuiSidebarMcpItem>
+  instructions: () => ReadonlyArray<string>
 }
 
-type TuiBindingLookupView = {
-  readonly bindings: ReadonlyArray<Binding<Renderable, KeyEvent>>
-  get: (command: string) => ReadonlyArray<Binding<Renderable, KeyEvent>>
-  has: (command: string) => boolean
-  gather: (name: string, commands: readonly string[]) => ReadonlyArray<Binding<Renderable, KeyEvent>>
-  pick: (name: string, commands: readonly string[]) => Binding<Renderable, KeyEvent>[]
-  omit: (name: string, commands: readonly string[]) => Binding<Renderable, KeyEvent>[]
-}
+type TuiConfigView = Pick<PluginConfig, "$schema" | "theme" | "keybinds" | "plugin"> &
+  NonNullable<PluginConfig["tui"]> & {
+    attention: TuiAttentionConfigView
+    plugin_enabled?: Record<string, boolean>
+  }
 
 type TuiAttentionConfigView = {
   enabled: boolean
@@ -415,14 +378,6 @@ type TuiAttentionConfigView = {
   sound_pack: string
   sounds: Partial<Record<TuiAttentionSoundName, string>>
 }
-
-type TuiConfigView = Pick<PluginConfig, "$schema" | "theme" | "plugin"> &
-  NonNullable<PluginConfig["tui"]> & {
-    leader_timeout: number
-    attention: TuiAttentionConfigView
-    plugin_enabled?: Record<string, boolean>
-    keybinds: TuiBindingLookupView
-  }
 
 export type TuiApp = {
   readonly version: string
@@ -444,7 +399,26 @@ export type TuiSidebarMcpItem = {
 
 export type TuiSidebarLspItem = Pick<LspStatus, "id" | "root" | "status">
 
+export type TuiSidebarGoalVerdict = {
+  ok: boolean
+  impossible?: boolean
+  reason: string
+  attempt: number
+  error?: boolean
+}
+
+export type TuiSidebarGoal = {
+  condition?: string
+  verdicts: { [messageID: string]: TuiSidebarGoalVerdict }
+  lastMessageID?: string
+}
+
 export type TuiSidebarTodoItem = Pick<Todo, "content" | "status">
+
+export type TuiSidebarTaskItem = Pick<
+  SessionTaskResponse[number],
+  "id" | "status" | "summary" | "owner" | "ended_at"
+>
 
 export type TuiSidebarFileItem = {
   file: string
@@ -454,12 +428,14 @@ export type TuiSidebarFileItem = {
 
 export type TuiHostSlotMap = {
   app: {}
-  app_bottom: {}
   home_logo: {}
   home_prompt: {
+    workspace_id?: string
     ref?: (ref: TuiPromptRef | undefined) => void
   }
-  home_prompt_right: {}
+  home_prompt_right: {
+    workspace_id?: string
+  }
   session_prompt: {
     session_id: string
     visible?: boolean
@@ -581,16 +557,11 @@ export type TuiWorkspace = {
 export type TuiPluginApi = {
   app: TuiApp
   attention: TuiAttention
-  /**
-   * Legacy `api.command` API kept so v1 plugins can initialize. Remove in v2.
-   *
-   * @deprecated Use `api.keymap.registerLayer`, `api.keymap.dispatchCommand`, and
-   * `api.keymap.dispatchCommand("command.palette.show")` instead.
-   */
-  command?: TuiCommandApi
-  keys: TuiKeys
-  keymap: TuiKeymap
-  mode: TuiModeApi
+  command: {
+    register: (cb: () => TuiCommand[]) => () => void
+    trigger: (value: string) => void
+    show: () => void
+  }
   route: {
     register: (routes: TuiRouteDefinition[]) => () => void
     navigate: (name: string, params?: Record<string, unknown>) => void
@@ -606,6 +577,11 @@ export type TuiPluginApi = {
     Prompt: (props: TuiPromptProps) => JSX.Element
     toast: (input: TuiToast) => void
     dialog: TuiDialogStack
+  }
+  keybind: {
+    match: (key: string, evt: ParsedKey) => boolean
+    print: (key: string) => string
+    create: (defaults: TuiKeybindMap, overrides?: Record<string, unknown>) => TuiKeybindSet
   }
   readonly tuiConfig: Frozen<TuiConfigView>
   kv: TuiKV

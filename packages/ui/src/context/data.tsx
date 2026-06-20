@@ -1,21 +1,13 @@
-import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, Provider } from "@swust-code/sdk/v2"
+﻿import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, ProviderListResponse } from "@swust-code/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
-
-export type NormalizedProviderListResponse = {
-  all: Map<string, Provider>
-  default: {
-    [key: string]: string
-  }
-  connected: Array<string>
-}
 
 type Data = {
   agent?: {
     name: string
     color?: string
   }[]
-  provider?: NormalizedProviderListResponse
+  provider?: ProviderListResponse
   session: Session[]
   session_status: {
     [sessionID: string]: SessionStatus
@@ -31,9 +23,6 @@ type Data = {
   }
   part: {
     [messageID: string]: Part[]
-  }
-  part_text_accum_delta?: {
-    [partID: string]: string
   }
 }
 

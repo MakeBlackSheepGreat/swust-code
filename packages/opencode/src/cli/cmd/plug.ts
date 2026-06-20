@@ -1,16 +1,16 @@
 import { intro, log, outro, spinner } from "@clack/prompts"
-import { Effect } from "effect"
+import type { Argv } from "yargs"
 
-import { ConfigPaths } from "@/config/paths"
-import { Global } from "@swust-code/core/global"
+import { ConfigPaths } from "../../config"
+import { Global } from "../../global"
 import { installPlugin, patchPluginConfig, readPluginManifest } from "../../plugin/install"
 import { resolvePluginTarget } from "../../plugin/shared"
+import { Instance } from "../../project/instance"
 import { errorMessage } from "../../util/error"
-import { Filesystem } from "@/util/filesystem"
-import { Process } from "@/util/process"
+import { Filesystem } from "../../util"
+import { Process } from "../../util"
 import { UI } from "../ui"
-import { effectCmd } from "../effect-cmd"
-import { InstanceRef } from "@/effect/instance-ref"
+import { cmd } from "./cmd"
 
 type Spin = {
   start: (msg: string) => void
@@ -28,7 +28,7 @@ export type PlugDeps = {
   readText: (file: string) => Promise<string>
   write: (file: string, text: string) => Promise<void>
   exists: (file: string) => Promise<boolean>
-  files: (dir: string, name: "opencode" | "tui") => string[]
+  files: (dir: string, name: "swust-code" | "tui") => string[]
   global: string
 }
 
@@ -175,12 +175,12 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
   }
 }
 
-export const PluginCommand = effectCmd({
+export const PluginCommand = cmd({
   command: "plugin <module>",
   aliases: ["plug"],
   describe: "install plugin and update config",
-  builder: (yargs) =>
-    yargs
+  builder: (yargs: Argv) => {
+    return yargs
       .positional("module", {
         type: "string",
         describe: "npm module name",
@@ -196,8 +196,9 @@ export const PluginCommand = effectCmd({
         type: "boolean",
         default: false,
         describe: "replace existing plugin version",
-      }),
-  handler: Effect.fn("Cli.plug")(function* (args) {
+      })
+  },
+  handler: async (args) => {
     const mod = String(args.module ?? "").trim()
     if (!mod) {
       UI.error("module is required")
@@ -213,18 +214,20 @@ export const PluginCommand = effectCmd({
       global: Boolean(args.global),
       force: Boolean(args.force),
     })
+    let ok = true
 
-    const ctx = yield* InstanceRef
-    if (!ctx) return
-    const ok = yield* Effect.promise(() =>
-      run({
-        vcs: ctx.project.vcs,
-        worktree: ctx.worktree,
-        directory: ctx.directory,
-      }),
-    )
+    await Instance.provide({
+      directory: process.cwd(),
+      fn: async () => {
+        ok = await run({
+          vcs: Instance.project.vcs,
+          worktree: Instance.worktree,
+          directory: Instance.directory,
+        })
+      },
+    })
 
     outro("Done")
     if (!ok) process.exitCode = 1
-  }),
+  },
 })

@@ -1,7 +1,6 @@
 import type { Argv, InferredOptionTypes } from "yargs"
-import { ConfigV1 } from "@swust-code/core/v1/config/config"
-import type { Config } from "@/config/config"
-import { Effect } from "effect"
+import { Config } from "../config"
+import { AppRuntime } from "@/effect/app-runtime"
 
 const options = {
   port: {
@@ -37,13 +36,12 @@ export type NetworkOptions = InferredOptionTypes<typeof options>
 export function withNetworkOptions<T>(yargs: Argv<T>) {
   return yargs.options(options)
 }
-export const resolveNetworkOptions = Effect.fn("Cli.resolveNetworkOptions")(function* (args: NetworkOptions) {
-  const { Config } = yield* Effect.promise(() => import("@/config/config"))
-  const config = yield* Config.Service.use((cfg) => cfg.getGlobal())
+export async function resolveNetworkOptions(args: NetworkOptions) {
+  const config = await AppRuntime.runPromise(Config.Service.use((cfg) => cfg.getGlobal()))
   return resolveNetworkOptionsNoConfig(args, config)
-})
+}
 
-export function resolveNetworkOptionsNoConfig(args: NetworkOptions, config?: ConfigV1.Info) {
+export function resolveNetworkOptionsNoConfig(args: NetworkOptions, config?: Config.Info) {
   const portExplicitlySet = process.argv.includes("--port")
   const hostnameExplicitlySet = process.argv.includes("--hostname")
   const mdnsExplicitlySet = process.argv.includes("--mdns")

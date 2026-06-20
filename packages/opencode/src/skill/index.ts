@@ -1,86 +1,55 @@
-import { LayerNode } from "@swust-code/core/effect/layer-node"
+﻿import os from "os"
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context, Schema } from "effect"
-import { NamedError } from "@swust-code/core/util/error"
+import z from "zod"
+import { Effect, Layer, Context } from "effect"
+import { NamedError } from "@swust-code/shared/util/error"
 import type { Agent } from "@/agent/agent"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { InstanceState } from "@/effect/instance-state"
-import { Global } from "@swust-code/core/global"
-import { SkillPlugin } from "@swust-code/core/plugin/skill"
+import { Bus } from "@/bus"
+import { InstanceState } from "@/effect"
+import { Flag } from "@/flag/flag"
+import { Global } from "@/global"
 import { Permission } from "@/permission"
-import { FSUtil } from "@swust-code/core/fs-util"
-import { Config } from "@/config/config"
-import { FrontmatterError } from "@swust-code/core/v1/config/error"
-import { ConfigMarkdown } from "@/config/markdown"
-import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Glob } from "@swust-code/core/util/glob"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
+import { Config } from "../config"
+import { ConfigMarkdown } from "../config"
+import { Glob } from "@swust-code/shared/util/glob"
+import { Log } from "../util"
 import { Discovery } from "./discovery"
-import { isRecord } from "@/util/record"
 import { extractComposeBundle } from "./compose/extract"
 
-const CLAUDE_EXTERNAL_DIR = ".claude"
-const AGENTS_EXTERNAL_DIR = ".agents"
+const log = Log.create({ service: "skill" })
+const EXTERNAL_DIRS = [".claude", ".agents", ".codex", ".opencode"]
 const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
 const SWUST_CODE_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
 const SKILL_PATTERN = "**/SKILL.md"
 
-// Built-in skill that ships with SWUST Code. The model's intuition for what a
-// swust-code.json should look like is often wrong, and SWUST Code hard-fails on
-// invalid config, so users hit cryptic startup errors. Loading this skill
-// when the model is asked to touch SWUST Code's own config files gives it the
-// actual schemas instead of guesses.
-const CUSTOMIZE_SWUST_CODE_SKILL_NAME = "customize-swust-code"
-const CUSTOMIZE_SWUST_CODE_SKILL_DESCRIPTION =
-  "Use ONLY when the user is editing or creating SWUST Code's own configuration: swust-code.json, swust-code.jsonc, files under .swust-code/, or files under ~/.config/swust-code/. Also use when creating or fixing SWUST Code agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring SWUST Code itself."
-const CUSTOMIZE_SWUST_CODE_SKILL_BODY = SkillPlugin.CustomizeOpencodeContent
-
-export const Info = Schema.Struct({
-  name: Schema.String,
-  description: Schema.optional(Schema.String),
-  location: Schema.String,
-  content: Schema.String,
-  hidden: Schema.optional(Schema.Boolean),
+export const Info = z.object({
+  name: z.string(),
+  description: z.string(),
+  location: z.string(),
+  content: z.string(),
+  hidden: z.boolean().optional(),
 })
-export type Info = Schema.Schema.Type<typeof Info>
+export type Info = z.infer<typeof Info>
 
-const Issue = Schema.StructWithRest(
-  Schema.Struct({
-    message: Schema.String,
-    path: Schema.Array(Schema.String),
+export const InvalidError = NamedError.create(
+  "SkillInvalidError",
+  z.object({
+    path: z.string(),
+    message: z.string().optional(),
+    issues: z.custom<z.core.$ZodIssue[]>().optional(),
   }),
-  [Schema.Record(Schema.String, Schema.Unknown)],
 )
 
-function isSkillFrontmatter(data: unknown): data is { name: string; description?: string; hidden?: boolean } {
-  return (
-    isRecord(data) &&
-    typeof data.name === "string" &&
-    (data.description === undefined || typeof data.description === "string") &&
-    (data.hidden === undefined || typeof data.hidden === "boolean")
-  )
-}
-
-export class InvalidError extends Schema.TaggedErrorClass<InvalidError>()("SkillInvalidError", {
-  path: Schema.String,
-  message: Schema.optional(Schema.String),
-  issues: Schema.optional(Schema.Array(Issue)),
-}) {}
-
-export class NameMismatchError extends Schema.TaggedErrorClass<NameMismatchError>()("SkillNameMismatchError", {
-  path: Schema.String,
-  expected: Schema.String,
-  actual: Schema.String,
-}) {}
-
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Skill.NotFoundError", {
-  name: Schema.String,
-  available: Schema.Array(Schema.String),
-}) {
-  override get message() {
-    return `Skill "${this.name}" not found. Available skills: ${this.available.join(", ") || "none"}`
-  }
-}
+export const NameMismatchError = NamedError.create(
+  "SkillNameMismatchError",
+  z.object({
+    path: z.string(),
+    expected: z.string(),
+    actual: z.string(),
+  }),
+)
 
 type State = {
   skills: Record<string, Info>
@@ -99,23 +68,25 @@ type ScanState = {
 
 export interface Interface {
   readonly get: (name: string) => Effect.Effect<Info | undefined>
-  readonly require: (name: string) => Effect.Effect<Info, NotFoundError>
   readonly all: () => Effect.Effect<Info[]>
   readonly dirs: () => Effect.Effect<string[]>
   readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
+  readonly reload: () => Effect.Effect<void>
 }
 
-const add = Effect.fnUntraced(function* (state: State, match: string, events: EventV2Bridge.Service["Service"]) {
+const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.Interface) {
   const md = yield* Effect.tryPromise({
     try: () => ConfigMarkdown.parse(match),
     catch: (err) => err,
   }).pipe(
     Effect.catch(
       Effect.fnUntraced(function* (err) {
-        const message = FrontmatterError.isInstance(err) ? err.data.message : `Failed to parse skill ${match}`
-        const { Session } = yield* Effect.promise(() => import("@/session/session"))
-        yield* events.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
-        yield* Effect.logError("failed to load skill", { skill: match, error: err })
+        const message = ConfigMarkdown.FrontmatterError.isInstance(err)
+          ? err.data.message
+          : `Failed to parse skill ${match}`
+        const { Session } = yield* Effect.promise(() => import("@/session"))
+        yield* bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
+        log.error("failed to load skill", { skill: match, err })
         return undefined
       }),
     ),
@@ -123,23 +94,24 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
 
   if (!md) return
 
-  if (!isSkillFrontmatter(md.data)) return
+  const parsed = Info.pick({ name: true, description: true, hidden: true }).safeParse(md.data)
+  if (!parsed.success) return
 
-  if (state.skills[md.data.name]) {
-    yield* Effect.logWarning("duplicate skill name", {
-      name: md.data.name,
-      existing: state.skills[md.data.name].location,
+  if (state.skills[parsed.data.name]) {
+    log.warn("duplicate skill name", {
+      name: parsed.data.name,
+      existing: state.skills[parsed.data.name].location,
       duplicate: match,
     })
   }
 
   state.dirs.add(path.dirname(match))
-  state.skills[md.data.name] = {
-    name: md.data.name,
-    description: md.data.description,
+  state.skills[parsed.data.name] = {
+    name: parsed.data.name,
+    description: parsed.data.description,
     location: match,
     content: md.content,
-    hidden: md.data.hidden,
+    hidden: parsed.data.hidden,
   }
 })
 
@@ -162,9 +134,8 @@ const scan = Effect.fnUntraced(function* (
   }).pipe(
     Effect.catch((error) => {
       if (!opts?.scope) return Effect.die(error)
-      return Effect.logError(`failed to scan ${opts.scope} skills`, { dir: root, error: error }).pipe(
-        Effect.as([] as string[]),
-      )
+      log.error(`failed to scan ${opts.scope} skills`, { dir: root, error })
+      return Effect.succeed([] as string[])
     }),
   )
 
@@ -177,22 +148,32 @@ const scan = Effect.fnUntraced(function* (
 const discoverSkills = Effect.fnUntraced(function* (
   config: Config.Interface,
   discovery: Discovery.Interface,
-  fsys: FSUtil.Interface,
-  global: Global.Interface,
-  disableExternalSkills: boolean,
-  disableClaudeCodeSkills: boolean,
+  fsys: AppFileSystem.Interface,
   directory: string,
   worktree: string,
 ) {
   const state: ScanState = { matches: new Set(), dirs: new Set() }
 
-  const externalDirs: string[] = []
-  if (!disableExternalSkills) {
-    if (!disableClaudeCodeSkills) externalDirs.push(CLAUDE_EXTERNAL_DIR)
-    externalDirs.push(AGENTS_EXTERNAL_DIR)
+  // Extract compose skills to disk first (user skills with same name override)
+  if (!Flag.SWUST_CODE_DISABLE_COMPOSE_SKILLS) {
+    const composeSkillRoot = yield* extractComposeBundle(fsys).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    )
+    if (composeSkillRoot && (yield* fsys.isDir(composeSkillRoot))) {
+      yield* scan(state, composeSkillRoot, SKILL_PATTERN, { scope: "compose" })
+    }
+  }
+
+  if (!Flag.SWUST_CODE_DISABLE_EXTERNAL_SKILLS) {
+    const externalDirs = EXTERNAL_DIRS.filter((dir) => {
+      if (dir === ".claude" && Flag.SWUST_CODE_DISABLE_CLAUDE_CODE_SKILLS) return false
+      if (dir === ".codex" && Flag.SWUST_CODE_DISABLE_CODEX_SKILLS) return false
+      if (dir === ".opencode" && Flag.SWUST_CODE_DISABLE_OPENCODE_SKILLS) return false
+      return true
+    })
 
     for (const dir of externalDirs) {
-      const root = path.join(global.home, dir)
+      const root = path.join(Global.Path.home, dir)
       if (!(yield* fsys.isDir(root))) continue
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
     }
@@ -206,15 +187,6 @@ const discoverSkills = Effect.fnUntraced(function* (
     }
   }
 
-  const composeSkillRoot = yield* extractComposeBundle(fsys).pipe(
-    Effect.catch((error) =>
-      Effect.logError("failed to extract compose skills", { error }).pipe(Effect.as(undefined)),
-    ),
-  )
-  if (composeSkillRoot && (yield* fsys.isDir(composeSkillRoot))) {
-    yield* scan(state, composeSkillRoot, SKILL_PATTERN, { scope: "compose" })
-  }
-
   const configDirs = yield* config.directories()
   for (const dir of configDirs) {
     yield* scan(state, dir, SWUST_CODE_SKILL_PATTERN)
@@ -222,10 +194,10 @@ const discoverSkills = Effect.fnUntraced(function* (
 
   const cfg = yield* config.get()
   for (const item of cfg.skills?.paths ?? []) {
-    const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
+    const expanded = item.startsWith("~/") ? path.join(os.homedir(), item.slice(2)) : item
     const dir = path.isAbsolute(expanded) ? expanded : path.join(directory, expanded)
     if (!(yield* fsys.isDir(dir))) {
-      yield* Effect.logWarning("skill path not found", { path: dir })
+      log.warn("skill path not found", { path: dir })
       continue
     }
 
@@ -245,56 +217,33 @@ const discoverSkills = Effect.fnUntraced(function* (
   }
 })
 
-const loadSkills = Effect.fnUntraced(function* (
-  state: State,
-  discovered: DiscoveryState,
-  events: EventV2Bridge.Service["Service"],
-) {
-  yield* Effect.forEach(discovered.matches, (match) => add(state, match, events), {
+const loadSkills = Effect.fnUntraced(function* (state: State, discovered: DiscoveryState, bus: Bus.Interface) {
+  yield* Effect.forEach(discovered.matches, (match) => add(state, match, bus), {
     concurrency: "unbounded",
     discard: true,
   })
 
-  yield* Effect.logInfo("init", { count: Object.keys(state.skills).length })
+  log.info("init", { count: Object.keys(state.skills).length })
 })
 
-export class Service extends Context.Service<Service, Interface>()("@swust-code/Skill") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/Skill") {}
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const discovery = yield* Discovery.Service
     const config = yield* Config.Service
-    const events = yield* EventV2Bridge.Service
-    const fsys = yield* FSUtil.Service
-    const global = yield* Global.Service
-    const flags = yield* RuntimeFlags.Service
+    const bus = yield* Bus.Service
+    const fsys = yield* AppFileSystem.Service
     const discovered = yield* InstanceState.make(
       Effect.fn("Skill.discovery")(function* (ctx) {
-        return yield* discoverSkills(
-          config,
-          discovery,
-          fsys,
-          global,
-          flags.disableExternalSkills,
-          flags.disableClaudeCodeSkills,
-          ctx.directory,
-          ctx.worktree,
-        )
+        return yield* discoverSkills(config, discovery, fsys, ctx.directory, ctx.worktree)
       }),
     )
     const state = yield* InstanceState.make(
-      Effect.fn("Skill.state")(function* () {
+      Effect.fn("Skill.state")(function* (ctx) {
         const s: State = { skills: {}, dirs: new Set() }
-        // Register the built-in skill BEFORE disk discovery so a user-disk
-        // skill with the same name can override it.
-        s.skills[CUSTOMIZE_SWUST_CODE_SKILL_NAME] = {
-          name: CUSTOMIZE_SWUST_CODE_SKILL_NAME,
-          description: CUSTOMIZE_SWUST_CODE_SKILL_DESCRIPTION,
-          location: "<built-in>",
-          content: CUSTOMIZE_SWUST_CODE_SKILL_BODY,
-        }
-        yield* loadSkills(s, yield* InstanceState.get(discovered), events)
+        yield* loadSkills(s, yield* InstanceState.get(discovered), bus)
         return s
       }),
     )
@@ -302,13 +251,6 @@ export const layer = Layer.effect(
     const get = Effect.fn("Skill.get")(function* (name: string) {
       const s = yield* InstanceState.get(state)
       return s.skills[name]
-    })
-
-    const require = Effect.fn("Skill.require")(function* (name: string) {
-      const s = yield* InstanceState.get(state)
-      const info = s.skills[name]
-      if (info) return info
-      return yield* new NotFoundError({ name, available: Object.keys(s.skills).toSorted() })
     })
 
     const all = Effect.fn("Skill.all")(function* () {
@@ -322,34 +264,37 @@ export const layer = Layer.effect(
 
     const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
       const s = yield* InstanceState.get(state)
-      const list = Object.values(s.skills)
-        .filter((skill) => !skill.hidden)
-        .toSorted((a, b) => a.name.localeCompare(b.name))
+      let list: Info[] = Object.values(s.skills)
+        .filter((sk) => !sk.hidden)
+
+      list = list.toSorted((a, b) => a.name.localeCompare(b.name))
       if (!agent) return list
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
     })
 
-    return Service.of({ get, require, all, dirs, available })
+    const reload = Effect.fn("Skill.reload")(function* () {
+      yield* InstanceState.invalidate(discovered)
+      yield* InstanceState.invalidate(state)
+    })
+
+    return Service.of({ get, all, dirs, available, reload })
   }),
 )
 
 export const defaultLayer = layer.pipe(
   Layer.provide(Discovery.defaultLayer),
   Layer.provide(Config.defaultLayer),
-  Layer.provide(EventV2Bridge.defaultLayer),
-  Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(Global.layer),
-  Layer.provide(RuntimeFlags.defaultLayer),
+  Layer.provide(Bus.layer),
+  Layer.provide(AppFileSystem.defaultLayer),
 )
 
 export function fmt(list: Info[], opts: { verbose: boolean }) {
-  const described = list.filter((skill) => skill.description !== undefined)
-  if (described.length === 0) return "No skills are currently available."
+  if (list.length === 0) return "No skills are currently available."
   if (opts.verbose) {
     return [
       "<available_skills>",
-      ...described
-        .toSorted((a, b) => a.name.localeCompare(b.name))
+      ...list
+        .sort((a, b) => a.name.localeCompare(b.name))
         .flatMap((skill) => [
           "  <skill>",
           `    <name>${skill.name}</name>`,
@@ -363,19 +308,10 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
 
   return [
     "## Available Skills",
-    ...described
+    ...list
       .toSorted((a, b) => a.name.localeCompare(b.name))
       .map((skill) => `- **${skill.name}**: ${skill.description}`),
   ].join("\n")
 }
-
-export const node = LayerNode.make(layer, [
-  Discovery.node,
-  Config.node,
-  EventV2Bridge.node,
-  FSUtil.node,
-  Global.node,
-  RuntimeFlags.node,
-])
 
 export * as Skill from "."

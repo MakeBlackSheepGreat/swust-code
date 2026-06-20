@@ -1,4 +1,4 @@
-import { Button } from "@swust-code/ui/button"
+﻿import { Button } from "@swust-code/ui/button"
 import { useDialog } from "@swust-code/ui/context/dialog"
 import { Dialog } from "@swust-code/ui/dialog"
 import { TextField } from "@swust-code/ui/text-field"
@@ -6,31 +6,28 @@ import { useMutation } from "@tanstack/solid-query"
 import { Icon } from "@swust-code/ui/icon"
 import { createMemo, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useGlobalSDK } from "@/context/global-sdk"
+import { useGlobalSync } from "@/context/global-sync"
 import { type LocalProject, getAvatarColors } from "@/context/layout"
-import { getFilename } from "@swust-code/core/util/path"
+import { getFilename } from "@swust-code/shared/util/path"
 import { Avatar } from "@swust-code/ui/avatar"
 import { useLanguage } from "@/context/language"
-import { getProjectAvatarSource } from "@/pages/layout/helpers"
-import { ServerConnection } from "@/context/server"
-import { useGlobal } from "@/context/global"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 
-export function DialogEditProject(props: { project: LocalProject; server: ServerConnection.Any }) {
+export function DialogEditProject(props: { project: LocalProject }) {
   const dialog = useDialog()
-  const global = useGlobal()
+  const globalSDK = useGlobalSDK()
+  const globalSync = useGlobalSync()
   const language = useLanguage()
-  const serverCtx = createMemo(() => global.createServerCtx(props.server))
-  const serverSDK = () => serverCtx().sdk
-  const serverSync = () => serverCtx().sync
 
   const folderName = createMemo(() => getFilename(props.project.worktree))
   const defaultName = createMemo(() => props.project.name || folderName())
 
   const [store, setStore] = createStore({
     name: defaultName(),
-    color: props.project.icon?.color,
-    iconOverride: props.project.icon?.override,
+    color: props.project.icon?.color || "pink",
+    iconUrl: props.project.icon?.override || "",
     startup: props.project.commands?.start ?? "",
     dragOver: false,
     iconHover: false,
@@ -42,7 +39,7 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
     if (!file.type.startsWith("image/")) return
     const reader = new FileReader()
     reader.onload = (e) => {
-      setStore("iconOverride", e.target?.result as string)
+      setStore("iconUrl", e.target?.result as string)
       setStore("iconHover", false)
     }
     reader.readAsDataURL(file)
@@ -71,7 +68,7 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
   }
 
   function clearIcon() {
-    setStore("iconOverride", "")
+    setStore("iconUrl", "")
   }
 
   const saveMutation = useMutation(() => ({
@@ -80,21 +77,21 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
       const start = store.startup.trim()
 
       if (props.project.id && props.project.id !== "global") {
-        await serverSDK().client.project.update({
+        await globalSDK.client.project.update({
           projectID: props.project.id,
           directory: props.project.worktree,
           name,
-          icon: { color: store.color || "", override: store.iconOverride || "" },
+          icon: { color: store.color, override: store.iconUrl },
           commands: { start },
         })
-        serverSync().project.icon(props.project.worktree, store.iconOverride || undefined)
+        globalSync.project.icon(props.project.worktree, store.iconUrl || undefined)
         dialog.close()
         return
       }
 
-      serverSync().project.meta(props.project.worktree, {
+      globalSync.project.meta(props.project.worktree, {
         name,
-        icon: { color: store.color || undefined, override: store.iconOverride || undefined },
+        icon: { color: store.color, override: store.iconUrl || undefined },
         commands: { start: start || undefined },
       })
       dialog.close()
@@ -133,13 +130,13 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
                   classList={{
                     "border-text-interactive-base bg-surface-info-base/20": store.dragOver,
                     "border-border-base hover:border-border-strong": !store.dragOver,
-                    "overflow-hidden": !!store.iconOverride,
+                    "overflow-hidden": !!store.iconUrl,
                   }}
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onClick={() => {
-                    if (store.iconOverride && store.iconHover) {
+                    if (store.iconUrl && store.iconHover) {
                       clearIcon()
                     } else {
                       iconInput?.click()
@@ -147,11 +144,7 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
                   }}
                 >
                   <Show
-                    when={getProjectAvatarSource(props.project.id, {
-                      color: store.color,
-                      url: props.project.icon?.url,
-                      override: store.iconOverride,
-                    })}
+                    when={store.iconUrl}
                     fallback={
                       <div class="size-full flex items-center justify-center">
                         <Avatar
@@ -162,20 +155,18 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
                       </div>
                     }
                   >
-                    {(src) => (
-                      <img
-                        src={src()}
-                        alt={language.t("dialog.project.edit.icon.alt")}
-                        class="size-full object-cover"
-                      />
-                    )}
+                    <img
+                      src={store.iconUrl}
+                      alt={language.t("dialog.project.edit.icon.alt")}
+                      class="size-full object-cover"
+                    />
                   </Show>
                 </div>
                 <div
                   class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-[6px] z-10 pointer-events-none flex items-center justify-center transition-opacity"
                   classList={{
-                    "opacity-100": store.iconHover && !store.iconOverride,
-                    "opacity-0": !(store.iconHover && !store.iconOverride),
+                    "opacity-100": store.iconHover && !store.iconUrl,
+                    "opacity-0": !(store.iconHover && !store.iconUrl),
                   }}
                 >
                   <Icon name="cloud-upload" size="large" class="text-icon-on-interactive-base drop-shadow-sm" />
@@ -183,8 +174,8 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
                 <div
                   class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-[6px] z-10 pointer-events-none flex items-center justify-center transition-opacity"
                   classList={{
-                    "opacity-100": store.iconHover && !!store.iconOverride,
-                    "opacity-0": !(store.iconHover && !!store.iconOverride),
+                    "opacity-100": store.iconHover && !!store.iconUrl,
+                    "opacity-0": !(store.iconHover && !!store.iconUrl),
                   }}
                 >
                   <Icon name="trash" size="large" class="text-icon-on-interactive-base drop-shadow-sm" />
@@ -207,7 +198,7 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
             </div>
           </div>
 
-          <Show when={!store.iconOverride}>
+          <Show when={!store.iconUrl}>
             <div class="flex flex-col gap-2">
               <label class="text-12-medium text-text-weak">{language.t("dialog.project.edit.color")}</label>
               <div class="flex gap-1.5">
@@ -224,10 +215,7 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
                         "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-weak-base":
                           store.color !== color,
                       }}
-                      onClick={() => {
-                        if (store.color === color && !props.project.icon?.url) return
-                        setStore("color", store.color === color ? undefined : color)
-                      }}
+                      onClick={() => setStore("color", color)}
                     >
                       <Avatar
                         fallback={store.name || defaultName()}

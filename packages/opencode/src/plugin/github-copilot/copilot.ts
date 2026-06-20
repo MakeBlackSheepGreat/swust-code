@@ -1,14 +1,15 @@
-import type { Hooks, PluginInput } from "@swust-code/plugin"
+﻿import type { Hooks, PluginInput } from "@swust-code/plugin"
 import type { Model } from "@swust-code/sdk/v2"
-import { InstallationVersion } from "@swust-code/core/installation/version"
+import { InstallationVersion } from "@/installation/version"
 import { iife } from "@/util/iife"
+import { Log } from "../../util"
 import { setTimeout as sleep } from "node:timers/promises"
 import { CopilotModels } from "./models"
 import { MessageV2 } from "@/session/message-v2"
 
+const log = Log.create({ service: "plugin.copilot" })
+
 const CLIENT_ID = "Ov23li8tweQw6odWQebz"
-const API_VERSION = "2026-06-01"
-const UTILITY_MODELS = ["gpt-5.4-nano", "gpt-4.1", "gpt-4o", "gpt-4o-mini"]
 // Add a small safety buffer when polling to avoid hitting the server
 // slightly too early due to clock skew / timer drift.
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000 // 3 seconds
@@ -55,13 +56,11 @@ function fix(model: Model, url: string): Model {
 
 export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
   const sdk = input.client
-  let models: Record<string, Model> = {}
   return {
     provider: {
       id: "github-copilot",
       async models(provider, ctx) {
         if (ctx.auth?.type !== "oauth") {
-          models = {}
           return Object.fromEntries(Object.entries(provider.models).map(([id, model]) => [id, fix(model, base())]))
         }
 
@@ -71,23 +70,15 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
           base(auth.enterpriseUrl),
           {
             Authorization: `Bearer ${auth.refresh}`,
-            "User-Agent": `opencode/${InstallationVersion}`,
-            "X-GitHub-Api-Version": API_VERSION,
+            "User-Agent": `swust-code/${InstallationVersion}`,
           },
           provider.models,
-        )
-          .then((result) => {
-            models = result.models
-            return Object.fromEntries(
-              Object.entries(result.models).filter(([, model]) => result.pickerEnabled.has(model.api.id)),
-            )
-          })
-          .catch((error) => {
-            models = {}
-            return Object.fromEntries(
-              Object.entries(provider.models).map(([id, model]) => [id, fix(model, base(auth.enterpriseUrl))]),
-            )
-          })
+        ).catch((error) => {
+          log.error("failed to fetch copilot models", { error })
+          return Object.fromEntries(
+            Object.entries(provider.models).map(([id, model]) => [id, fix(model, base(auth.enterpriseUrl))]),
+          )
+        })
       },
     },
     auth: {
@@ -159,7 +150,7 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
             const headers: Record<string, string> = {
               "x-initiator": isAgent ? "agent" : "user",
               ...(init?.headers as Record<string, string>),
-              "User-Agent": `opencode/${InstallationVersion}`,
+              "User-Agent": `swust-code/${InstallationVersion}`,
               Authorization: `Bearer ${info.refresh}`,
               "Openai-Intent": "conversation-edits",
             }
@@ -235,7 +226,7 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
               headers: {
                 Accept: "application/json",
                 "Content-Type": "application/json",
-                "User-Agent": `opencode/${InstallationVersion}`,
+                "User-Agent": `swust-code/${InstallationVersion}`,
               },
               body: JSON.stringify({
                 client_id: CLIENT_ID,
@@ -265,7 +256,7 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
                     headers: {
                       Accept: "application/json",
                       "Content-Type": "application/json",
-                      "User-Agent": `opencode/${InstallationVersion}`,
+                      "User-Agent": `swust-code/${InstallationVersion}`,
                     },
                     body: JSON.stringify({
                       client_id: CLIENT_ID,
@@ -351,47 +342,11 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
         output.options.toolStreaming = false
       }
     },
-    "experimental.provider.small_model": async (incoming, output) => {
-      if (incoming.provider.id !== "github-copilot") return
-      // GitHub exposes utility models for title generation without including them in the picker.
-      output.model = UTILITY_MODELS.map((id) => models[id]).find((model) => model !== undefined)
-    },
     "chat.headers": async (incoming, output) => {
       if (!incoming.model.providerID.includes("github-copilot")) return
 
-      output.headers["X-GitHub-Api-Version"] = API_VERSION
-      if (incoming.agent === "title") {
-        output.headers["X-Interaction-Type"] = "agent-session-name-generation"
-      }
-
       if (incoming.model.api.npm === "@ai-sdk/anthropic") {
         output.headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
-      }
-
-      const parts = await sdk.session
-        .message({
-          path: {
-            id: incoming.message.sessionID,
-            messageID: incoming.message.id,
-          },
-          query: {
-            directory: input.directory,
-          },
-          throwOnError: true,
-        })
-        .catch(() => undefined)
-
-      if (
-        parts?.data.parts?.some(
-          (part) =>
-            part.type === "compaction" ||
-            // Auto-compaction resumes via a synthetic user text part. Treat only
-            // that marked followup as agent-initiated so manual prompts stay user-initiated.
-            (part.type === "text" && part.synthetic && part.metadata?.compaction_continue === true),
-        )
-      ) {
-        output.headers["x-initiator"] = "agent"
-        return
       }
 
       const session = await sdk.session

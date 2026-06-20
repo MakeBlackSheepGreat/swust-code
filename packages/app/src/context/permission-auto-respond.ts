@@ -1,4 +1,4 @@
-import { base64Encode } from "@swust-code/core/util/encode"
+﻿import { base64Encode } from "@swust-code/shared/util/encode"
 
 export function acceptKey(sessionID: string, directory?: string) {
   if (!directory) return sessionID

@@ -1,14 +1,14 @@
-import { createStore, reconcile } from "solid-js/store"
+﻿import { createStore, reconcile } from "solid-js/store"
 import { batch, createEffect, createMemo, onCleanup } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { createSimpleContext } from "@swust-code/ui/context"
-import { useServerSDK } from "./server-sdk"
-import { useServerSync } from "./server-sync"
+import { useGlobalSDK } from "./global-sdk"
+import { useGlobalSync } from "./global-sync"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
-import { Binary } from "@swust-code/core/util/binary"
-import { base64Encode } from "@swust-code/core/util/encode"
+import { Binary } from "@swust-code/shared/util/binary"
+import { base64Encode } from "@swust-code/shared/util/encode"
 import { decode64 } from "@/utils/base64"
 import { EventSessionError } from "@swust-code/sdk/v2"
 import { Persist, persisted } from "@/utils/persist"
@@ -107,11 +107,10 @@ function buildNotificationIndex(list: Notification[]) {
 
 export const { use: useNotification, provider: NotificationProvider } = createSimpleContext({
   name: "Notification",
-  gate: false,
   init: () => {
     const params = useParams()
-    const serverSDK = useServerSDK()
-    const serverSync = useServerSync()
+    const globalSDK = useGlobalSDK()
+    const globalSync = useGlobalSync()
     const platform = usePlatform()
     const settings = useSettings()
     const language = useLanguage()
@@ -125,7 +124,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
     const currentSession = createMemo(() => params.id)
 
     const [store, setStore, _, ready] = persisted(
-      Persist.serverGlobal(serverSDK.scope, "notification", ["notification.v1"]),
+      Persist.global("notification", ["notification.v1"]),
       createStore({
         list: [] as Notification[],
       }),
@@ -208,10 +207,10 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
 
     const lookup = async (directory: string, sessionID?: string) => {
       if (!sessionID) return undefined
-      const [syncStore] = serverSync.child(directory, { bootstrap: false })
+      const [syncStore] = globalSync.child(directory, { bootstrap: false })
       const match = Binary.search(syncStore.session, sessionID, (s) => s.id)
       if (match.found) return syncStore.session[match.index]
-      return serverSDK.client.session
+      return globalSDK.client.session
         .get({ directory, sessionID })
         .then((x) => x.data)
         .catch(() => undefined)
@@ -286,7 +285,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       })
     }
 
-    const unsub = serverSDK.event.listen((e) => {
+    const unsub = globalSDK.event.listen((e) => {
       const event = e.details
       if (event.type !== "session.idle" && event.type !== "session.error") return
 

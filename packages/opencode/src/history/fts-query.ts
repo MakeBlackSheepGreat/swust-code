@@ -1,3 +1,8 @@
+// Build an FTS5 MATCH expression from a free-form user query.
+// Tokenize on non-word boundaries (preserving CJK / Unicode letters and digits),
+// wrap each token in phrase quotes, AND-join. Returns null when no usable tokens.
+//
+// Independent copy from memory/fts-query.ts so the two modules can evolve apart.
 export function buildFtsQuery(raw: string): string | null {
   const tokens =
     raw
@@ -5,5 +10,6 @@ export function buildFtsQuery(raw: string): string | null {
       ?.map((t) => t.trim())
       .filter(Boolean) ?? []
   if (tokens.length === 0) return null
-  return tokens.map((t) => `"${t.replaceAll('"', "")}"`).join(" AND ")
+  const quoted = tokens.map((t) => `"${t.replaceAll('"', "")}"`)
+  return quoted.join(" AND ")
 }

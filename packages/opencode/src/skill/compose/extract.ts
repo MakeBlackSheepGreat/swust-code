@@ -1,29 +1,36 @@
-import path from "path"
+﻿import path from "path"
 import { pathToFileURL } from "url"
 import { Effect } from "effect"
 import matter from "gray-matter"
-import { FSUtil } from "@swust-code/core/fs-util"
-import { Path as GlobalPath } from "@swust-code/core/global"
-import { InstallationLocal, InstallationVersion } from "@swust-code/core/installation/version"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
+import { Path as GlobalPath } from "@/global"
+import { InstallationLocal, InstallationVersion } from "@/installation/version"
+import { Log } from "@/util"
 import { loadComposeBundle } from "./bundle.macro" with { type: "macro" }
 import { loadComposeBundle as loadComposeBundleDev } from "./bundle.macro"
 import { fallbackSanitization } from "@/config/markdown"
 
+/// Bun macros only resolve in the static import graph of an entry point.
+/// In dynamic import() chains (e.g. plugin tests), the macro is unavailable —
+/// fall back to a normal runtime import of the same function.
+/// `typeof loadComposeBundle` is always "undefined" even after macro expansion
+/// (Bun replaces the call site, not the binding), so use try/catch instead.
 function safeLoadComposeBundle() {
   try {
     return loadComposeBundle()
-  } catch (error) {
-    if (error instanceof ReferenceError) {
+  } catch(e) {
+    if (e instanceof ReferenceError) {
       return loadComposeBundleDev()
     }
-    throw error
+    throw e
   }
 }
-
 const COMPOSE_BUNDLE = safeLoadComposeBundle()
 
+const log = Log.create({ service: "skill.compose" })
+
 export const extractComposeBundle = Effect.fn("Skill.extractComposeBundle")(function* (
-  fsys: FSUtil.Interface,
+  fsys: AppFileSystem.Interface,
 ) {
   const root = path.join(GlobalPath.data, "compose", InstallationVersion)
   const marker = path.join(root, ".extracted")
@@ -37,7 +44,7 @@ export const extractComposeBundle = Effect.fn("Skill.extractComposeBundle")(func
     }
   }
   yield* fsys.writeWithDirs(marker, InstallationVersion)
-  yield* Effect.logInfo("extracted compose skills", { root })
+  log.info("extracted compose skills", { root })
   return root
 })
 

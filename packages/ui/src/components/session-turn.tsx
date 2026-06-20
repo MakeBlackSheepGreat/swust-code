@@ -1,4 +1,4 @@
-import {
+﻿import {
   AssistantMessage,
   type SnapshotFileDiff,
   Message as MessageType,
@@ -8,8 +8,8 @@ import type { SessionStatus } from "@swust-code/sdk/v2"
 import { useData } from "../context"
 import { useFileComponent } from "../context/file"
 
-import { Binary } from "@swust-code/core/util/binary"
-import { getDirectory, getFilename } from "@swust-code/core/util/path"
+import { Binary } from "@swust-code/shared/util/binary"
+import { getDirectory, getFilename } from "@swust-code/shared/util/path"
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
@@ -88,12 +88,6 @@ function same<T>(a: readonly T[], b: readonly T[]) {
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
   if (Array.isArray(value)) return value
   return fallback
-}
-
-type SummaryDiff = SnapshotFileDiff & { file: string }
-
-function summaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
-  return typeof value.file === "string"
 }
 
 const hidden = new Set(["todowrite"])
@@ -175,7 +169,7 @@ export function SessionTurn(
   const emptyMessages: MessageType[] = []
   const emptyParts: PartType[] = []
   const emptyAssistant: AssistantMessage[] = []
-  const emptyDiffs: SummaryDiff[] = []
+  const emptyDiffs: SnapshotFileDiff[] = []
   const idle = { type: "idle" as const }
 
   const allMessages = createMemo(() => props.messages ?? list(data.store.message?.[props.sessionID], emptyMessages))
@@ -236,7 +230,7 @@ export function SessionTurn(
     return list(data.store.part?.[msg.id], emptyParts)
   })
 
-  const compaction = createMemo(() => parts().find((part) => part.type === "compaction"))
+  const compaction = createMemo(() => parts().find((part) => part.type === "checkpoint"))
 
   const diffs = createMemo(() => {
     const files = message()?.summary?.diffs
@@ -244,8 +238,7 @@ export function SessionTurn(
 
     const seen = new Set<string>()
     return files
-      .reduceRight<SummaryDiff[]>((result, diff) => {
-        if (!summaryDiff(diff)) return result
+      .reduceRight<SnapshotFileDiff[]>((result, diff) => {
         if (seen.has(diff.file)) return result
         seen.add(diff.file)
         result.push(diff)

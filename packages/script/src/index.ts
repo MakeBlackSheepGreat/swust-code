@@ -27,36 +27,23 @@ const CHANNEL = await (async () => {
   if (env.SWUST_CODE_CHANNEL) return env.SWUST_CODE_CHANNEL
   if (env.SWUST_CODE_BUMP) return "latest"
   if (env.SWUST_CODE_VERSION && !env.SWUST_CODE_VERSION.startsWith("0.0.0-")) return "latest"
-  return await $`git branch --show-current`.text().then((x) => x.trim())
+  return await $`git branch --show-current`.text().then((x) => x.trim()) || "latest"
 })()
 const IS_PREVIEW = CHANNEL !== "latest"
 
 const VERSION = await (async () => {
   if (env.SWUST_CODE_VERSION) return env.SWUST_CODE_VERSION
   if (IS_PREVIEW) return `0.0.0-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
-  const version = await fetch("https://registry.npmjs.org/swust-code/latest")
-    .then((res) => {
-      if (!res.ok) throw new Error(res.statusText)
-      return res.json()
-    })
+  const version = await Bun.file(path.resolve(import.meta.dir, "../../opencode/package.json"))
+    .json()
     .then((data: any) => data.version)
-  const [major, minor, patch] = version.split(".").map((x: string) => Number(x) || 0)
   const t = env.SWUST_CODE_BUMP?.toLowerCase()
+  if (!t) return version
+  const [major, minor, patch] = version.split(".").map((x: string) => Number(x) || 0)
   if (t === "major") return `${major + 1}.0.0`
   if (t === "minor") return `${major}.${minor + 1}.0`
   return `${major}.${minor}.${patch + 1}`
 })()
-
-const bot = ["actions-user", "swust-code", "swust-code-agent[bot]"]
-const teamPath = path.resolve(import.meta.dir, "../../../.github/TEAM_MEMBERS")
-const team = [
-  ...await Bun.file(teamPath)
-    .text()
-    .then((x) => x.split(/\r?\n/).map((x) => x.trim()))
-    .then((x) => x.filter((x) => x && !x.startsWith("#")))
-    .catch(() => [] as string[]),
-  ...bot,
-]
 
 export const Script = {
   get channel() {
@@ -70,9 +57,6 @@ export const Script = {
   },
   get release(): boolean {
     return !!env.SWUST_CODE_RELEASE
-  },
-  get team() {
-    return team
   },
 }
 console.log(`swust-code script`, JSON.stringify(Script, null, 2))

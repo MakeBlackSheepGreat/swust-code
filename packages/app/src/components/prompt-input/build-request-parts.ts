@@ -1,4 +1,4 @@
-import { getFilename } from "@swust-code/core/util/path"
+﻿import { getFilename } from "@swust-code/shared/util/path"
 import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@swust-code/sdk/v2/client"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"

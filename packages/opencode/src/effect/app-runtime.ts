@@ -1,80 +1,82 @@
-import { Layer, ManagedRuntime } from "effect"
+﻿import { Layer, ManagedRuntime } from "effect"
 import { attach } from "./run-service"
-import * as Observability from "@swust-code/core/observability"
+import * as Observability from "./observability"
 
-import { FSUtil } from "@swust-code/core/fs-util"
-import { Database } from "@swust-code/core/database/database"
+import { AppFileSystem } from "@swust-code/shared/filesystem"
+import { Bus } from "@/bus"
 import { Auth } from "@/auth"
 import { Account } from "@/account/account"
-import { Config } from "@/config/config"
+import { Config } from "@/config"
 import { Git } from "@/git"
-import { Ripgrep } from "@swust-code/core/ripgrep"
-import { Storage } from "@/storage/storage"
+import { Ripgrep } from "@/file/ripgrep"
+import { File } from "@/file"
+import { FileWatcher } from "@/file/watcher"
+import { Storage } from "@/storage"
 import { Snapshot } from "@/snapshot"
 import { Plugin } from "@/plugin"
-import { ModelsDev } from "@swust-code/core/models-dev"
-import { Provider } from "@/provider/provider"
-import { ProviderAuth } from "@/provider/auth"
+import { Provider } from "@/provider"
+import { ProviderAuth } from "@/provider"
 import { Agent } from "@/agent/agent"
 import { Skill } from "@/skill"
 import { Discovery } from "@/skill/discovery"
 import { Question } from "@/question"
 import { Permission } from "@/permission"
 import { Todo } from "@/session/todo"
-import { Session } from "@/session/session"
+import { Session } from "@/session"
 import { SessionStatus } from "@/session/status"
 import { SessionRunState } from "@/session/run-state"
+import { Goal } from "@/session/goal"
 import { SessionProcessor } from "@/session/processor"
 import { SessionCompaction } from "@/session/compaction"
-import { SessionCheckpoint } from "@/session/checkpoint"
+import { SessionPrune } from "@/session/prune"
 import { SessionRevert } from "@/session/revert"
 import { SessionSummary } from "@/session/summary"
 import { SessionPrompt } from "@/session/prompt"
+import { SessionCheckpoint } from "@/session/checkpoint"
 import { Instruction } from "@/session/instruction"
 import { LLM } from "@/session/llm"
-import { LSP } from "@/lsp/lsp"
+import { LSP } from "@/lsp"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Command } from "@/command"
-import { Truncate } from "@/tool/truncate"
-import { ToolRegistry } from "@/tool/registry"
+import { Truncate } from "@/tool"
+import { ToolRegistry } from "@/tool"
 import { Format } from "@/format"
-import { InstanceLayer } from "@/project/instance-layer"
-import { Project } from "@/project/project"
-import { Vcs } from "@/project/vcs"
-import { Workspace } from "@/control-plane/workspace"
+import { Project } from "@/project"
+import { Vcs } from "@/project"
 import { Worktree } from "@/worktree"
+import { Pty } from "@/pty"
 import { Installation } from "@/installation"
-import { ShareNext } from "@/share/share-next"
-import { SessionShare } from "@/share/session"
-import { Npm } from "@swust-code/core/npm"
-import { memoMap } from "@swust-code/core/effect/memo-map"
-import { BackgroundJob } from "@/background/job"
-import { RuntimeFlags } from "@/effect/runtime-flags"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { Goal } from "@/session/goal"
-import { GoalJudge } from "@/session/goal-judge"
-import { Memory } from "@swust-code/core/memory/service"
-import { History } from "@/history"
-import * as ActorRegistry from "@/actor/registry"
-import * as ActorSpawn from "@/actor/spawn"
-import { Inbox } from "@/inbox"
+import { ShareNext } from "@/share"
+import { SessionShare } from "@/share"
+import { Npm } from "@/npm"
+import { ActorRegistry } from "@/actor/registry"
+import { ActorWaiter } from "@/actor/waiter"
+import { Actor } from "@/actor/spawn"
 import { TaskRegistry } from "@/task/registry"
-import { Workflow } from "@/workflow/runtime"
+import { WorkflowRuntime } from "@/workflow/runtime"
+import { History } from "@/history"
+import { Memory } from "@/memory"
+import * as BashInteractive from "@/tool/bash-interactive"
+import { memoMap } from "./memo-map"
 
+// Wrapped in Layer.suspend so the cross-module `.defaultLayer` reads defer to
+// first use instead of running at module load — same TDZ fix as Actor.defaultLayer.
 export const AppLayer = Layer.suspend(() =>
   Layer.mergeAll(
     Npm.defaultLayer,
-    FSUtil.defaultLayer,
-    Database.defaultLayer,
+    AppFileSystem.defaultLayer,
+    Bus.defaultLayer,
     Auth.defaultLayer,
     Account.defaultLayer,
     Config.defaultLayer,
     Git.defaultLayer,
+    Ripgrep.defaultLayer,
+    File.defaultLayer,
+    FileWatcher.defaultLayer,
     Storage.defaultLayer,
     Snapshot.defaultLayer,
     Plugin.defaultLayer,
-    ModelsDev.defaultLayer,
     Provider.defaultLayer,
     ProviderAuth.defaultLayer,
     Agent.defaultLayer,
@@ -85,16 +87,15 @@ export const AppLayer = Layer.suspend(() =>
     Todo.defaultLayer,
     Session.defaultLayer,
     SessionStatus.defaultLayer,
-    BackgroundJob.defaultLayer,
-    RuntimeFlags.defaultLayer,
-    EventV2Bridge.defaultLayer,
     SessionRunState.defaultLayer,
+    Goal.defaultLayer,
     SessionProcessor.defaultLayer,
     SessionCompaction.defaultLayer,
-    SessionCheckpoint.defaultLayer,
+    SessionPrune.defaultLayer,
     SessionRevert.defaultLayer,
     SessionSummary.defaultLayer,
     SessionPrompt.defaultLayer,
+    SessionCheckpoint.defaultLayer,
     Instruction.defaultLayer,
     LLM.defaultLayer,
     LSP.defaultLayer,
@@ -106,32 +107,23 @@ export const AppLayer = Layer.suspend(() =>
     Format.defaultLayer,
     Project.defaultLayer,
     Vcs.defaultLayer,
-    Workspace.defaultLayer,
-    Worktree.appLayer,
+    Worktree.defaultLayer,
+    Pty.defaultLayer,
     Installation.defaultLayer,
     ShareNext.defaultLayer,
     SessionShare.defaultLayer,
-    Goal.defaultLayer,
-    GoalJudge.defaultLayer,
     ActorRegistry.defaultLayer,
-    ActorSpawn.defaultLayer,
-    Inbox.defaultLayer,
+    ActorWaiter.defaultLayer,
+    Actor.defaultLayer,
     TaskRegistry.defaultLayer,
-    Workflow.defaultLayer,
+    WorkflowRuntime.defaultLayer,
     Memory.defaultLayer,
     History.defaultLayer,
-  ).pipe(
-    Layer.provideMerge(Ripgrep.defaultLayer),
-    Layer.provideMerge(InstanceLayer.layer),
-    Layer.provideMerge(Observability.layer),
-  ),
+  ).pipe(Layer.provideMerge(Observability.layer), Layer.provideMerge(BashInteractive.defaultLayer)),
 )
 
 const rt = ManagedRuntime.make(AppLayer, { memoMap })
 type Runtime = Pick<typeof rt, "runSync" | "runPromise" | "runPromiseExit" | "runFork" | "runCallback" | "dispose">
-
-/** Services provided by AppRuntime — i.e. what an Effect run via AppRuntime.runPromise can yield. */
-export type AppServices = ManagedRuntime.ManagedRuntime.Services<typeof rt>
 const wrap = (effect: Parameters<typeof rt.runSync>[0]) => attach(effect as never) as never
 
 export const AppRuntime: Runtime = {

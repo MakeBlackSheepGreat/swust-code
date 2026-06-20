@@ -1,13 +1,7 @@
-import { EventV2 } from "@swust-code/core/event"
-import { Schema } from "effect"
+import { BusEvent } from "@/bus/bus-event"
+import z from "zod"
 
 export const Event = {
-  Connected: EventV2.define({ type: "server.connected", schema: {} }),
-  Disposed: EventV2.define({ type: "global.disposed", schema: {} }),
+  Connected: BusEvent.define("server.connected", z.object({})),
+  Disposed: BusEvent.define("global.disposed", z.object({})),
 }
-
-export const InstanceDisposed = Schema.Struct({
-  id: Schema.String,
-  type: Schema.Literal("server.instance.disposed"),
-  properties: Schema.Struct({ directory: Schema.String }),
-}).annotate({ identifier: "Event.server.instance.disposed" })

@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js"
+﻿import { createSignal } from "solid-js"
 import { Dialog } from "@swust-code/ui/dialog"
 import { Button } from "@swust-code/ui/button"
 import { useDialog } from "@swust-code/ui/context/dialog"

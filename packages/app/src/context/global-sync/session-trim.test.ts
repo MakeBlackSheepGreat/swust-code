@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, Session } from "@swust-code/sdk/v2/client"
 import { trimSessions } from "./session-trim"
 

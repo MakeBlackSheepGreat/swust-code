@@ -1,8 +1,11 @@
-import type { Hooks, PluginInput } from "@swust-code/plugin"
+﻿import type { Hooks, PluginInput } from "@swust-code/plugin"
 import fs from "fs/promises"
 import path from "path"
-import { progressPath } from "@/session/checkpoint-paths"
-import type { SessionID } from "@/session/schema"
+import { Log } from "../util"
+import { progressPath } from "../session/checkpoint-paths"
+import type { SessionID } from "../session/schema"
+
+const log = Log.create({ service: "plugin.subagent-progress-checker" })
 
 const REQUIRED_SECTIONS = [
   "## §1 Task identity",
@@ -54,7 +57,7 @@ function buildFeedback(args: {
 
   return [
     `tasks/${args.taskId}/progress.md exists but is missing required sections:`,
-    ...(args.missing ?? []).map((section) => `  - ${section}`),
+    ...(args.missing ?? []).map((s) => `  - ${s}`),
     "",
     "Add the missing sections. For reference, the full required template is:",
     "",
@@ -67,22 +70,44 @@ function buildFeedback(args: {
 async function injectFrontmatter(filePath: string, body: string): Promise<void> {
   const now = Date.now()
   const frontmatterBlock = `---\nwritten-at: ${now}\n---\n`
+  // Replace existing leading frontmatter if present (idempotent across ReAct retries)
   const fmMatch = body.match(/^---\n[\s\S]*?\n---\n/)
-  const newBody = fmMatch ? frontmatterBlock + body.slice(fmMatch[0].length) : frontmatterBlock + body
+  const newBody = fmMatch
+    ? frontmatterBlock + body.slice(fmMatch[0].length)
+    : frontmatterBlock + body
   await Bun.write(filePath, newBody)
 }
 
 export async function SubagentProgressCheckerPlugin(_pluginInput: PluginInput): Promise<Hooks> {
   return {
     "actor.postStop": {
+      // Use excludeOnly so the matcher fires for ALL actor types EXCEPT those
+      // listed (including built-in subagents like general/explore/build/title).
+      // The default matcher path (`!isBuiltIn`) would silently skip built-ins
+      // — which are exactly the most common task-bound subagents this plugin
+      // exists to validate. checkpoint-writer / title / summary / dream /
+      // distill / compaction never have task_id semantics, so excluding them
+      // is harmless even though task_id check below would already short-circuit.
+      // See packages/opencode/src/plugin/matcher.ts.
       matcher: {
         agentType: {
-          excludeOnly: ["checkpoint-writer", "title", "summary", "dream", "distill", "compaction", "main"],
+          excludeOnly: [
+            "checkpoint-writer",
+            "title",
+            "summary",
+            "dream",
+            "distill",
+            "compaction",
+            "main",
+          ],
         },
       },
       run: async (input, output) => {
         const taskId = (input as { task_id?: string }).task_id
-        if (!taskId) return
+        if (!taskId) return // caller didn't bind to a task → no-op
+        // Read-only agents (canWrite === false) cannot satisfy a "write the journal" nudge —
+        // skip the check entirely so we don't burn postStop re-entries on an impossible ask.
+        // `=== false` (not falsy): an absent canWrite must NOT suppress (fail-open).
         if ((input as { canWrite?: boolean }).canWrite === false) return
 
         const sessionID = input.sessionID as SessionID
@@ -101,19 +126,21 @@ export async function SubagentProgressCheckerPlugin(_pluginInput: PluginInput): 
           return
         }
 
-        const missing = REQUIRED_SECTIONS.filter((section) => !body!.includes(section))
+        const missing = REQUIRED_SECTIONS.filter((s) => !body!.includes(s))
         if (missing.length > 0) {
           output.continue = true
           output.reason = buildFeedback({ kind: "incomplete", taskId, filePath, missing })
           return
         }
 
+        // PASS: inject frontmatter (runtime owns this, not the LLM)
         try {
           await fs.mkdir(path.dirname(filePath), { recursive: true })
           await injectFrontmatter(filePath, body)
-        } catch {
-          // Progress validation should not block actor shutdown if metadata stamping fails.
+        } catch (err) {
+          log.error("frontmatter injection failed", { err, filePath })
         }
+        // do not set output.continue; subagent exits postStop loop cleanly
       },
     },
   }

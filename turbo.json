@@ -1,25 +1,31 @@
 {
   "$schema": "https://v2-8-13.turborepo.dev/schema.json",
-  "globalEnv": ["CI", "SWUST_CODE_DISABLE_SHARE"],
-  "globalPassThroughEnv": ["CI", "SWUST_CODE_DISABLE_SHARE"],
+  "globalEnv": ["CI", "OPENCODE_DISABLE_SHARE"],
+  "globalPassThroughEnv": ["CI", "OPENCODE_DISABLE_SHARE"],
   "tasks": {
     "typecheck": {},
     "build": {
       "dependsOn": [],
       "outputs": ["dist/**"]
     },
-    "swust-code#test": {
+    "@swust-code/cli#test": {
       "dependsOn": ["^build"],
       "outputs": [],
+      "passThroughEnv": ["*"]
+    },
+    "@swust-code/cli#test:ci": {
+      "dependsOn": ["^build"],
+      "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
     },
     "@swust-code/app#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@swust-code/ui#test": {
+    "@swust-code/app#test:ci": {
       "dependsOn": ["^build"],
-      "outputs": []
+      "outputs": [".artifacts/unit/junit.xml"],
+      "passThroughEnv": ["*"]
     }
   }
 }

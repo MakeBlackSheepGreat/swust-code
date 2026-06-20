@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createMemo } from "solid-js"
+﻿import { Match, Show, Switch, createMemo } from "solid-js"
 import { Tooltip, type TooltipProps } from "@swust-code/ui/tooltip"
 import { ProgressCircle } from "@swust-code/ui/progress-circle"
 import { Button } from "@swust-code/ui/button"
@@ -52,7 +52,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       }),
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()]))
+  const metrics = createMemo(() => getSessionContextMetrics(messages(), providers.all()))
   const context = createMemo(() => metrics().context)
   const cost = createMemo(() => {
     return usd().format(metrics().totalCost)

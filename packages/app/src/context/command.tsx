@@ -1,4 +1,4 @@
-import { createSimpleContext } from "@swust-code/ui/context"
+﻿import { createSimpleContext } from "@swust-code/ui/context"
 import { useDialog } from "@swust-code/ui/context/dialog"
 import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -81,7 +81,6 @@ export interface CommandOption {
   slash?: string
   suggested?: boolean
   disabled?: boolean
-  hidden?: boolean
   onSelect?: (source?: "palette" | "keybind" | "slash") => void
   onHighlight?: () => (() => void) | void
 }
@@ -94,7 +93,6 @@ export type CommandCatalogItem = {
   category?: string
   keybind?: KeybindConfig
   slash?: string
-  hidden?: boolean
 }
 
 export type CommandRegistration = {
@@ -281,14 +279,13 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       setCatalog(
         registered().reduce((acc, opt) => {
           const id = actionId(opt.id)
-          if (opt.title)
-            acc[id] = {
-              title: opt.title,
-              description: opt.description,
-              category: opt.category,
-              keybind: opt.keybind,
-              slash: opt.slash,
-            }
+          acc[id] = {
+            title: opt.title,
+            description: opt.description,
+            category: opt.category,
+            keybind: opt.keybind,
+            slash: opt.slash,
+          }
           return acc
         }, {} as CommandCatalog),
       )

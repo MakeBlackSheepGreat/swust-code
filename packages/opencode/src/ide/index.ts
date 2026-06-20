@@ -1,7 +1,8 @@
-import { EventV2 } from "@swust-code/core/event"
-import { Schema } from "effect"
-import { NamedError } from "@swust-code/core/util/error"
-import { Process } from "@/util/process"
+﻿import { BusEvent } from "@/bus/bus-event"
+import z from "zod"
+import { NamedError } from "@swust-code/shared/util/error"
+import { Log } from "../util"
+import { Process } from "@/util"
 
 const SUPPORTED_IDES = [
   { name: "Windsurf" as const, cmd: "windsurf" },
@@ -11,20 +12,25 @@ const SUPPORTED_IDES = [
   { name: "VSCodium" as const, cmd: "codium" },
 ]
 
+const log = Log.create({ service: "ide" })
+
 export const Event = {
-  Installed: EventV2.define({
-    type: "ide.installed",
-    schema: {
-      ide: Schema.String,
-    },
-  }),
+  Installed: BusEvent.define(
+    "ide.installed",
+    z.object({
+      ide: z.string(),
+    }),
+  ),
 }
 
-export const AlreadyInstalledError = NamedError.create("AlreadyInstalledError", {})
+export const AlreadyInstalledError = NamedError.create("AlreadyInstalledError", z.object({}))
 
-export const InstallFailedError = NamedError.create("InstallFailedError", {
-  stderr: Schema.String,
-})
+export const InstallFailedError = NamedError.create(
+  "InstallFailedError",
+  z.object({
+    stderr: z.string(),
+  }),
+)
 
 export function ide() {
   if (process.env["TERM_PROGRAM"] === "vscode") {
@@ -37,7 +43,7 @@ export function ide() {
 }
 
 export function alreadyInstalled() {
-  return process.env["SWUST_CODE_CALLER"] === "vscode" || process.env["SWUST_CODE_CALLER"] === "vscode-insiders"
+  return process.env["OPENCODE_CALLER"] === "vscode" || process.env["OPENCODE_CALLER"] === "vscode-insiders"
 }
 
 export async function install(ide: (typeof SUPPORTED_IDES)[number]["name"]) {
@@ -49,6 +55,12 @@ export async function install(ide: (typeof SUPPORTED_IDES)[number]["name"]) {
   })
   const stdout = p.stdout.toString()
   const stderr = p.stderr.toString()
+
+  log.info("installed", {
+    ide,
+    stdout,
+    stderr,
+  })
 
   if (p.code !== 0) {
     throw new InstallFailedError({ stderr })

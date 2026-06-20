@@ -17,15 +17,15 @@ describe("parsePluginSpecifier", () => {
   })
 
   test("parses scoped npm package without version", () => {
-    expect(parsePluginSpecifier("@swust-code/acme")).toEqual({
-      pkg: "@swust-code/acme",
+    expect(parsePluginSpecifier("@opencode/acme")).toEqual({
+      pkg: "@opencode/acme",
       version: "latest",
     })
   })
 
   test("parses scoped npm package with version", () => {
-    expect(parsePluginSpecifier("@swust-code/acme@1.0.0")).toEqual({
-      pkg: "@swust-code/acme",
+    expect(parsePluginSpecifier("@opencode/acme@1.0.0")).toEqual({
+      pkg: "@opencode/acme",
       version: "1.0.0",
     })
   })
@@ -38,8 +38,8 @@ describe("parsePluginSpecifier", () => {
   })
 
   test("parses scoped package with git+https url", () => {
-    expect(parsePluginSpecifier("@swust-code/acme@git+https://github.com/opencode/acme.git")).toEqual({
-      pkg: "@swust-code/acme",
+    expect(parsePluginSpecifier("@opencode/acme@git+https://github.com/opencode/acme.git")).toEqual({
+      pkg: "@opencode/acme",
       version: "git+https://github.com/opencode/acme.git",
     })
   })
@@ -52,8 +52,8 @@ describe("parsePluginSpecifier", () => {
   })
 
   test("parses scoped package with git+ssh url containing another @", () => {
-    expect(parsePluginSpecifier("@swust-code/acme@git+ssh://git@github.com/opencode/acme.git")).toEqual({
-      pkg: "@swust-code/acme",
+    expect(parsePluginSpecifier("@opencode/acme@git+ssh://git@github.com/opencode/acme.git")).toEqual({
+      pkg: "@opencode/acme",
       version: "git+ssh://git@github.com/opencode/acme.git",
     })
   })
@@ -74,14 +74,14 @@ describe("parsePluginSpecifier", () => {
 
   test("parses bare npm protocol specifier using the target package", () => {
     expect(parsePluginSpecifier("npm:@opencode/acme@1.0.0")).toEqual({
-      pkg: "@swust-code/acme",
+      pkg: "@opencode/acme",
       version: "1.0.0",
     })
   })
 
   test("parses unversioned npm protocol specifier", () => {
     expect(parsePluginSpecifier("npm:@opencode/acme")).toEqual({
-      pkg: "@swust-code/acme",
+      pkg: "@opencode/acme",
       version: "latest",
     })
   })
