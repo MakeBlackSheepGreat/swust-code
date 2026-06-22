@@ -438,6 +438,35 @@ export const dict: Record<string, string> = {
   "tui.command.tips.toggle.hide": "Hide tips",
   "tui.command.plugins.list.title": "Plugins",
   "tui.command.plugins.install.title": "Install plugin",
+
+  // Plugin list dialog
+  "tui.plugins.list.title": "Plugins",
+  "tui.plugins.status.disabled": "disabled",
+  "tui.plugins.status.active": "active",
+  "tui.plugins.status.inactive": "inactive",
+  "tui.plugins.source.builtin": "Built-in",
+  "tui.plugins.source.builtin_full": "Built-in plugin",
+  "tui.plugins.category.internal": "Internal",
+  "tui.plugins.category.external": "External",
+  "tui.plugins.keybind.toggle": "toggle",
+  "tui.plugins.keybind.install": "install",
+  "tui.plugins.toggle.failed": "Failed to update plugin {{id}}",
+
+  // Plugin install dialog
+  "tui.plugins.install.title": "Install plugin",
+  "tui.plugins.install.placeholder": "npm package name",
+  "tui.plugins.install.busy": "Installing plugin...",
+  "tui.plugins.install.scope": "scope:",
+  "tui.plugins.install.scope.global": "global",
+  "tui.plugins.install.scope.local": "local",
+
+  // Plugin toast messages
+  "tui.plugins.toast.empty_name": "Plugin package name is required",
+  "tui.plugins.toast.check_npm": "Check npm registry/auth settings and try again.",
+  "tui.plugins.toast.installed": "Installed {{mod}} ({{scope}}: {{dir}})",
+  "tui.plugins.toast.no_tui": "Package has no TUI target to load in this app.",
+  "tui.plugins.toast.load_failed": "Installed plugin, but runtime load failed. See console/logs; restart TUI to retry.",
+  "tui.plugins.toast.loaded": "Loaded {{mod}} in current session.",
   "tui.dialog.login.title": "Select provider",
   "tui.dialog.login.xiaomi": "Xiaomi",
   "tui.dialog.login.xiaomi.desc": "(Recommended)",

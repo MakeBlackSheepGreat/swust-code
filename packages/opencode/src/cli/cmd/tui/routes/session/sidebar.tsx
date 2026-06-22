@@ -6,19 +6,9 @@ import { useTuiConfig } from "../../context/tui-config"
 import { InstallationChannel, InstallationVersion } from "@/installation/version"
 import { TuiPluginRuntime } from "../../plugin"
 import { useLanguage } from "../../context/language"
-import os from "os"
-import path from "path"
 
 import { getScrollAcceleration } from "../../util/scroll"
-import { splitDisplayPath } from "./sidebar-path"
 
-function abbreviateHome(input: string, home: string) {
-  if (!home) return input
-  const relative = path.relative(home, input)
-  if (relative === "") return "~"
-  if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return input
-  return "~" + path.sep + relative
-}
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const project = useProject()
@@ -48,20 +38,11 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   )
   const showGettingStarted = createMemo(() => !hasProvider())
 
-  const pathInfo = createMemo(() => {
-    const sess = session()
-    const home = os.homedir()
-    const cwd = process.cwd()
-    const dir = sess?.directory || cwd
-    const out = abbreviateHome(dir, home)
-    return splitDisplayPath(out)
-  })
-
   return (
     <Show when={session()}>
       <box
         backgroundColor={theme.backgroundPanel}
-        width={42}
+        width={56}
         height="100%"
         paddingTop={1}
         paddingBottom={1}
@@ -138,15 +119,6 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               </box>
             </box>
           </Show>
-          <text>
-            <Show when={pathInfo().parent}>
-              <span style={{ fg: theme.textMuted }}>
-                {pathInfo().parent}
-                {path.sep}
-              </span>
-            </Show>
-            <span style={{ fg: theme.text }}>{pathInfo().name}</span>
-          </text>
           <TuiPluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID}>
             <text fg={theme.textMuted}>
               <span style={{ fg: theme.success }}>•</span> <b>SWUST </b>

@@ -431,6 +431,35 @@ export const dict = {
   "tui.command.tips.toggle.hide": "隐藏 Tips",
   "tui.command.plugins.list.title": "插件",
   "tui.command.plugins.install.title": "安装插件",
+
+  // Plugin list dialog
+  "tui.plugins.list.title": "插件",
+  "tui.plugins.status.disabled": "已禁用",
+  "tui.plugins.status.active": "运行中",
+  "tui.plugins.status.inactive": "已停止",
+  "tui.plugins.source.builtin": "内置",
+  "tui.plugins.source.builtin_full": "内置插件",
+  "tui.plugins.category.internal": "内置",
+  "tui.plugins.category.external": "外部",
+  "tui.plugins.keybind.toggle": "切换",
+  "tui.plugins.keybind.install": "安装",
+  "tui.plugins.toggle.failed": "插件 {{id}} 状态更新失败",
+
+  // Plugin install dialog
+  "tui.plugins.install.title": "安装插件",
+  "tui.plugins.install.placeholder": "npm 包名",
+  "tui.plugins.install.busy": "正在安装插件...",
+  "tui.plugins.install.scope": "范围：",
+  "tui.plugins.install.scope.global": "全局",
+  "tui.plugins.install.scope.local": "项目",
+
+  // Plugin toast messages
+  "tui.plugins.toast.empty_name": "请输入插件包名",
+  "tui.plugins.toast.check_npm": "请检查 npm 源或认证设置后重试",
+  "tui.plugins.toast.installed": "已安装 {{mod}}（{{scope}}：{{dir}}）",
+  "tui.plugins.toast.no_tui": "该包没有可在本应用中加载的 TUI 目标",
+  "tui.plugins.toast.load_failed": "插件已安装但运行时加载失败，请检查日志并重启 TUI 后重试",
+  "tui.plugins.toast.loaded": "已在当前会话中加载 {{mod}}",
   "tui.dialog.login.title": "选择服务商",
   "tui.dialog.login.xiaomi": "小米",
   "tui.dialog.login.xiaomi.desc": "（推荐）",
