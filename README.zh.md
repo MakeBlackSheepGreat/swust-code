@@ -14,7 +14,7 @@
   <a href="https://swust-code.dev"><img src="https://img.shields.io/badge/docs-live-1d4ed8?style=flat-square" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="License"></a>
   <a href="https://github.com/MakeBlackSheepGreat/swust-code"><img src="https://img.shields.io/github/stars/MakeBlackSheepGreat/swust-code?style=flat-square&color=0f766e" alt="Stars"></a>
-  <img src="https://img.shields.io/badge/version-0.6.0-2563eb?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.7.0-2563eb?style=flat-square" alt="Version">
 </p>
 
 > [!IMPORTANT]
@@ -136,6 +136,31 @@ SWUST 层聚焦品牌、中文体验和工程防护：
 
 配置范围包括 Provider、模型、权限、Agent、命令、MCP server、插件、记忆 / checkpoint 行为、快捷键、主题和实验性功能。
 
+### Max Mode
+
+Max Mode 是实验性的 primary agent：每一步并行生成多个候选推理，由 judge 调用选择最佳候选，只执行胜出候选的工具调用。
+
+本仓库已在 `.swust-code/swust-code.json` 启用内置 `max` agent，并固定最多 5 个候选：
+
+```jsonc
+{
+  "experimental": {
+    "maxMode": {
+      "candidates": 5
+    }
+  }
+}
+```
+
+重启 TUI 后，可以用 `/agents`、`<leader>a`（默认 `Ctrl+X` 后按 `A`），或 `Tab` / `Shift+Tab` 循环切换到 `max`。不要新建大写 `Max` agent：运行时只在当前 agent 名称精确等于 `max` 时触发 Max Mode。
+
+具体实现代码：
+
+- Agent 注册：`packages/opencode/src/agent/agent.ts`
+- 运行时分支：`packages/opencode/src/session/prompt.ts`
+- 候选生成与 judge 编排：`packages/opencode/src/session/max-mode.ts`
+- 胜出候选 replay 与额外成本统计：`packages/opencode/src/session/processor.ts`
+
 ## 开发
 
 ```bash
@@ -147,8 +172,8 @@ bun turbo typecheck
 维护者发布 npm 版本时，使用 GitHub Actions + npm trusted publishing。先在 npm 侧把 GitHub trusted publisher 绑定到工作流文件 `npm-release.yml`，再推送与 `packages/opencode/package.json` 一致的语义化 tag：
 
 ```bash
-git tag v0.6.0
-git push swust-code v0.6.0
+git tag v0.7.0
+git push swust-code v0.7.0
 ```
 
 发布注意事项：
@@ -162,7 +187,7 @@ git push swust-code v0.6.0
 | npm 包 | `@swust-code/cli` |
 | CLI 命令 | `swust-code` |
 | 包管理器 | `bun@1.3.11` |
-| 当前声明版本 | `0.6.0` |
+| 当前声明版本 | `0.7.0` |
 
 ## 文档
 

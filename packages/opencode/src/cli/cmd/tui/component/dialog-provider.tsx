@@ -24,6 +24,64 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   google: 5,
 }
 
+export const CUSTOM_PROVIDER_CONNECTIONS = [
+  {
+    title: "Old OpenAI-compatible",
+    value: "openai-compatible",
+    description: "Chat Completions: base URL ending in /v1, SDK calls /chat/completions",
+    npm: "@ai-sdk/openai-compatible",
+    baseURLPlaceholder: "https://.../v1",
+    options: { setCacheKey: true },
+  },
+  {
+    title: "New OpenAI",
+    value: "openai",
+    description: "Responses API: base URL ending in /v1, SDK calls /responses",
+    npm: "@ai-sdk/openai",
+    baseURLPlaceholder: "https://api.openai.com/v1",
+    options: {},
+  },
+  {
+    title: "Anthropic-compatible",
+    value: "anthropic",
+    description: "Anthropic Messages API: base URL ending in /v1, SDK calls /messages",
+    npm: "@ai-sdk/anthropic",
+    baseURLPlaceholder: "https://api.anthropic.com/v1",
+    options: {},
+  },
+] as const
+
+type CustomProviderConnection = (typeof CUSTOM_PROVIDER_CONNECTIONS)[number]
+
+export function buildCustomProviderPatch(input: {
+  providerID: string
+  name: string
+  baseURL: string
+  modelID: string
+  modelName: string
+  connection: CustomProviderConnection
+}) {
+  const envKey = `${input.providerID.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY`
+  return {
+    provider: {
+      [input.providerID]: {
+        name: input.name,
+        npm: input.connection.npm,
+        env: [envKey],
+        options: {
+          baseURL: input.baseURL,
+          ...input.connection.options,
+        },
+        models: {
+          [input.modelID]: {
+            name: input.modelName,
+          },
+        },
+      },
+    },
+  } as const
+}
+
 export function createDialogProviderOptions() {
   const sync = useSync()
   const dialog = useDialog()
@@ -174,53 +232,55 @@ export async function runCustomProviderWizard(opts: {
     return DialogPrompt.show(dialog, `${title} (${n}/${total})`, { placeholder, value })
   }
 
-  const providerIDRaw = await step(1, 6, "Provider id", "e.g. mimorouter")
+  const total = 7
+
+  const providerIDRaw = await step(1, total, "Provider id", "e.g. mimorouter")
   if (providerIDRaw === null) return
   const providerID = providerIDRaw.trim()
   if (!providerID) return
 
-  const nameRaw = await step(2, 6, "Display name", "e.g. MiMo Router", providerID)
+  const nameRaw = await step(2, total, "Display name", "e.g. MiMo Router", providerID)
   if (nameRaw === null) return
   const name = nameRaw.trim() || providerID
 
-  const baseURLRaw = await step(3, 6, "Base URL", "https://.../v1")
+  const connection = await new Promise<(typeof CUSTOM_PROVIDER_CONNECTIONS)[number] | null>((resolve) => {
+    dialog.replace(
+      () => (
+        <DialogSelect
+          title={`Connection type (3/${total})`}
+          options={CUSTOM_PROVIDER_CONNECTIONS.map((item) => ({
+            title: item.title,
+            value: item,
+            description: item.description,
+          }))}
+          onSelect={(option) => resolve(option.value)}
+        />
+      ),
+      () => resolve(null),
+    )
+  })
+  if (!connection) return
+
+  const baseURLRaw = await step(4, total, "Base URL", connection.baseURLPlaceholder)
   if (baseURLRaw === null) return
   const baseURL = baseURLRaw.trim()
   if (!baseURL) return
 
-  const apiKeyRaw = await step(4, 6, "API key", "sk-...")
+  const apiKeyRaw = await step(5, total, "API key", "sk-...")
   if (apiKeyRaw === null) return
   const apiKey = apiKeyRaw.trim()
   if (!apiKey) return
 
-  const modelIDRaw = await step(5, 6, "First model id", "e.g. claude-sonnet-4-6")
+  const modelIDRaw = await step(6, total, "First model id", "e.g. claude-sonnet-4-6")
   if (modelIDRaw === null) return
   const modelID = modelIDRaw.trim()
   if (!modelID) return
 
-  const modelNameRaw = await step(6, 6, "First model name", "e.g. Claude Sonnet 4.6", modelID)
+  const modelNameRaw = await step(7, total, "First model name", "e.g. Claude Sonnet 4.6", modelID)
   if (modelNameRaw === null) return
   const modelName = modelNameRaw.trim() || modelID
 
-  const envKey = `${providerID.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY`
-  const patch = {
-    provider: {
-      [providerID]: {
-        name,
-        npm: "@ai-sdk/openai-compatible",
-        env: [envKey],
-        options: {
-          baseURL,
-          setCacheKey: true,
-        },
-        models: {
-          [modelID]: {
-            name: modelName,
-          },
-        },
-      },
-    },
-  } as const
+  const patch = buildCustomProviderPatch({ providerID, name, baseURL, modelID, modelName, connection })
 
   const updateRes = await sdk.client.global.config.update({ config: patch as any })
   if (updateRes.error) {

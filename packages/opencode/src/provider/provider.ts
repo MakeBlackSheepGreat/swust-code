@@ -101,6 +101,7 @@ function wrapSSE(res: Response, ms: number, ctl: AbortController) {
 
 type BundledSDK = {
   languageModel(modelId: string): LanguageModelV3
+  responses?(modelId: string): LanguageModelV3
 }
 
 const BUNDLED_PROVIDERS: Record<string, () => Promise<(opts: any) => BundledSDK>> = {
@@ -150,6 +151,10 @@ type CustomDep = {
 
 function useLanguageModel(sdk: any) {
   return sdk.responses === undefined && sdk.chat === undefined
+}
+
+function useResponsesModel(sdk: BundledSDK | SDK): sdk is BundledSDK & { responses(modelId: string): LanguageModelV3 } {
+  return "responses" in sdk && typeof sdk.responses === "function"
 }
 
 function custom(dep: CustomDep): Record<string, CustomLoader> {
@@ -1178,7 +1183,10 @@ const layer: Layer.Layer<
               providerID: ProviderID.make(providerID),
               capabilities: {
                 temperature: model.temperature ?? existingModel?.capabilities.temperature ?? false,
-                reasoning: model.reasoning ?? existingModel?.capabilities.reasoning ?? false,
+                reasoning:
+                  model.reasoning ??
+                  existingModel?.capabilities.reasoning ??
+                  (apiNpm === "@ai-sdk/openai-compatible" && apiID.toLowerCase().includes("gpt-5")),
                 attachment: model.attachment ?? existingModel?.capabilities.attachment ?? false,
                 toolcall: model.tool_call ?? existingModel?.capabilities.toolcall ?? true,
                 input: {
@@ -1608,7 +1616,9 @@ const layer: Layer.Layer<
                 ...provider.options,
                 ...model.options,
               })
-            : sdk.languageModel(model.api.id)
+            : model.api.npm === "@ai-sdk/openai" && useResponsesModel(sdk)
+              ? sdk.responses(model.api.id)
+              : sdk.languageModel(model.api.id)
           s.models.set(key, language)
           return language
         } catch (e) {

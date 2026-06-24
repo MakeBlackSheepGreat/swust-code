@@ -14,7 +14,7 @@
   <a href="https://swust-code.dev"><img src="https://img.shields.io/badge/docs-live-1d4ed8?style=flat-square" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="License"></a>
   <a href="https://github.com/MakeBlackSheepGreat/swust-code"><img src="https://img.shields.io/github/stars/MakeBlackSheepGreat/swust-code?style=flat-square&color=0f766e" alt="Stars"></a>
-  <img src="https://img.shields.io/badge/version-0.6.0-2563eb?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.7.0-2563eb?style=flat-square" alt="Version">
 </p>
 
 > [!IMPORTANT]
@@ -136,6 +136,31 @@ Common locations:
 
 Configuration covers providers, models, permissions, agents, commands, MCP servers, plugins, memory/checkpoint behavior, keybindings, themes, and experimental features.
 
+### Max Mode
+
+Max Mode is an experimental primary agent that runs parallel best-of-N reasoning for each step, asks a judge call to pick the best candidate, and executes only the winning candidate's tool calls.
+
+This repository enables the built-in `max` agent with five candidates in `.swust-code/swust-code.json`:
+
+```jsonc
+{
+  "experimental": {
+    "maxMode": {
+      "candidates": 5
+    }
+  }
+}
+```
+
+After restarting the TUI, switch to the `max` agent with `/agents`, `<leader>a` (`Ctrl+X` then `A` by default), or cycle agents with `Tab` / `Shift+Tab`. Do not create a separate `Max` agent: the runtime triggers Max Mode only when the selected agent name is exactly `max`.
+
+Implementation references:
+
+- Agent registration: `packages/opencode/src/agent/agent.ts`
+- Runtime branch: `packages/opencode/src/session/prompt.ts`
+- Candidate and judge orchestration: `packages/opencode/src/session/max-mode.ts`
+- Winner replay and overhead accounting: `packages/opencode/src/session/processor.ts`
+
 ## Development
 
 ```bash
@@ -147,8 +172,8 @@ bun turbo typecheck
 Maintainers publish npm releases through npm trusted publishing from GitHub Actions. Configure the GitHub trusted publisher against workflow file `npm-release.yml`, then push a semver tag that matches `packages/opencode/package.json`:
 
 ```bash
-git tag v0.6.0
-git push swust-code v0.6.0
+git tag v0.7.0
+git push swust-code v0.7.0
 ```
 
 Important release note:
@@ -164,7 +189,7 @@ Package and runtime details:
 | npm package | `@swust-code/cli` |
 | CLI binary | `swust-code` |
 | Package manager | `bun@1.3.11` |
-| Current declared version | `0.6.0` |
+| Current declared version | `0.7.0` |
 
 ## Documentation
 
